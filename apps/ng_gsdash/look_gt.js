@@ -117,10 +117,10 @@ module.exports = {
         const hw = (cw[0] - gap) / 2, ty = top + sh + gap, th = H - sh - gap;
         // 0.11.0: temperature zones (lib.js TEMP_ZONES): the cell solid blue when cold, solid red when too hot,
         // a green dot when normal; a zone strip along its foot, lit to the value
-        [['OIL °F', S.oil], ['WATER °F', S.cool]].forEach((p, i) => {
+        [['OIL ' + L.tempUnit(S.oil), S.oil], ['WATER ' + L.tempUnit(S.cool), S.cool]].forEach((p, i) => {
             const v = p[1], x = cx[0] + i * (hw + gap), zg = L.tempGauge(v, ZONES_GT, '#1a1a1a', 0.35), fill = zg.zone === 'cold' || zg.zone === 'hot' ? zg.on : null;
             cell(cv, x, ty, hw, th, p[0], fill);
-            cv.text(isNum(v.f) ? String(Math.round(v.f)) : '--', x + hw - 16, ty + th - 24, 62, zg.zone ? '#ffffff' : '#8a8a8a', { align: 'right', font: NUM, literal: true });
+            cv.text(isNum(v.f) ? String(L.tempNum(v)) : '--', x + hw - 16, ty + th - 24, 62, zg.zone ? '#ffffff' : '#8a8a8a', { align: 'right', font: NUM, literal: true });
             if (zg.zone === 'ok') cv.circle(x + 22, ty + th - 42, 7, zg.on);
             if (fill) cv.text(zg.zone === 'cold' ? 'COLD' : 'HOT', x + 14, ty + th - 28, 17, '#ffffff', { font: TXT, spacing: 1.5, literal: true });
             const sx = x + 10, sw = hw - 20, sy = ty + th - 12, n = 16, g2 = 2, bw = (sw - g2 * (n - 1)) / n;

@@ -115,11 +115,13 @@ class Recorder {
         this._extra = 0;
         this.extraUsed = false;      // the drawing read extra (it reaches below the page: display.js places it so)
         this.recording = true;
+        this.bleeds = [];            // the page's background, marked (bgStart / bgEnd): [from, to, edge] word ranges
+        this._bgAt = -1; this._bgBad = false;
     }
     /** logical px the screen has below the app's page (display.js), 0 if none */
     get extra() { if (this._extra) this.extraUsed = true; return this._extra; }
     set extra(v) { this._extra = v || 0; }
-    reset() { this.n = 0; this._cnStamped = false; this.targets = []; this.scroll = false; this.extraUsed = false; if (this.layersUsed) this.layersUsed.clear(); this.atlases.clear(); this.ramps.clear(); this.images.clear(); return this; }
+    reset() { this.n = 0; this.bleeds = []; this._bgAt = -1; this._bgBad = false; this._cnStamped = false; this.targets = []; this.scroll = false; this.extraUsed = false; if (this.layersUsed) this.layersUsed.clear(); this.atlases.clear(); this.ramps.clear(); this.images.clear(); return this; }
     _grow(k) {
         if (this.n + k <= this.u.length) return;
         let len = this.u.length * 2;
@@ -128,6 +130,34 @@ class Recorder {
         new Uint32Array(nb).set(this.u.subarray(0, this.n));
         this.buf = nb; this.f = new Float32Array(nb); this.u = new Uint32Array(nb);
     }
+    /**
+     * Mark what follows, up to bgEnd(), as the page's background (sky, bands, waves: no text, no
+     * buttons). The full-screen layout draws it again, from screen x 0, under the HMI's back
+     * arrow column (display.js _bleed), so the page's art reaches the screen's left edge.
+     * edge: 'wrap' (the default: the page's right end continues to its left, as a 1600 px wide
+     * scrolling or plain background does), 'repeat' (its own left edge, again) or 'none'. A mark
+     * holding a clip, xf, clear, video or append is dropped (it would escape the column).
+     */
+    bgStart() { this._bgAt = this.n; this._bgBad = false; return this; }
+    bgEnd(edge) {
+        if (this._bgAt >= 0 && !this._bgBad && this.n > this._bgAt && edge !== 'none') this.bleeds.push([this._bgAt, this.n, edge === 'repeat' ? 'repeat' : 'wrap']);
+        this._bgAt = -1; this._bgBad = false;
+        return this;
+    }
+    /**
+     * draw(r): what shows left of the page instead (at negative x, in the page's own units), e.g. a
+     * picture's edge stretched; kept aside, drawn only under the back arrow column (not on the page).
+     */
+    bgEdge(draw) {
+        const at = this.n;
+        this._bgAt = at; this._bgBad = false;
+        try { draw(this); } finally {
+            if (!this._bgBad && this.n > at) this.bleeds.push([0, 0, 'own', this.u.slice(at, this.n)]);
+            this.n = at; this._bgAt = -1; this._bgBad = false;
+        }
+        return this;
+    }
+    _bgOff() { if (this._bgAt >= 0) this._bgBad = true; }
     /** the recorded words (a view, valid until the next draw call) */
     words() { return this.u.subarray(0, this.n); }
     /**
@@ -158,11 +188,12 @@ class Recorder {
      */
     video(id, x, y, w, h) {
         if (!(w > 0 && h > 0)) return this;
+        this._bgOff();
         this._grow(7); const f = this.f, i = this.n;
         this.u[i] = OP.VIDEO; f[i + 1] = x; f[i + 2] = y; f[i + 3] = w; f[i + 4] = h; f[i + 5] = 0; this.u[i + 6] = id >>> 0;
         this.n += 7; return this;
     }
-    clear(c) { this._grow(2); this.u[this.n++] = OP.CLEAR; this.u[this.n++] = pack(c || [0, 0, 0, 0]); return this; }
+    clear(c) { this._bgOff(); this._grow(2); this.u[this.n++] = OP.CLEAR; this.u[this.n++] = pack(c || [0, 0, 0, 0]); return this; }
 
     fillRect(x, y, w, h, c) {
         if (!(w > 0 && h > 0)) return this;
@@ -251,9 +282,10 @@ class Recorder {
      * Transform for what follows: device px = v * s + (ox, oy); xf() = back to the placement's.
      * Used by the display for the screen chrome (header, menu bar) drawn in screen pixels.
      */
-    xf(s, ox, oy) { this._grow(4); const f = this.f, i = this.n; this.u[i] = OP.XF; f[i + 1] = s || 0; f[i + 2] = ox || 0; f[i + 3] = oy || 0; this.n += 4; return this; }
+    xf(s, ox, oy) { this._bgOff(); this._grow(4); const f = this.f, i = this.n; this.u[i] = OP.XF; f[i + 1] = s || 0; f[i + 2] = ox || 0; f[i + 3] = oy || 0; this.n += 4; return this; }
     /** Append another recording (its fonts, ramps and layers come along). */
     append(r) {
+        this._bgOff();
         const w = r.words();
         this._grow(w.length); this.u.set(w, this.n); this.n += w.length;
         r.atlases.forEach((a) => this.atlases.add(a)); r.ramps.forEach((a) => this.ramps.add(a));
@@ -261,8 +293,8 @@ class Recorder {
         if (r.layersUsed) r.layersUsed.forEach((id) => (this.layersUsed || (this.layersUsed = new Set())).add(id));
         return this;
     }
-    clip(x, y, w, h) { this._grow(5); const f = this.f, i = this.n; this.u[i] = OP.CLIP; f[i + 1] = x; f[i + 2] = y; f[i + 3] = w; f[i + 4] = h; this.n += 5; return this; }
-    noclip() { this._grow(1); this.u[this.n++] = OP.NOCLIP; return this; }
+    clip(x, y, w, h) { this._bgOff(); this._grow(5); const f = this.f, i = this.n; this.u[i] = OP.CLIP; f[i + 1] = x; f[i + 2] = y; f[i + 3] = w; f[i + 4] = h; this.n += 5; return this; }
+    noclip() { this._bgOff(); this._grow(1); this.u[this.n++] = OP.NOCLIP; return this; }
 
     /** Text; y is the baseline. Returns the width in logical px (as canvas.js). */
     text(str, x, y, size, c, opts) {

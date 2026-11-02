@@ -10,7 +10,7 @@
  * The layer: one "effect" layer covering the "panel" target (1920 x 720), class "content" at z FC_Z (90, the
  * skins' place; they are paused), never exclusive, not contending (as the skins), never the alert class,
  * never 7702 / 7703. One asset: fcluster.png as r8 (1024 x 576; the renderer counts it twice, about 1.1 MiB
- * of its shared 16 MiB). Per frame only the uniforms that changed (u_val, u_gear, u_clock), PUSH_MS at most.
+ * of its shared 16 MiB). Per frame only the uniforms that changed (u_val, u_gear, u_clock, u_unit), PUSH_MS at most.
  *
  * Hidden (faded to stock over FADE_MS): closed, off, demo data, no speed signal, values older than LIVE_MS
  * while moving (shown again after RESHOW_MS of fresh values), G's Dash's loop older than STALE_MS, another
@@ -306,7 +306,7 @@ class FullCluster {
         const v = values(this.st), c = this.cur;
         if (!c.sent) c.sent = {};
         let n = 0;
-        ['u_val', 'u_gear', 'u_clock'].forEach((k) => {
+        ['u_val', 'u_gear', 'u_clock', 'u_unit'].forEach((k) => {
             const key = v[k].join(',');
             if (!all && c.sent[k] === key) return;
             c.sent[k] = key;

@@ -109,7 +109,7 @@ function temp(cv, t, x, y, w, h, label, v) {
     cv.blit(cardLayer(cv, 'plate', w, h, 14, 'plain'), x, y);
     const zg = L.tempGauge(v, ZONES_M, '#1c1f26', 0.32);
     cv.text(label, x + pad, y + 30, 16, '#9aa3b1', { font: TXT, spacing: 4, literal: true });
-    cv.text(isNum(v.f) ? Math.round(v.f) + '°F' : '--', x + w - pad - 6, y + 34, 28, zg.zone === 'ok' || !zg.zone ? '#f4f6f9' : zg.on, { align: 'right', font: NUM, literal: true });
+    cv.text(L.tempText(v), x + w - pad - 6, y + 34, 28, zg.zone === 'ok' || !zg.zone ? '#f4f6f9' : zg.on, { align: 'right', font: NUM, literal: true });
     const iw = w - 2 * pad, sw = (iw - gap * (n - 1) - K * bh) / n;
     for (let i = 0; i < n; i++) L.slant(cv, x + pad + i * (sw + gap), by, sw, bh, K, zg.seg((i + 0.5) / n));
     if (zg.zone) { const mx = x + pad + zg.pos * (iw - K * bh) + K * bh / 2; L.slant(cv, mx - 2, by - 4, 4, bh + 8, K, '#ffffff'); }

@@ -190,6 +190,11 @@ const zoneOfF = (z, f) => (f < z.cold ? 'cold' : f > z.hot ? 'hot' : 'ok');
 function tempZone(v) { return v && isNum(v.f) ? zoneOfF(zonesOf(v), v.f) : null; }
 /** Where v sits along its gauge's track, 0..1 (0 with no value). */
 function tempPos(v) { const z = zonesOf(v); return v && isNum(v.f) ? clamp((v.f - z.min) / (z.max - z.min), 0, 1) : 0; }
+/** 0.13.6: a temperature as shown - whole degrees in the Units page's unit (main.js: v.shown, v.unit; else °F) - and its unit */
+function tempNum(v) { return v && isNum(v.f) ? (isNum(v.shown) ? v.shown : Math.round(v.f)) : null; }
+function tempUnit(v) { return (v && v.unit) || '\u00b0F'; }
+/** '194°F' / '90°C', '--' with no value */
+function tempText(v) { return v && isNum(v.f) ? tempNum(v) + tempUnit(v) : '--'; }
 /** The zone at position p (0..1) along v's track. */
 function zoneAt(v, p) { const z = zonesOf(v); return zoneOfF(z, z.min + p * (z.max - z.min)); }
 /** The zone boundaries along v's track: [cold, hot] as 0..1. */
@@ -205,7 +210,7 @@ function tempGauge(v, cols, track, k) {
 }
 
 module.exports = {
-    TEMP_ZONES, ZONE_COLS, tempZone, tempPos, zoneAt, zoneMarks, tempGauge,
+    TEMP_ZONES, ZONE_COLS, tempZone, tempPos, tempNum, tempUnit, tempText, zoneAt, zoneMarks, tempGauge,
     modeTone, sessionTap, inkCentred,
     loadFonts, FAMILIES, gearText, num0, num1, num2, rpmText, clock, lights, LIGHTS, badge, badgeWidth,
     pt, tick, needle, slant, chamfer, chamferStroke, halfSquare, RAD, withAlpha, mix, clamp, isNum,

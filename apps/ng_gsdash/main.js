@@ -12,7 +12,7 @@
  *   - shift lights over the last 2000 rpm before your shift point, gear (from the gearbox, or learned
  *     from rpm / speed when the car sends none), rpm, speed, a live g-meter with session peaks
  *     (accel / brake / lateral), oil and coolant in colour zones (0.11.0, lib.js TEMP_ZONES: blue cold,
-     green normal, red too hot); always mph and degrees F
+ *     green normal, red too hot); mph, °F and psi unless Options > Units says km/h, °C, bar or kPa (0.13.6, units.js)
  *   - looks (setting "look", look_*.js): each its own layout, type, gauges and tab style -
  *     M Style (the default; 0.11.0: Carbon Grid), GT, Digital '84, Sim Racing, Lumen, Pixel (0.7.0). 0.9.0 took Simple, Heritage
  *     and Flight out: a saved one of those opens as M Style (migrated at start)
@@ -111,6 +111,7 @@ const FCL = require('./fcluster');
 const P = require('./px');
 const PREFS = require('./prefs');
 const CLOCK = require('./clock');
+const UNITS = require('./units');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
     require('./look_lumen'), require('./look_pixel')];
@@ -121,7 +122,14 @@ const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id 
 const MPH = 1.609344;
 const TRAIL_MS = 3000;
 const OIL_READY_F = 194, COOLANT_READY_F = 176, HYST_F = 4;
-const VERSION = '0.13.0';
+// the installed version (Options' top line): the package's own (source/package.json, one level up from
+// the app's scripts; app.json beside them in the dev tree); was a constant left at 0.13.0
+const VERSION = (() => {
+    for (const f of [path.join(__dirname, '..', 'package.json'), path.join(__dirname, 'app.json')]) {
+        try { const v = JSON.parse(fs.readFileSync(f, 'utf8')).version; if (v) return String(v); } catch (e) { /* not there */ }
+    }
+    return '';
+})();
 // Warm-up: the rev limit is COLD_RPM at or below COLD_F oil, rising (250 rpm steps) to WARM_REDLINE at
 // the "oil temp for full revs" setting. Auto-jump: AUTO_MS after READY it opens Drive.
 const COLD_RPM = 4000, COLD_F = 104, WARM_REDLINE = 6000, OIL_FULL_F = 180, AUTO_MS = 5000;
@@ -143,10 +151,12 @@ const GB_W = 108, GB_H = 76, HEAD_Y = 40, HEAD_H = 64, SET_Y = 118;
 const ENGINE = [
     ['redline', 'Redline', (v) => v + ' rpm'],
     ['shiftBefore', 'Shift point, before redline', (v) => (Number(v) ? v + ' rpm' : 'At redline')],
-    ['oilFullRevs', 'Oil temp for full revs', (v) => v + ' °F'],
-    ['oilReady', 'Oil ready', (v) => v + ' °F'],
-    ['coolantReady', 'Coolant ready', (v) => v + ' °F'],
+    ['oilFullRevs', 'Oil temp for full revs', (v) => UNITS.tempSetting(v, UNIT_PICK.temp)],
+    ['oilReady', 'Oil ready', (v) => UNITS.tempSetting(v, UNIT_PICK.temp)],
+    ['coolantReady', 'Coolant ready', (v) => UNITS.tempSetting(v, UNIT_PICK.temp)],
 ];
+// the units shown (Options > Units, 0.13.6; units.js): read once a frame; the values stay mph-from-km/h, °F and psi inside
+let UNIT_PICK = Object.assign({}, UNITS.DEFAULTS);
 const GSCALE = ['gScale', 'G-meter scale', (v) => Number(v).toFixed(1) + ' g'];
 // fixed since 0.6.0 (the setting went): the shift lights' Race colours
 const LIGHT_STYLE = 'f1';
@@ -302,7 +312,7 @@ mgu.run({
             hud.update({ on: !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: hudOn(), look: look().id, data: d, gear: L.gearText(d.gear, d.stage),
                 at: car.at || null, redline, shift: redline - (Number(settings.get('shiftBefore')) || 0) });
             // any gear, any speed; night: G's Dash has no day / night signal from the car (no look switches), so day
-            fcl.update({ on: !!open && fcTest, enabled: fcTest, data: d, speedAvail, at: car.at || null, night: false, clock: clock.now() });
+            fcl.update({ on: !!open && fcTest, enabled: fcTest, data: d, speedAvail, at: car.at || null, night: false, clock: clock.now(), units: UNITS.pick(settings) });
         };
         // the skins' live path (0.8.1): every speed / rpm / accel sample straight on, not at the loop's 10 fps
         car.onSample(() => {
@@ -440,20 +450,23 @@ mgu.run({
         function state(cv, t, reach) {
             const d = car.data(), now = Date.now();
             const redline = num('redline', 6500), shift = redline - (Number(settings.get('shiftBefore')) || 0);
-            const oil = toF(d.oil), cool = toF(d.coolant);
+            const oil = toF(d.oil), cool = toF(d.coolant), un = UNIT_PICK = UNITS.pick(settings);
             const oilThr = num('oilReady', OIL_READY_F), coolThr = num('coolantReady', COOLANT_READY_F);
             const strobe = L.isNum(d.rpm) && d.rpm >= shift;
             return {
                 t, own: !!cv.own, x: 12, y: cv.own ? BOX_OWN : BOX_STD, w: 1576, h: cv.own ? reach - BOX_OWN - 6 : BOX_H, now,
-                rpm: d.rpm, speed: speedOf(d.speed), unit: 'MPH', imperial: true, speedMax: 180,
+                // speed in the unit shown (unit: its label); mph: always mph, for what moves with the speed (backgrounds)
+                rpm: d.rpm, speed: UNITS.speed(d.speed, un.speed), mph: speedOf(d.speed), unit: UNITS.speedLabel(un.speed), imperial: un.speed === 'mph',
+                speedMax: un.speed === 'kmh' ? 290 : 180, units: un,
                 gear: d.gear, stage: d.stage, guessed: !!d.gearGuessed, gearText: L.gearText(d.gear, d.stage),
                 redline, shift, range: 2000, maxRpm: Math.ceil((redline + 500) / 1000) * 1000,
                 strobe, blink: Math.floor(now / 120) % 2 === 0, lightStyle: LIGHT_STYLE,
                 gLat: d.gLat, gLong: d.gLong, gMax: Number(settings.get('gScale')) || 1.5,
                 trail: trail.map((p) => [p[1], p[2]]),
-                peak: { acc: peak.acc, brk: peak.brk, lat: peak.lat, rpm: peak.rpm, speed: speedOf(peak.speed) },
-                oil: { f: oil, thr: oilThr, ok: warm('oil', oil, oilThr), kind: 'oil' },
-                cool: { f: cool, thr: coolThr, ok: warm('coolant', cool, coolThr), kind: 'coolant' },
+                peak: { acc: peak.acc, brk: peak.brk, lat: peak.lat, rpm: peak.rpm, speed: UNITS.speed(peak.speed, un.speed) },
+                // f: °F (the zones and thresholds); shown / unit: as the Units page says (°F or °C)
+                oil: { f: oil, thr: oilThr, ok: warm('oil', oil, oilThr), kind: 'oil', shown: UNITS.tempNum(oil, un.temp), unit: UNITS.tempUnit(un.temp) },
+                cool: { f: cool, thr: coolThr, ok: warm('coolant', cool, coolThr), kind: 'coolant', shown: UNITS.tempNum(cool, un.temp), unit: UNITS.tempUnit(un.temp) },
                 demo: false, session: now - since,
                 // a tap on a look's session clock (L.sessionTap): that clock back to 0:00 (the peaks stay), a flash
                 sessionTap: cv.own ? () => { since = Date.now(); sessionAt = since; log.info('session clock reset (tap)'); } : null,
@@ -500,7 +513,7 @@ mgu.run({
             return {
                 oil, cool, oilReady: S.oil.thr, coolReady: S.cool.thr, fullAt: fullRevsAt(), limit: revLimit(oil), ready,
                 oilEta: eta(oil, S.oil.thr), coolEta: cool === null ? 'No data' : cool >= S.cool.thr ? 'Ready' : 'Warming up',
-                auto: !!autoJump,
+                auto: !!autoJump, tu: S.units ? S.units.temp : 'f',
                 countdown: autoJump && autoJump.readyAt ? Math.max(0, Math.ceil((AUTO_MS - (Date.now() - autoJump.readyAt)) / 1000)) : 5,
             };
         }
@@ -521,7 +534,7 @@ mgu.run({
             };
         }
         function tireModel(S) {
-            const ty = S.d.tyres || null, now = Date.now(), M = { tires: {} };
+            const ty = S.d.tyres || null, now = Date.now(), M = { tires: {}, units: S.units || UNITS.DEFAULTS };
             [['fl', 'FLH'], ['fr', 'FRH'], ['rl', 'RLH'], ['rr', 'RRH']].forEach((w) => {
                 const g = (o) => (ty && o && L.isNum(o[w[1]]) ? o[w[1]] : null);
                 M.tires[w[0]] = { p: g(ty && ty.p), t: g(ty && ty.t), target: g(ty && ty.target) };
@@ -586,7 +599,7 @@ mgu.run({
             }
             lbl(title || 'Options', tx, cy + 11, 30, t.text);
             const dr = { x: S.x + S.w - DASH_W, y: by, w: DASH_W, h: HEAD_H };
-            lbl("G's Dash " + VERSION, dr.x - 24, cy + 7, 16, t.dim, { align: 'right' });
+            lbl("G's Dash" + (VERSION ? ' ' + VERSION : ''), dr.x - 24, cy + 7, 16, t.dim, { align: 'right' });
             dashButton(cv, t, lk, card, dr, isDown('dash'));
             cv.target(dr.x, dr.y, dr.w, dr.h, () => press(0, 'dash'), 'dash', u.radius);
         }
@@ -654,6 +667,13 @@ mgu.run({
                 cv.roundRect(cx - 5, cy - 24, 10, 34, 5, c); cv.circle(cx, cy + 14, 10, c); cv.circle(cx, cy + 14, 5, acc); cv.roundRect(cx - 2, cy - 6, 4, 18, 2, acc);
                 [-16, -8, 0].forEach((d) => cv.line(cx + 10, cy + d, cx + 17, cy + d, 2, c));
             } else if (kind === 'g') { cv.arc(cx, cy, 24, 26, 0, 360, c); cv.arc(cx, cy, 11, 13, 0, 360, c); cv.circle(cx + 8, cy - 6, 6, acc); }
+            else if (kind === 'units') {
+                // 0.13.6: a ruler (its ticks) under a two-way swap arrow
+                cv.strokeRoundRect(cx - 25, cy + 2, 50, 18, 3, 2.5, c);
+                [-15, -5, 5, 15].forEach((d, k) => cv.line(cx + d, cy + 2, cx + d, cy + (k % 2 ? 9 : 13), 2, c));
+                cv.line(cx - 20, cy - 16, cx + 20, cy - 16, 3, acc); cv.line(cx + 20, cy - 16, cx + 12, cy - 23, 3, acc);
+                cv.line(cx - 20, cy - 8, cx + 20, cy - 8, 3, acc); cv.line(cx - 20, cy - 8, cx - 12, cy - 1, 3, acc);
+            }
             else if (kind === 'spotify') [[-12, 30], [0, 44], [12, 22]].forEach((b) => cv.roundRect(cx + b[0] - 4, cy - b[1] / 2, 8, b[1], 4, c));
             else if (kind === 'diag') { cv.arc(cx, cy, 13, 15.5, 0, 360, c); cv.roundRect(cx - 1.5, cy - 7, 3, 9, 1.5, c); cv.circle(cx, cy + 6, 2, c); }
         }
@@ -671,8 +691,8 @@ mgu.run({
             cv.target(x, y, w, h, () => press(to, key), key, u.radius);
         }
         const displaysLine = () => ({ skin: 'Cluster dials', hud: 'HUD', none: 'Neither' })[displays()];
-        const engineLine = () => { const r = num('redline', 6500); return 'Redline ' + r + ' \u00b7 shift ' + (r - (Number(settings.get('shiftBefore')) || 0)) + ' rpm'; };
-        const gLine = () => 'Scale ' + (Number(settings.get('gScale')) || 1.5).toFixed(1) + ' g \u00b7 reset peaks';
+        // 0.13.6: and the G-meter (its tile went; the same Driving page)
+        const engineLine = () => { const r = num('redline', 6500); return 'Redline ' + r + ' \u00b7 shift ' + (r - (Number(settings.get('shiftBefore')) || 0)) + ' rpm \u00b7 G-meter ' + (Number(settings.get('gScale')) || 1.5).toFixed(1) + ' g'; };
         /** Something of ours in the cluster / HUD that should work does not: the renderer is missing or says no. */
         const clusterTrouble = () => {
             const bad = (v) => v.kind === 'none' || v.kind === 'error';
@@ -714,7 +734,8 @@ mgu.run({
             const rx = x0 + lw + gap, rw = S.x + S.w - rx, eh = 100, eg = 16, dh = 56;
             lbl('Driving', rx, S.y + 20, 18, t.dim);
             entry(cv, S, lk, rx, top, rw, eh, 'opt:engine', 'engine', 'Engine & warm-up', engineLine(), 6);
-            entry(cv, S, lk, rx, top + eh + eg, rw, eh, 'opt:g', 'g', 'G-meter & session', gLine(), 6);
+            // 0.13.6: Units where the G-meter tile was (its settings are on Driving, which Engine & warm-up opens)
+            entry(cv, S, lk, rx, top + eh + eg, rw, eh, 'opt:units', 'units', 'Units', UNITS.summary(UNIT_PICK), 7);
             const sy = top + 2 * (eh + eg) + 22, dy = bottom - dh;
             lbl('Music', rx, sy - 10, 18, t.dim);
             entry(cv, S, lk, rx, sy, rw, Math.min(eh, dy - 14 - sy), 'opt:spotify', 'spotify', 'Spotify', music.statusLine(), 2);
@@ -749,6 +770,38 @@ mgu.run({
          * Driving (0.10.0): Engine & warm-up (five stepped rows) and G-meter & session (the scale, the session
          * peaks' reset: tap twice).
          */
+        /**
+         * Units (0.13.6, Options > Units): speed, temperature, pressure - each a row of choices in the
+         * Showcase-shows style (the current one lit). Only what G's Dash shows changes: the zones and the
+         * Engine settings stay in °F, the car's values as they come.
+         */
+        function unitsPage(cv, S, lk) {
+            const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent;
+            header(cv, S, lk, lbl, card, 'Units', 1);
+            const top = S.y + 34, bw = 236, bh = 64, g = 14, rh = 112, un = UNIT_PICK = UNITS.pick(settings);
+            const ROWS = [['speed', 'Speed', { mph: 'Miles per hour', kmh: 'Kilometres per hour' }],
+                ['temp', 'Temperature', { f: 'Fahrenheit', c: 'Celsius' }],
+                ['press', 'Tire pressure', { psi: 'Pounds per sq in', bar: 'Bar', kpa: 'Kilopascals' }]];
+            ROWS.forEach((r, k) => {
+                const y = top + k * rh;
+                lbl(r[1], S.x, y + 6, 18, t.dim);
+                UNITS.CHOICES[r[0]].forEach((o, i) => {
+                    const ox = S.x + i * (bw + g), oy = y + 20, on = un[r[0]] === o[0];
+                    if (on) { cv.roundRect(ox, oy, bw, bh, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, oy, bw, bh, u.radius, 3, acc); } else card(cv, t, ox, oy, bw, bh, false);
+                    cv.text(fitText(cv, o[1], 24, bw - 28), ox + 16, oy + bh / 2 - 1, 24, on ? t.text : t.dim, { literal: true });
+                    cv.text(fitText(cv, r[2][o[0]], 15, bw - 28), ox + 16, oy + bh / 2 + 21, 15, t.dim, { literal: true });
+                    cv.target(ox, oy, bw, bh, () => {
+                        if (settings.get(UNITS.KEYS[r[0]]) !== o[0]) { settings.set(UNITS.KEYS[r[0]], o[0]); UNIT_PICK = UNITS.pick(settings); log.info('units: ' + UNITS.summary(UNIT_PICK)); }
+                    }, 'unit:' + r[0] + ':' + o[0], u.radius);
+                });
+            });
+            // what it covers, right of the choices
+            const nx = S.x + 3 * (bw + g) + 40, nw = S.x + S.w - nx;
+            lbl('Shown in', nx, top + 6, 18, t.dim);
+            ['Drive (every look), Warm-up, Tires', 'and the full-screen cluster test.', '',
+                'Warm-up zones and the Engine settings', 'keep their values; only the unit shown', 'changes. The cluster dials and the', "head unit's own settings list stay", 'in mph and \u00b0F.']
+                .forEach((l2, k) => { if (l2) cv.text(fitText(cv, l2, 17, nw), nx, top + 44 + k * 26, 17, t.dim, { literal: true }); });
+        }
         function drivingPage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk);
             header(cv, S, lk, lbl, card, 'Driving', 1);
@@ -1452,7 +1505,8 @@ mgu.run({
             const cv = ctx.canvas(1600, 520);
             const reach = cv.own ? G.pageBottom(cv) : 520;        // reading cv.extra: the page reaches lower on screen
             cv.clear(t.bg);
-            if (lk.background) lk.background(cv, t, reach);
+            // the look's background, marked: the full-screen layout carries it on under the back arrow column (0.13.6)
+            if (lk.background) G.background(cv, (c) => lk.background(c, t, reach));
             const S = state(cv, t, reach);
             G.frame(cv, t, cv.own ? [] : ["G's Dash"], 0, []);
             ownNow = !!cv.own;
@@ -1468,6 +1522,7 @@ mgu.run({
             else if (page === 5) themePage(cv, P, lk);
             else if (page === 3) diagPage(cv, P, lk);
             else if (page === 6) drivingPage(cv, P, lk);
+            else if (page === 7) unitsPage(cv, P, lk);
             else {
                 const id = HUB.SCREENS[scr][0];
                 // the G: the settings button, in the look's corner on Drive, bottom right elsewhere

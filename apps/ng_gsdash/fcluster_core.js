@@ -13,6 +13,7 @@
  *   u_val   speed mph, rpm / 1000, oil °F, coolant °F (rpm, oil, coolant -1: none, no needle / '--')
  *   u_gear  stage glyph (0 P, 1 R, 2 N, 3 D, -1 none), gear number (1-8, 0 none), drive mode (0-7, -1 none), night (0 / 1)
  *   u_clock hour (1-12), minute, valid (0 / 1)
+ *   u_unit  0.13.6 (Options > Units): km/h (u_val.x then km/h, a 0..320 dial), °C (labels, the oil line; the dials' scales stay °F)
  *   u_fresh the fail-safe (failsafe.js): the output's alpha
  * Node 8: no ?., ?? or object spread.
  */
@@ -36,6 +37,7 @@ const FRAG = [
     'uniform vec4 u_val;        // speed mph, rpm / 1000, oil F, coolant F (rpm, oil, coolant: -1 none)',
     'uniform vec4 u_gear;       // stage glyph (0 P 1 R 2 N 3 D 4 M 5 S, -1 none), gear number (1-8, 0 none), drive mode label (0-7, -1 none), night 0/1',
     'uniform vec3 u_clock;      // hour (1-12), minute, clock valid',
+    'uniform vec2 u_unit;       // 0.13.6 (Options > Units): x 1 km/h (u_val.x in km/h, the 0..320 dial), y 1 C (shown; the dials stay in F)',
     'uniform float u_fresh;     // the fail-safe: 1 shown, fades to 0 by itself if G\'s Dash stops (failsafe.js)',
     'const vec2 SZ = vec2(1920.0, 720.0);',
     'const vec2 ATL = vec2(1024.0, 576.0);',
@@ -51,7 +53,9 @@ const FRAG = [
     '}',
     '// one fixed-width character of the small digit row (0-9, 10 \':\', 11 deg, 12 F)',
     'float digit(vec2 q, vec2 at, float k) { return k < 0.0 ? 0.0 : glyph(q - at + vec2(20.0, 28.0), vec2(k * 40.0, 400.0), vec2(40.0, 56.0)); }',
-    'float label(vec2 q, vec2 at, float k) { return k < 0.0 ? 0.0 : glyph(q - at + vec2(128.0, 20.0), vec2(mod(k, 4.0) * 256.0, 456.0 + floor(k / 4.0) * 40.0), vec2(256.0, 40.0)); }',
+    '// labels 0-11 in the label rows; 0.13.6: 12 KM/H, 13 OIL C, 14 COOLANT C where the atlas was free',
+    'vec2 labAt(float k) { return k > 13.5 ? vec2(768.0, 408.0) : k > 11.5 ? vec2(672.0, 320.0 + (k - 12.0) * 40.0) : vec2(mod(k, 4.0) * 256.0, 456.0 + floor(k / 4.0) * 40.0); }',
+    'float label(vec2 q, vec2 at, float k) { return k < 0.0 ? 0.0 : glyph(q - at + vec2(128.0, 20.0), labAt(k), vec2(256.0, 40.0)); }',
     'float big(vec2 q, vec2 at, float k) { return k < 0.0 ? 0.0 : glyph(q - at + vec2(48.0, 68.0), vec2(mod(k, 7.0) * 96.0, 128.0 + floor(k / 7.0) * 136.0), vec2(96.0, 136.0)); }',
     'float aa(float d) { return clamp(d + 0.5, 0.0, 1.0); }',
     '// a tapered bar along direction d from the origin: from r0 to r1, half widths w0 at r0 to w1 at r1',
@@ -70,7 +74,7 @@ const FRAG = [
     '    return mix(c, c * vec3(0.20, 0.13, 0.08), night);            // night: dim, warm',
     '}',
     '',
-    '// one main dial at c: vmax its full scale, val its needle, red its red zone start, row its numeral row (0 speed, 1 rpm)',
+    '// one main dial at c: vmax its full scale, val its needle, red its red zone start, row its numeral row (0 speed, 1 rpm, 2 km/h)',
     'vec3 dial(vec3 col, vec2 q, vec2 c, float vmax, float val, float red, float row, float night, vec3 ink, vec3 ndl) {',
     '    vec2 p = q - c; float r = length(p);',
     '    if (r > 318.0) return col;',
@@ -109,10 +113,11 @@ const FRAG = [
     '    float m = clamp(floor(t * 8.0 + 0.5), 0.0, 8.0);',
     '    float ma = A0 + m / 8.0 * (A1 - A0);',
     '    vec2 lc = c + dirOf(ma) * (204.0 - 26.0 * abs(sin(ma)));',
-    '    float g = glyph(q - lc + vec2(56.0, 32.0), vec2(m * 112.0, row * 64.0), vec2(112.0, 64.0));',
+    '    vec2 no = row > 1.5 ? vec2(672.0 + mod(m, 3.0) * 112.0, 128.0 + floor(m / 3.0) * 64.0) : vec2(m * 112.0, row * 64.0);',
+    '    float g = glyph(q - lc + vec2(56.0, 32.0), no, vec2(112.0, 64.0));',
     '    col = mix(col, ink, g);',
     '    // the unit under the hub',
-    '    col = mix(col, ink * 0.8, label(q, c + vec2(0.0, 100.0), row));',
+    '    col = mix(col, ink * 0.8, label(q, c + vec2(0.0, 100.0), row > 1.5 ? 12.0 : row));',
     '    // needle (none without a value): shadow, glow (night), body with a lighter spine',
     '    if (val >= 0.0) {',
     '    float na = A0 + clamp(val / vmax, 0.0, 1.025) * (A1 - A0);',
@@ -199,10 +204,11 @@ const FRAG = [
     '            col = mix(col, txt, tg);',
     '        }',
     '        // oil temperature line',
-    '        float oil = floor(u_val.z + 0.5), o1 = floor(oil / 100.0), o2 = floor((oil - o1 * 100.0) / 10.0), o3 = oil - o1 * 100.0 - o2 * 10.0;',
+    '        float oilC = u_unit.y > 0.5 ? (u_val.z - 32.0) * 5.0 / 9.0 : u_val.z, neg = step(oilC, -0.5);',
+    '        float oil = floor(abs(oilC) + 0.5), o1 = floor(oil / 100.0), o2 = floor((oil - o1 * 100.0) / 10.0), o3 = oil - o1 * 100.0 - o2 * 10.0;',
     '        float og = 0.0;',
     '        if (u_val.z >= 0.0) {',
-    '            og = max(og, digit(q, vec2(978.0, 528.0), o1 > 0.0 ? o1 : -1.0));',
+    '            og = max(og, digit(q, vec2(978.0, 528.0), neg > 0.5 ? 14.0 : o1 > 0.0 ? o1 : -1.0));',
     '            og = max(og, digit(q, vec2(1004.0, 528.0), o2));',
     '            og = max(og, digit(q, vec2(1030.0, 528.0), o3));',
     '        } else {',
@@ -210,12 +216,12 @@ const FRAG = [
     '            og = max(og, digit(q, vec2(1030.0, 528.0), 14.0));',
     '        }',
     '        col = mix(col, txt * 0.9, og);',
-    '        col = mix(col, ink * 0.7, label(q, vec2(918.0, 528.0), 2.0));',
+    '        col = mix(col, ink * 0.7, label(q, vec2(918.0, 528.0), u_unit.y > 0.5 ? 13.0 : 2.0));',
     '    }',
-    '    col = dial(col, q, CL, 160.0, u_val.x, 0.0, 0.0, night, ink, ndl);',
+    '    col = dial(col, q, CL, u_unit.x > 0.5 ? 320.0 : 160.0, u_val.x, 0.0, u_unit.x > 0.5 ? 2.0 : 0.0, night, ink, ndl);',
     '    col = dial(col, q, CR, 8.0, u_val.y, REDLINE, 1.0, night, ink, ndl);',
-    '    col = subdial(col, q, CL + vec2(0.0, 236.0), 120.0, 260.0, 235.0, u_val.w, 3.0, night, ink, ndl);',
-    '    col = subdial(col, q, CR + vec2(0.0, 236.0), 120.0, 320.0, 290.0, u_val.z, 2.0, night, ink, ndl);',
+    '    col = subdial(col, q, CL + vec2(0.0, 236.0), 120.0, 260.0, 235.0, u_val.w, u_unit.y > 0.5 ? 14.0 : 3.0, night, ink, ndl);',
+    '    col = subdial(col, q, CR + vec2(0.0, 236.0), 120.0, 320.0, 290.0, u_val.z, u_unit.y > 0.5 ? 13.0 : 2.0, night, ink, ndl);',
     '    gl_FragColor = vec4(col, clamp(u_fresh, 0.0, 1.0));',
     '}'
 ].join('\n') + '\n';
@@ -241,13 +247,15 @@ const modeOf = (label) => MODES.indexOf(label);
 
 /**
  * The uniforms from { data (car.data(), km/h and °C), mph (the speed as shown, else from data), night, clock ({ time: 'H:MM' }) }
- * -> { u_val, u_gear, u_clock } (arrays, rounded so a repeat compares equal)
+ * -> { u_val, u_gear, u_clock, u_unit } (arrays, rounded so a repeat compares equal)
  */
 function values(s) {
     const d = (s && s.data) || {};
     const toF = (c) => (isNum(c) ? c * 9 / 5 + 32 : -1);
     // the speed as the car shows it (mph from main.js / the skins' correction), else plain km/h -> mph
     const mph = Math.max(0, Math.min(170, isNum(s && s.mph) ? s.mph : isNum(d.speed) ? d.speed / KMH_PER_MPH : 0));
+    // 0.13.6: Options > Units (s.units { speed, temp }): km/h on a 0..320 dial; °C on the labels and the oil line
+    const un = (s && s.units) || {}, kmh = un.speed === 'kmh' ? 1 : 0, cel = un.temp === 'c' ? 1 : 0;
     const rpm = isNum(d.rpm) ? Math.max(0, Math.min(8.3, d.rpm / 1000)) : -1;
     const oil = toF(d.oil), cool = toF(d.coolant);
     const g = gearOf(d);
@@ -256,9 +264,10 @@ function values(s) {
     if (c) { h = +c[1]; m = +c[2]; ok = h >= 1 && h <= 12 && m <= 59 ? 1 : 0; }
     const r1 = (v) => Math.round(v * 10) / 10, r2 = (v) => Math.round(v * 100) / 100;
     return {
-        u_val: [r1(mph), r2(rpm), oil < 0 ? -1 : Math.round(oil), cool < 0 ? -1 : Math.round(cool)],
+        u_val: [r1(kmh ? Math.min(340, mph * KMH_PER_MPH) : mph), r2(rpm), oil < 0 ? -1 : Math.round(oil), cool < 0 ? -1 : Math.round(cool)],
         u_gear: [g.stage, g.n, modeOf(d.driveMode || null), s && s.night ? 1 : 0],
         u_clock: ok ? [h, m, 1] : [0, 0, 0],
+        u_unit: [kmh, cel],
     };
 }
 /** fcluster.png's pixels as one byte a pixel (the red channel of the decoded image) */

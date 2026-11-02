@@ -132,6 +132,19 @@ function box(cv, t, x, y, w, h, title) {
  * The page's content bottom: BOTTOM, plus the room the screen has below the page (cv.extra: where the kit
  * runs the screen with no bar under the page, else 0). Reading it places the page as one that reaches down.
  */
+/**
+ * draw(cv): the page's background (no text, no buttons), marked so the full-screen layout also
+ * shows it left of the page, under the HMI's back arrow column (record.js bgStart). edge: 'wrap'
+ * (default), 'repeat', or edge(cv): drawn instead, left of the page only (at negative x; record.js
+ * bgEdge). On a surface without marks (canvas.js) it is just drawn.
+ */
+function background(cv, draw, edge) {
+    if (typeof cv.bgStart !== 'function') { draw(cv); return; }
+    const own = typeof edge === 'function';
+    cv.bgStart();
+    try { draw(cv); } finally { cv.bgEnd(own ? 'none' : edge); }
+    if (own) cv.bgEdge(edge);
+}
 function pageBottom(cv) { return BOTTOM + (cv.extra || 0); }
 /** px between a panel's bottom and its last line (the lowest drawn pixel): the same in every panel. */
 const MARGIN = 22;
@@ -855,7 +868,7 @@ function stripes(cv, t, x, y, w) {
 }
 
 module.exports = {
-    BAR_H, TOP, BOTTOM, pageBottom, MARGIN, toMargin, frame, header, layer, onLayerDrop, panel, segBar, radial, needle, ring, bar, stat, readout,
+    BAR_H, TOP, BOTTOM, pageBottom, background, MARGIN, toMargin, frame, header, layer, onLayerDrop, panel, segBar, radial, needle, ring, bar, stat, readout,
     shiftLights, gear, chart, table, pill, tyres, gmeter, menuBar, stripes, button, onConfirm, smooth, hold, niceStep,
     fmt, isNum, clamp, mix, zoneColor, withAlpha, ramp,
 };

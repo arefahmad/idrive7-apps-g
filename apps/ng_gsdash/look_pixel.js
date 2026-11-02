@@ -60,8 +60,7 @@ function background(cv, t, reach) {
         // banded sky (hard steps, no smooth gradient: the 16-bit way)
         const bands = [SKY0, '#100d2e', '#151137', '#1a1441', '#20184b', '#271c54'];
         bands.forEach((b, i) => c.fillRect(0, Math.round(reach * i / bands.length), 1600, Math.ceil(reach / bands.length) + 1, b));
-        // the screen's edges: a stepped dark border (BMW's vignette)
-        [[0, 0.5], [12, 0.3], [24, 0.15]].forEach((v) => c.fillRect(v[0], 0, 12, reach, withAlpha('#000000', v[1])));
+        // (0.13.6: no dark left border any more: the sky carries on to the screen's edge, under the back arrow column)
     }), 0, 0);
 }
 const STARS = [];
@@ -77,7 +76,7 @@ function moon(cv) {
 }
 function sky(cv, S, reach) {
     const now = S.now, dt = ST.at ? clamp((now - ST.at) / 1000, 0, 0.1) : 0; ST.at = now;
-    const v = isNum(S.speed) ? S.speed : 0;
+    const v = isNum(S.mph) ? S.mph : isNum(S.speed) ? S.speed : 0;   // mph, whatever the unit shown (0.13.6)
     ST.scroll[0] += dt * (4 + v * 0.6); ST.scroll[1] += dt * (10 + v * 2.2);
     // stars: a blink every so often (on / dim / off in 4 px steps)
     STARS.forEach((s) => {
@@ -173,7 +172,7 @@ const ZONE_TAG = { cold: 'COLD', ok: 'OK', hot: 'HOT' };
 function stat(cv, S, x, y, w, label, v) {
     const n = 12, zg = L.tempGauge(v, ZONES_PX, '#1d1a40', 0.3), c = zg.on;
     ptxt(cv, label, x, y, 3, DIM);
-    const val = isNum(v.f) ? Math.round(v.f) + '°F' : '--';
+    const val = L.tempText(v);
     ptxt(cv, val, x + w, y - 4, 4, !c ? DIM : zg.zone === 'ok' ? WHITE : c, { align: 'right' });
     const by = y + 34, gap = 4, bw = Math.floor((w - gap * (n - 1)) / n);
     for (let i = 0; i < n; i++) {
@@ -230,7 +229,7 @@ module.exports = {
 
     draw(cv, S) {
         const x0 = S.x, top = S.y, bottom = S.y + S.h, reach = bottom + 6;
-        sky(cv, S, reach);
+        G.background(cv, (c) => sky(c, S, reach));        // (wraps at 1600: it carries on left of the page)
         moon(cv);
         // ---- top row: the emblem (the "player"), the heart and the health bar, the hi-score
         const em = emblemNow(S), u = 4;
@@ -268,12 +267,12 @@ module.exports = {
         const cx = x0 + 670, su = clamp(Math.floor((S.h - 333) / 7), 15, 21), my = top + 124 + 7 * su + 22;
         const sp = isNum(S.speed) ? String(Math.round(S.speed)) : '--';
         ptxt(cv, sp, cx, top + 124, su, WHITE, { align: 'center' });
-        ptxt(cv, 'MPH', cx, my, 5, CYAN, { align: 'center' });
+        ptxt(cv, S.unit || 'MPH', cx, my, 5, CYAN, { align: 'center' });
         const ry = Math.min(top + 124 + 7 * su + 80, by - 54);
         // the favourite looks' tap zones (main.js): the speed with its unit, the gear's item box
         S.zones = {
             speed: { x: cx - 260, y: top + 116, w: 520, h: my + 35 + 8 - (top + 116) }, gear: { x: gx, y: gy, w: gw, h: gh },
-            toast: { x: cx, y: my + 44 }, chip: { x: gx + gw - 30, y: gy + gh - 30 }, star: { x: cx + P.width('MPH', 5) / 2 + 22, y: my + 17 },
+            toast: { x: cx, y: my + 44 }, chip: { x: gx + gw - 30, y: gy + gh - 30 }, star: { x: cx + P.width(S.unit || 'MPH', 5) / 2 + 22, y: my + 17 },
         };
         const rt = isNum(S.rpm) ? String(Math.round(S.rpm / 10) * 10) : '----';
         const rw = P.width(rt, 6) + 20 + P.width('RPM', 4);

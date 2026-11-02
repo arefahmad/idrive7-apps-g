@@ -45,7 +45,6 @@ function background(cv, t, reach) {
         c.gradientRect(0, 0, 1600, reach, [[0, BG1], [0.55, '#060a17'], [1, BG0]]);
         // a soft pool of light behind the ring, the edges darker (the screen's own vignette)
         for (let i = 9; i >= 1; i--) c.circle(662, reach / 2 + 20, 60 + i * 52, withAlpha('#1d3a8a', 0.018));
-        c.gradientRect(0, 0, 90, reach, [[0, withAlpha('#000000', 0.55)], [1, withAlpha('#000000', 0)]]);
         c.gradientRect(0, reach - 70, 1600, 70, [[0, withAlpha('#000000', 0)], [1, withAlpha('#000000', 0.45)]]);
         // a fine horizon line through the ring's centre
         c.gradientRect(0, reach / 2 + 26, 1600, 1, [[0, withAlpha(ICE, 0)], [0.4, withAlpha(ICE, 0.10)], [0.6, withAlpha(ICE, 0.10)], [1, withAlpha(ICE, 0)]]);
@@ -55,7 +54,7 @@ function background(cv, t, reach) {
 /** The drifting dust (parallax): far = small and slow, near = larger, faster, with a halo. */
 function dust(cv, S, reach) {
     const now = S.now, dt = ST.at ? clamp((now - ST.at) / 1000, 0, 0.1) : 0; ST.at = now;
-    const v = isNum(S.speed) ? S.speed : 0;
+    const v = isNum(S.mph) ? S.mph : isNum(S.speed) ? S.speed : 0;   // mph, whatever the unit shown (0.13.6)
     ST.off[0] += dt * (6 + v * 0.9); ST.off[1] += dt * (14 + v * 2.6);
     const lean = isNum(S.gLat) ? clamp(S.gLat, -1.2, 1.2) : 0;
     DUST.forEach((d) => {
@@ -146,7 +145,7 @@ const ZONES_LU = { cold: BLUE, ok: '#43e6a0', hot: '#ff4d5e' };
 function tempLine(cv, S, x, y, w, label, v) {
     const zg = L.tempGauge(v, ZONES_LU, '#141c33', 0.38), mk = L.zoneMarks(v), c = zg.on;
     cv.text(label, x, y, 15, DIM, { font: TXT, spacing: 4, literal: true });
-    cv.text(isNum(v.f) ? Math.round(v.f) + '°F' : '--', x + w, y + 2, 24, !c ? DIM : zg.zone === 'ok' ? WHITE : c, { align: 'right', font: NUM, literal: true });
+    cv.text(L.tempText(v), x + w, y + 2, 24, !c ? DIM : zg.zone === 'ok' ? WHITE : c, { align: 'right', font: NUM, literal: true });
     [[0, mk[0], 'cold'], [mk[0], mk[1], 'ok'], [mk[1], 1, 'hot']].forEach((z, i) => {
         const a = x + w * z[0] + (i ? 2 : 0), b = x + w * z[1] - (i < 2 ? 2 : 0);
         cv.roundRect(a, y + 14, b - a, 4, 2, L.mix('#141c33', zg.C[z[2]], 0.38));
@@ -210,7 +209,7 @@ module.exports = {
 
     draw(cv, S) {
         const g = geo(S), reach = S.y + S.h + 6, lean = isNum(S.gLat) ? clamp(G.smooth('gs-lu-lean', S.gLat, 4), -1.2, 1.2) : 0;
-        dust(cv, S, reach);
+        G.background(cv, (c) => dust(c, S, reach));       // (wraps at 1600: it carries on left of the page)
         const cx = g.cx - lean * 8, cy = g.cy, R = g.R;
         ringBase(cv, S, cx, cy, R);
         ringLive(cv, S, cx, cy, R);
@@ -218,7 +217,7 @@ module.exports = {
         // inside: the speed (the hero), its unit, the rpm
         const sp = isNum(S.speed) ? String(Math.round(S.speed)) : '--', tx = cx - lean * 3;
         cv.text(sp, tx, cy + 44, 156, WHITE, { align: 'center', font: NUM, literal: true });
-        cv.text('MPH', tx, cy + 82, 17, DIM, { align: 'center', font: TXT, spacing: 8, literal: true });
+        cv.text(S.unit || 'MPH', tx, cy + 82, 17, DIM, { align: 'center', font: TXT, spacing: 8, literal: true });
         cv.text(L.rpmText(S.rpm), tx, cy - 92, 30, S.strobe ? RED : S.rpm >= S.shift - S.range ? AMBER : ICE, { align: 'center', font: NUM, literal: true });
         cv.text('RPM', tx, cy - 70, 13, DIM, { align: 'center', font: TXT, spacing: 6, literal: true });
         // the drive mode: in the ring's open bottom
@@ -242,7 +241,7 @@ module.exports = {
         cv.text(S.gearText, gx + gw / 2, gy + gh / 2 + gs * 0.40, gs, withAlpha(gcol, 0.10), { align: 'center', font: GEAR, literal: true });
         cv.text(S.gearText, gx + gw / 2, gy + gh / 2 + gs * 0.36, gs, gcol, { align: 'center', font: GEAR, literal: true });
         // the favourite looks' tap zones (main.js): the speed inside the ring (under the rpm), the gear capsule
-        const uw = cv.textWidth('MPH', 17, { font: TXT, spacing: 8, literal: true });
+        const uw = cv.textWidth(S.unit || 'MPH', 17, { font: TXT, spacing: 8, literal: true });
         S.zones = {
             speed: { x: tx - 170, y: cy - 60, w: 340, h: 152 }, gear: { x: gx, y: gy, w: gw, h: gh },
             toast: { x: tx, y: cy + 96 }, chip: { x: gx + gw - 26, y: gy + gh - 24 }, star: { x: tx + uw / 2 + 18, y: cy + 76 },

@@ -65,7 +65,11 @@ const HMI = {
     title: { x: 104, size: 40, k: 1.465, pad: 24 },
     left: 84,                                   // the HMI's back arrow column (x 0..84): kept see-through
     barTop: 596,                                // top of the HMI's own button bar (its 2 px edge line; body from 600)
-    colEnd: 530,                                // the back arrow column shows the HMI down to here (home, back arrow)
+    colEnd: 530,                                // the HMI's black back arrow column reaches down to here (home, back arrow)
+    // its back arrow: kept see-through (from car photos: the arrow's middle at about y 392, some
+    // 40 px tall; with room around it). The rest of the column, below the title strip, shows the
+    // page's background (Recorder.bgStart), no longer the HMI's black column
+    back: { y: 340, h: 104 },
     headBg: '#000000',                          // the HMI's title / status strip
     status: { x: 1340, h: 76 },                 // status icons top right (notifications .. clock)
 };
@@ -290,7 +294,7 @@ class Display {
         this.app = {
             name: L.name, softImage: L.softImage, w: r.w, h: r.h, textScale: sc, words: new Uint32Array(r.words()),
             atlases: new Set(r.atlases), ramps: new Set(r.ramps), layersUsed: new Set(r.layersUsed || []), images: new Set(r.images || []),
-            tabs: this.tabInfo || { tabs: [], sel: -1, badges: [] }, reaches: r.extraUsed,
+            tabs: this.tabInfo || { tabs: [], sel: -1, badges: [] }, reaches: r.extraUsed, bleeds: (r.bleeds || []).slice(),
         };
         this._send(L.name, this._compose(), L.softImage, false);
         this._claimTabs(this.chromeRec.tabRects, null);
@@ -639,7 +643,7 @@ class Display {
             if (r.chrome) this.saved = Object.assign({}, this.saved || {}, {
                 name, softImage, w: r.w, h: r.h, textScale: r.textScale, words: new Uint32Array(r.words()),
                 atlases: new Set(r.atlases), ramps: new Set(r.ramps), layersUsed: new Set(r.layersUsed || []), images: new Set(r.images || []), tabs: r.chrome.tabs,
-                reaches: r.extraUsed,
+                reaches: r.extraUsed, bleeds: (r.bleeds || []).slice(),
             });
             return Promise.resolve();
         }
@@ -659,7 +663,7 @@ class Display {
                 this.app = {
                     name, softImage, w: r.w, h: r.h, textScale: r.textScale, words: new Uint32Array(r.words()),
                     atlases: new Set(r.atlases), ramps: new Set(r.ramps), layersUsed: new Set(r.layersUsed || []), images: new Set(r.images || []), tabs: r.chrome.tabs,
-                    reaches: r.extraUsed,
+                    reaches: r.extraUsed, bleeds: (r.bleeds || []).slice(),
                 };
                 out = this._compose();
             } else { this.app = null; this._reach(r.extraUsed); }
@@ -821,9 +825,41 @@ class Display {
         // the column under them is covered, so the HMI's own bar doesn't show at the bottom left, nor the
         // mark the HMI draws above it when its bar is wider than the screen (eDrive's "Reset drive totals")
         c.clip(sx, 0, W - sx, HMI.status.h).clear(0).noclip();
-        if (hx > 0) c.clip(0, 0, hx, HMI.colEnd - pl.y).clear(0).noclip();
+        // of the column: the home button's strip and the back arrow (the rest shows the page's background)
+        if (hx > 0) { c.clip(0, 0, hx, FULL.headH - pl.y).clear(0).noclip(); c.clip(0, HMI.back.y - pl.y, hx, HMI.back.h).clear(0).noclip(); }
         drawCredit(c, W - 18, FULL.headH + 17);
-        r.xf(1, 0, 0).append(c).xf();
+        r.xf(1, 0, 0);
+        this._bleed(r, FULL.headH - pl.y, H);
+        r.append(c).xf();
+    }
+
+    /**
+     * The page's background (its marked words, Recorder.bgStart) again left of the page, from screen x 0
+     * to the page's left edge (pl.ox), rows y0..y1: drawn under the page's own scale, its right end
+     * ('wrap') or its left edge ('repeat') continuing it, or the app's own edge ('own', bgEdge), in order.
+     * The same words and layers (nothing new kept);
+     * clipped to the column (the renderer clips before shading: a few pixels' work). Called in screen px
+     * (xf(1, 0, 0)); leaves that transform on.
+     */
+    _bleed(r, y0, y1) {
+        const pl = this.place, a = this.app, bl = a && a.bleeds;
+        const x1 = Math.min(pl.ox, HMI.left - pl.x);
+        if (!bl || !bl.length || !(x1 > 0) || !(y1 > y0)) return;
+        const n = a.words.length;
+        r.clip(0, y0, x1, y1 - y0);
+        for (const [from, to, edge, own] of bl) {
+            if (edge === 'own') {
+                // the app's own edge (Recorder.bgEdge), in the page's units at negative x
+                if (!own || !own.length) continue;
+                r.xf(pl.scale, pl.ox, pl.oy).alpha(1);
+                r._grow(own.length); r.u.set(own, r.n); r.n += own.length;
+                continue;
+            }
+            if (!(from >= 0 && to <= n && to > from)) continue;
+            r.xf(pl.scale, edge === 'repeat' ? 0 : pl.ox - a.w * pl.scale, pl.oy).alpha(1);
+            r._grow(to - from); r.u.copyWithin(r.n, from, to); r.n += to - from;
+        }
+        r.alpha(1).noclip().xf(1, 0, 0);
     }
 
     /** A bar button's text changed (ui.text): its width, and so the bar's layout, follow. */

@@ -1229,7 +1229,7 @@ mgu.run({
         function drawEdit(cv, t, A) {
             const s = store.get(edit.id);
             if (!s) { edit = null; return; }
-            cv.fillRect(0, 0, 1600, 520 + (cv.extra || 0), '#000000a0');
+            G.background(cv, (c) => c.fillRect(0, 0, 1600, 520 + (cv.extra || 0), '#000000a0'));    // (the dim carries on under the back arrow column)
             const w = 760, h = 300, x = 800 - w / 2, y = Math.round((A.y + A.bottom - h) / 2);
             cv.roundRect(x, y, w, h, 20, t.panelBottom || '#15151a');
             cv.strokeRoundRect(x, y, w, h, 20, 2, G.withAlpha('#ffffff', 0.2));

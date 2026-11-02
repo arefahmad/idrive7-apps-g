@@ -71,7 +71,7 @@ const ZONES_D = { cold: '#3fb4ff', ok: '#4af28a', hot: RED };
 function fluid(cv, x, y, w, label, v) {
     const n = 20, gap = 4, bw = (w - gap * (n - 1)) / n, zg = L.tempGauge(v, ZONES_D, '#0b1513', 0.3);
     cv.text(label, x, y - 16, 20, DIMV, { font: TXT, literal: true });
-    seg(cv, isNum(v.f) ? pad(String(Math.round(v.f)), 3) : '!--', x + w, y - 12, 38, zg.on || DIMV);
+    seg(cv, isNum(v.f) ? pad(String(L.tempNum(v)), 3) : '!--', x + w, y - 12, 38, zg.on || DIMV);
     for (let i = 0; i < n; i++) cv.fillRect(x + i * (bw + gap), y, bw, 18, zg.seg((i + 0.5) / n));
     if (zg.zone) cv.fillRect(x + zg.pos * w - 1.5, y - 4, 3, 26, '#e8fff8');
 }
@@ -155,7 +155,9 @@ module.exports = {
         // rpm as digits, oil, coolant
         // (the bottom-right corner is the G's: rpm sits beside the fluids)
         const by = S.y + S.h - 28;
-        fluid(cv, x0 + 40, by, 380, 'OIL F', S.oil); fluid(cv, x0 + 40 + 400 + 20, by, 380, 'H2O F', S.cool);
+        // the unit without its degree sign (the segment font has none): F / C (Options > Units, 0.13.6)
+        const du = (v) => L.tempUnit(v).replace('\u00b0', '');
+        fluid(cv, x0 + 40, by, 380, 'OIL ' + du(S.oil), S.oil); fluid(cv, x0 + 40 + 400 + 20, by, 380, 'H2O ' + du(S.cool), S.cool);
         cv.text('RPM', x0 + 900, by - 16, 20, DIMV, { font: TXT, literal: true });
         seg(cv, isNum(S.rpm) ? pad(String(Math.round(S.rpm / 10) * 10), 4) : '!---', x0 + 1210, by + 18, 44, S.strobe ? RED : VFD);
         cv.fillRect(x0 + 40, y0 + 168 + ex * 0.25, 1496, 1, withAlpha(VFD, 0.12));

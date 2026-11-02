@@ -9,6 +9,7 @@
 const L = require('./lib');
 const G = require('./kit/gauges');
 const CLOCK = require('./clock');
+const U = require('./units');
 const { withAlpha, isNum } = L;
 
 // left to right as the swipe goes; the app opens on HOME (Drive), second: Showcase is a swipe right of it
@@ -103,11 +104,12 @@ function tempArc(cv, st, cx, cy, r, g) {
     // the ready mark: a tick across the track and its temperature outside
     const am = (A0 + SPAN * f(g.ready)) * Math.PI / 180, sx = Math.sin(am), sy = -Math.cos(am);
     cv.line(cx + sx * (r - th - 8), cy + sy * (r - th - 8), cx + sx * (r + 10), cy + sy * (r + 10), 4, ready ? GREEN : t.text);
-    st.num(cv, String(g.ready), cx + sx * (r + 34), cy + sy * (r + 34) + 8, 20, t.dim, { align: sx > 0.2 ? 'left' : sx < -0.2 ? 'right' : 'center' });
+    const tu = g.tu || 'f';   // the arc and its zones stay in °F; what is printed: the Units page's unit (0.13.6)
+    st.num(cv, String(U.tempNum(g.ready, tu)), cx + sx * (r + 34), cy + sy * (r + 34) + 8, 20, t.dim, { align: sx > 0.2 ? 'left' : sx < -0.2 ? 'right' : 'center' });
     // centre: the temperature, label, state
-    const big = Math.round(r * 0.62), s = isNum(v) ? String(Math.round(v)) : '--', w = st.numW(cv, s, big);
+    const big = Math.round(r * 0.62), s = isNum(v) ? String(U.tempNum(v, tu)) : '--', w = st.numW(cv, s, big);
     st.num(cv, s, cx - 12, cy + big * 0.30, big, isNum(v) ? t.text : t.dim, { align: 'center' });
-    st.num(cv, '°F', cx - 12 + w / 2 + 6, cy + big * 0.30 - big * 0.42, 26, t.dim);
+    st.num(cv, U.tempUnit(tu), cx - 12 + w / 2 + 6, cy + big * 0.30 - big * 0.42, 26, t.dim);
     st.txt(cv, g.label, cx, cy - big * 0.52, 20, t.dim, { align: 'center' });
     const stt = ready ? 'Ready' : g.eta;
     if (stt) st.txt(cv, stt, cx, cy + r * 0.62, 18, ready ? GREEN : isNum(v) ? t.warn : t.dim, { align: 'center' });
@@ -145,7 +147,7 @@ function revLimit(cv, st, x, y, w, M, S) {
     const rx = x + (red / max) * w - gap / 2;
     cv.fillRect(rx - 1.5, by - 6, 3, bh + 12, t.crit);
     for (let k = 0; k <= max / 1000; k++) st.num(cv, String(k), x + (k * 1000 / max) * w, by + bh + 28, 20, k * 1000 >= red ? t.crit : t.dim, { align: k === 0 ? 'left' : k * 1000 === max ? 'right' : 'center' });
-    st.txt(cv, full ? 'Oil warm: the whole rev range is yours' : has ? 'Rises with oil temperature to ' + red + ' rpm at ' + M.fullAt + '°F'
+    st.txt(cv, full ? 'Oil warm: the whole rev range is yours' : has ? 'Rises with oil temperature to ' + red + ' rpm at ' + U.tempText(M.fullAt, M.tu)
         : 'Waiting for the oil temperature', x, by + bh + 64, 17, t.dim);
 }
 
@@ -165,8 +167,8 @@ function warmup(cv, st, S, M) {
         st.txt(cv, known ? 'Warming up' : 'No data', 1349, S.y + 46, 30, c, { align: 'center', spacing: 5 });
     }
     const cy = S.y + 262;
-    tempArc(cv, st, 252, cy, 172, { value: M.oil, min: 40, max: 240, ready: M.oilReady, label: 'Oil', eta: M.oilEta, foot: 'Oil ready at ' + M.oilReady + '°F' });
-    tempArc(cv, st, 662, cy, 172, { value: M.cool, min: 40, max: 240, ready: M.coolReady, label: 'Coolant', eta: M.coolEta, foot: 'Coolant ready at ' + M.coolReady + '°F' });
+    tempArc(cv, st, 252, cy, 172, { value: M.oil, min: 40, max: 240, ready: M.oilReady, label: 'Oil', eta: M.oilEta, foot: 'Oil ready at ' + U.tempText(M.oilReady, M.tu), tu: M.tu });
+    tempArc(cv, st, 662, cy, 172, { value: M.cool, min: 40, max: 240, ready: M.coolReady, label: 'Coolant', eta: M.coolEta, foot: 'Coolant ready at ' + U.tempText(M.coolReady, M.tu), tu: M.tu });
     st.plate(cv, 900, S.y + 92, 688, 340, ready ? GREEN : known ? t.warn : null);
     revLimit(cv, st, 930, S.y + 116, 628, M, S);
     // the auto-jump, bottom left
@@ -280,7 +282,7 @@ function carOutline(cv, st, cx, top, bw, bh) {
 }
 
 function tires(cv, st, S, M) {
-    const t = st.t, cx = 800, top = S.y + 34, bw = 236, bh = S.h - 60;
+    const t = st.t, cx = 800, top = S.y + 34, bw = 236, bh = S.h - 60, un = M.units || U.DEFAULTS;   // psi / °F inside (0.13.6)
     const TC = { cold: t.cold, ok: GREEN, hot: t.crit }, PC = { low: t.warn, ok: t.text, high: t.warn };
     title(cv, st, S, 'Tires', '');
     carOutline(cv, st, cx, top, bw, bh);
@@ -300,12 +302,12 @@ function tires(cv, st, S, M) {
         const L0 = cxp + 22, R0 = cxp + cw - 22;
         st.txt(cv, NAMES[k], L0, cyp + 32, 17, t.dim);
         if (ps && ps !== 'ok') pill(cv, st, R0, cyp + 12, ps === 'low' ? 'Low' : 'High', t.warn, { align: 'right', size: 14, h: 26 });
-        const ptxt = isNum(d.p) ? d.p.toFixed(1) : '--', pw = st.numW(cv, ptxt, 72);
+        const ptxt = U.pressText(d.p, un.press), pw = st.numW(cv, ptxt, 72);
         st.num(cv, ptxt, L0 - 2, cyp + 104, 72, ps ? PC[ps] : t.dim);
-        st.txt(cv, 'psi', L0 + pw + 8, cyp + 104, 22, t.dim);
+        st.txt(cv, U.pressUnit(un.press), L0 + pw + 8, cyp + 104, 22, t.dim);
         // temperature, right
-        const ttxt = isNum(d.t) ? String(Math.round(d.t)) : '--';
-        st.num(cv, ttxt + '°F', R0, cyp + 100, 40, ts ? TC[ts] : t.dim, { align: 'right' });
+        const ttxt = isNum(d.t) ? String(U.tempNum(d.t, un.temp)) : '--';
+        st.num(cv, ttxt + U.tempUnit(un.temp), R0, cyp + 100, 40, ts ? TC[ts] : t.dim, { align: 'right' });
         st.txt(cv, ts === 'cold' ? 'Cold' : ts === 'hot' ? 'Hot' : ts === 'ok' ? 'In range' : 'No data', R0, cyp + 66, 14, ts ? TC[ts] : t.dim, { align: 'right' });
         // pressure vs target: a scale with the target mark (no target from the car: no scale)
         const sx = L0, sw = cw - 44, sy = cyp + 126;
@@ -316,8 +318,8 @@ function tires(cv, st, S, M) {
             cv.fillRect(P(d.target) - 1.5, sy - 6, 3, 20, t.text);
             if (isNum(d.p)) { cv.circle(P(d.p), sy + 4, 9, t.bg); cv.circle(P(d.p), sy + 4, 7, ps ? PC[ps] : t.dim); }
         }
-        st.txt(cv, 'Target ' + (tg ? d.target.toFixed(1) + ' psi' : '--'), L0, cyp + 164, 15, t.dim);
-        if (tg && isNum(d.p)) st.txt(cv, (d.p - d.target >= 0 ? '+' : '') + (d.p - d.target).toFixed(1), R0, cyp + 164, 15, ps ? PC[ps] : t.dim, { align: 'right' });
+        st.txt(cv, 'Target ' + (tg ? U.pressText(d.target, un.press) + ' ' + U.pressUnit(un.press) : '--'), L0, cyp + 164, 15, t.dim);
+        if (tg && isNum(d.p)) st.txt(cv, U.pressDelta(d.p - d.target, un.press), R0, cyp + 164, 15, ps ? PC[ps] : t.dim, { align: 'right' });
     });
     // legend + freshness, bottom centre-left (the dots and the G are bottom right)
     const ly = S.y + S.h - 30;
@@ -355,11 +357,19 @@ function showcase(cv, st, S, music, lk, gr, sc, now) {
     // a few rows a frame until it's there (its darkest colour meanwhile)
     const PW = 1600, wy = cv.own ? 0 : S.y - 6, WH = S.y + S.h + 6 - wy, scale = cv.textScale || 1, mode = cv.pictures || 'blend';
     const ready = sc.waves.step(lk.id, Math.round(sc.waveW * WH / PW), 25);
-    if (ready) cv.image(sc.ids.wave, 0, wy, PW, WH);
-    else cv.fillRect(0, wy, PW, WH, sc.base(lk.id));
-    // Showcase background (setting showcaseBg, 15..100 %): the waves darkened, nothing else
-    const dim = dimOf(sc.dim);
-    if (dim < 1) cv.fillRect(0, wy, PW, WH, withAlpha('#000000', 1 - dim));
+    // (marked, 0.13.6: under the back arrow column, left of the page, the picture's first column
+    // stretched to the screen's edge - the same picture, nothing new kept)
+    const dim = dimOf(sc.dim), EDGE = 96;
+    G.background(cv, (c) => {
+        if (ready) c.image(sc.ids.wave, 0, wy, PW, WH);
+        else c.fillRect(0, wy, PW, WH, sc.base(lk.id));
+        // Showcase background (setting showcaseBg, 15..100 %): the waves darkened, nothing else
+        if (dim < 1) c.fillRect(0, wy, PW, WH, withAlpha('#000000', 1 - dim));
+    }, (c) => {
+        if (ready) c.image(sc.ids.wave, -EDGE, wy, EDGE * sc.waveW, WH);
+        else c.fillRect(-EDGE, wy, EDGE, WH, sc.base(lk.id));
+        if (dim < 1) c.fillRect(-EDGE, wy, EDGE, WH, withAlpha('#000000', 1 - dim));
+    });
     const playing = !!(music && sc.music && music.hasTrack());
     // a picture at page rect r: its pixels prepared at the device size; on the opaque path over the waves under it
     const show = (key, src, r, o) => {

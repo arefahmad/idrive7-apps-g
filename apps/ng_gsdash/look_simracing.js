@@ -86,7 +86,7 @@ function block(cv, x, y, w, h, label, value, tone, size) {
 const ZONE_TAG = { cold: '  COLD', ok: '  OK', hot: '  HOT' };
 function tempBlock(cv, x, y, w, h, label, v) {
     const zg = L.tempGauge(v, { cold: BLU, ok: GRN, hot: RED }, '#14171c', 0.32);
-    block(cv, x, y, w, h, label + (zg.zone ? ZONE_TAG[zg.zone] : ''), isNum(v.f) ? Math.round(v.f) + '°F' : '--', zg.on);
+    block(cv, x, y, w, h, label + (zg.zone ? ZONE_TAG[zg.zone] : ''), L.tempText(v), zg.on);
     const sx = x + 16, sw = w - 28, sy = y + h - 7;
     const mk = L.zoneMarks(v);
     [[0, mk[0], 'cold'], [mk[0], mk[1], 'ok'], [mk[1], 1, 'hot']].forEach((z) => cv.fillRect(sx + sw * z[0], sy, sw * (z[1] - z[0]) - 1, 3, L.mix('#14171c', zg.C[z[2]], 0.4)));

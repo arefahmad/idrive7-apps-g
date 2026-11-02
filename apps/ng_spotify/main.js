@@ -732,7 +732,8 @@ mgu.run({
         function drawPlaying(cv, t, Q, now) {
             const X = Q.X, W = Q.W, y0 = Q.A.y, on = t.accent2 || t.accent;
             // the artwork's colour washes the page faintly
-            if (artReady && artTint) cv.gradientRect(0, 0, 1600, Q.A.bottom + 8, [[0, G.withAlpha(artTint, WASH)], [1, G.withAlpha(artTint, 0)]]);
+            // (marked: it carries on under the back arrow column)
+            if (artReady && artTint) G.background(cv, (c) => c.gradientRect(0, 0, 1600, Q.A.bottom + 8, [[0, G.withAlpha(artTint, WASH)], [1, G.withAlpha(artTint, 0)]]));
             artBox(cv, t, Q, artReady, pb.album || pb.title || 'Spotify');
             cv.text(fit(cv, pb.ad ? 'Advertisement' : pb.title || 'Unknown track', 54, W - 240, { font: 'bold' }), X, y0 + 56, 54, t.text, { font: 'bold', literal: true });
             // artist, then the album dimmer, on one line
