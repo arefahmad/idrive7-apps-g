@@ -69,12 +69,25 @@
  *   to Map view while G's Dash is open). The KOMBI never takes a slot from what it shows, so the stock
  *   map then waits behind the logo until G's Dash is closed or hidden (or the setting is turned off).
  *
+ * 0.13.1, the look's own G (logo_core.js): with a shader look (M, GT, Digital '84, SimRacing, Lumen) the
+ * logo is one "effect" layer at the same place (map, content z 50, contending): its fragment shader draws
+ * that look's G, still (no u_time, no uniforms: the renderer stages and flushes nothing after it is made),
+ * 0 bytes of the renderer's pixel budget. Fallbacks, in order: no effect layers in the client, the effect
+ * refused, or its layer in error (did not compile) -> the look's baked picture logo_<look>.png (448x240,
+ * 0.82 MiB budget, only the active look's ever loaded) -> the regular logo. Pixel: the emblem, as before.
+ * A look change: to or from an effect, the new layer is made, then the old dropped (an effect holds no
+ * pictures, so no two pictures are ever in memory together); picture to picture, the old is dropped first,
+ * then a status asked, and the new made only once the renderer answered and FREE_MS passed (0.12.1's gate);
+ * a change waits SETTLE_MS so stepping through looks makes one layer. Never animated while driving.
+ *
  * Off at once: hidden, closed, the setting off -> the layer is dropped (the service removes it at
  * once, no fade) and the connection closed; when the app ends its socket closes and the service
  * removes its layers. Never throws, never blocks. Node 8: no ?., ?? or object spread.
  */
 const fs = require('fs');
 const path = require('path');
+const MEM = require('./cluster_memory');
+const CORE = require('./logo_core');
 
 const CLIENT = process.env.NG_CR_CLIENT || '/var/opt/cluster-render/current/cluster_render_client.js';
 const SOCK = process.env.NG_CR_SOCK || '/dev/shm/cluster-render/render.sock';
@@ -89,6 +102,7 @@ const NAV_KLASS = 'content', NAV_Z = 50;             // "not navigating": over W
 const GUIDE_ON_MS = 1000, GUIDE_OFF_MS = 3000;       // guidance on this long: hidden; off this long: back
 const RECONNECT_MS = 8000, REMAKE_MS = 2000, ERR_RETRY_MS = 5000, ERR_RETRIES = 3;
 const ANIM_MS = 80;                                  // the parked animation's step
+const FX_BAD = /compile|link|shader|effect|unsupported|unknown/i;   // a layer error that rules the look's shader out
 const SHINE_EVERY = 4200, SHINE_MS = 700, INTRO_MS = 1100;
 
 /* ----- the client ----- */
@@ -267,7 +281,9 @@ class ClusterLogo {
         this.now = o.now || Date.now;
         this.T = o.timers || { setInterval, clearInterval };
         this.images = o.images;
-        this.want = false; this.pixel = false; this.parked = false; this.enabled = true;
+        this.want = false; this.pixel = false; this.look = '';
+        this.fxBad = {}; this.bakedBad = {};               // looks whose shader / baked picture failed (this run)
+        this.gate = new MEM.FreeGate(this.now); this.asked = 0; this.answered = 0; this.lookAt = -1e15; this.wantKey = ''; this.parked = false; this.enabled = true;
         this._reset();
         this.err = null; this.errAt = -1e15;
         this.guide = { nav: null, carplay: null, aa: null }; // the car's guidance signals: null = no answer yet
@@ -278,7 +294,8 @@ class ClusterLogo {
         this.stats = { layers: 0, sends: 0, bytes: 0, drops: 0, polls: 0, remakes: 0, reconnects: 0 };
     }
     _reset() {
-        this.cr = null; this.ready = false; this.ref = 0; this.kind = ''; this.visible = null;
+        this.cr = null; this.ready = false; this.ref = 0; this.kind = ''; this.key = '';
+        if (this.gate) this.gate.reset(); this.asked = 0; this.answered = 0; this.visible = null;
         this.polled = false; this.others = []; this.under = []; this.idle = []; this.seen = {}; this.lastBusy = ''; this.busyAt = -1e15; this.yieldUntil = -1e15;
         this.target = { state: '', holder: '', reason: '', rendering: '' };
         this.layerState = ''; this.refused = '';
@@ -296,7 +313,8 @@ class ClusterLogo {
         const on = !!(s && s.on);
         this.enabled = !(s && s.enabled === false);
         this.idleText = (s && typeof s.idleText === 'string') ? s.idleText : '';   // the line while not wanted (0.8.3: the Cluster source pick)
-        this.pixel = !!(s && s.pixel);
+        this.look = (s && typeof s.look === 'string') ? s.look : '';
+        this.pixel = !!(s && s.pixel) || this.look === 'pixel';
         this.parked = !!(s && s.parked);
         if (!on) { if (this.want || this.cr) this._off(); this.want = false; return; }
         this.want = true;
@@ -329,6 +347,7 @@ class ClusterLogo {
             if (state === 'error' && this.layerState !== 'error') this.errAt2 = this.now();
             this.layerState = state || '';
             if (state === 'error') this.log.warn('cluster logo: layer error' + (reason ? ' (' + reason + ')' : ''));
+            if (state === 'error' && this.kind === 'fx' && (!reason || FX_BAD.test(reason))) this._fxFailed('layer error' + (reason ? ' (' + reason + ')' : ''));
         });
         // the target event's "rendering" (service 0.2.2), which the client's 'target' event leaves out
         let rendering = '';
@@ -352,9 +371,14 @@ class ClusterLogo {
             }
             if (state !== was) this.log.info('cluster logo: map ' + state + (holder ? ' behind ' + holder : '') + (reason ? ' (' + reason + ')' : ''));
         });
-        cr.on('refused', (op, ref, reason) => { if (this.cr === cr) { this.refused = (op || '?') + ': ' + (reason || '?'); this.log.warn('cluster logo: refused ' + this.refused); } });
+        cr.on('refused', (op, ref, reason) => {
+            if (this.cr !== cr) return;
+            this.refused = (op || '?') + ': ' + (reason || '?'); this.log.warn('cluster logo: refused ' + this.refused);
+            if (ref && ref === this.ref && this.kind === 'fx') this._fxFailed('refused (' + (reason || '?') + ')');
+        });
         cr.on('status', (text) => {
             if (this.cr !== cr) return;
+            this.answered++;
             const now = this.now(), seen = {}, others = [], under = [], idle = [];
             mapLayers(text, this.app).forEach((l) => {
                 (drawing(l, this.seen, now) ? (this._covers(l) ? under : others) : idle).push(l);
@@ -375,7 +399,7 @@ class ClusterLogo {
         this.poll = this.T.setInterval(() => this._tick(), POLL_MS);
         try { cr.connect(); } catch (e) { this.log.warn('cluster logo: connect ' + e.message); }
     }
-    _ask() { if (this.cr && this.ready) { this.stats.polls++; try { this.cr.status(); } catch (e) { /* next poll */ } } }
+    _ask() { if (this.cr && this.ready) { this.stats.polls++; this.asked++; try { this.cr.status(); } catch (e) { /* next poll */ } } }
 
     /**
      * The car's route guidance (main.js's signal handlers): src 'nav' (NavigationStatus.guidingState),
@@ -470,11 +494,34 @@ class ClusterLogo {
         this._remake();
     }
     _remake() {
-        const old = this.ref, kind = this.kind || (this.pixel ? 'pixel' : 'regular');
+        const old = this.ref, w = this.key ? { kind: this.kind, look: this.key.split(':')[1] || '', key: this.key } : this._wanted();
         if (old) { try { this.cr.drop(old); this.stats.drops++; } catch (e) { /* gone already */ } }
-        this.ref = 0; this.ownSeen = false; this.ownMissing = 0;
+        this.ref = 0; this.key = ''; this.kind = ''; this.ownSeen = false; this.ownMissing = 0;
         this.stats.remakes++;
-        this._make(kind, !!this.visible);
+        // the same layer again: an effect at once; a picture after the dropped one is freed (_apply's gate)
+        if (w.kind === 'fx') this._make(w, !!this.visible); else { this._ask(); this.gate.dropped(this.asked); this._apply(); }
+    }
+    /** 0.13.1: the look's shader ruled out (this run): its baked picture, else the regular logo, instead */
+    _fxFailed(why) {
+        const look = this.key.split(':')[1] || '';
+        if (!look || this.fxBad[look]) return;
+        this.fxBad[look] = true;
+        this.log.warn('cluster logo: ' + look + ' shader logo ' + why + ' - its picture instead');
+        const old = this.ref;
+        if (old) { try { this.cr.drop(old); this.stats.drops++; } catch (e) { /* gone */ } }
+        this.ref = 0; this.key = ''; this.kind = ''; this.layerState = '';
+        this._apply();
+    }
+    /** 0.13.1: the layer the look wants: { kind 'fx' | 'baked' | 'regular' | 'pixel', look, key } */
+    _wanted() {
+        const look = this.look, k = this.pixel ? 'pixel' : CORE.kindOf(look);
+        if (k === 'pixel') return { kind: 'pixel', look: 'pixel', key: 'pixel' };
+        if (k === 'fx') {
+            const fxOk = !this.fxBad[look] && this.cr && typeof this.cr.effect === 'function';
+            if (fxOk) return { kind: 'fx', look, key: 'fx:' + look };
+            if (!this.bakedBad[look] && this.images && typeof this.images.baked === 'function') return { kind: 'baked', look, key: 'baked:' + look };
+        }
+        return { kind: 'regular', look: '', key: 'regular' };
     }
 
     /** Shown or not, the image for the look, the parked animation. */
@@ -483,10 +530,26 @@ class ClusterLogo {
         const now = this.now();
         const guiding = this._guideTick(now);
         const vis = !guiding && !this.others.length && now - this.busyAt >= HOLD_MS && now >= this.yieldUntil;
-        const kind = this.pixel ? 'pixel' : 'regular';
-        if (!this.ref || this.kind !== kind) {
-            if (!this.ref && !vis) return;                 // nothing made until it may show
-            this._make(kind, vis);
+        const w = this._wanted();
+        const lk = this.pixel ? 'pixel' : this.look;      // the look picked (a fallback for the same look does not wait)
+        if (lk !== this.wantKey) { this.wantKey = lk; this.lookAt = now; }
+        if (this.ref && this.key !== w.key) {
+            // a look change, once settled (SETTLE_MS): to or from an effect the new layer comes first (_make
+            // drops the old after); picture to picture the old goes first and the new waits for the gate
+            if (now - this.lookAt < MEM.SETTLE_MS) { this._animate(); return; }
+            if (w.kind !== 'fx' && this.kind !== 'fx') {
+                if (this.anim) { this.T.clearInterval(this.anim); this.anim = null; }
+                try { this.cr.drop(this.ref); this.stats.drops++; } catch (e) { /* gone */ }
+                this.log.info('cluster logo: ' + this.key + ' dropped first - ' + w.key + ' once it is freed');
+                this.ref = 0; this.key = ''; this.kind = ''; this.layerState = '';
+                this._ask(); this.gate.dropped(this.asked);
+                return;
+            }
+            this._make(w, vis);
+        } else if (!this.ref) {
+            if (!vis) return;                              // nothing made until it may show
+            if (!this.gate.open(this.answered)) return;    // a dropped picture not freed yet
+            this._make(w, vis);
         } else if (vis !== this.visible) {
             this.visible = vis;
             this.cr.set(this.ref, { visible: vis });
@@ -496,8 +559,19 @@ class ClusterLogo {
         this._animate();
     }
 
-    _make(kind, vis) {
-        const img = kind === 'pixel' ? this.images.pixel({}) : this.images.regular();
+    _make(w, vis) {
+        if (w.kind === 'fx') return this._makeFx(w, vis);
+        const kind = w.kind;
+        let img = null;
+        if (kind === 'baked') {
+            try { img = this.images.baked(w.look); } catch (e) { img = null; }
+            if (img && !img.d && img.data) img = { w: img.w, h: img.h, d: img.data };   // kit/png's decode: { w, h, data }
+            if (!img || img.w !== LOGO_W || img.h !== LOGO_H || !img.d || img.d.length !== LOGO_W * LOGO_H * 4) {
+                this.bakedBad[w.look] = true;
+                this.log.warn('cluster logo: ' + CORE.PNG_OF(w.look) + ' not usable - the regular logo instead');
+                return this._make({ kind: 'regular', look: '', key: 'regular' }, vis);
+            }
+        } else img = kind === 'pixel' ? this.images.pixel({}) : this.images.regular();
         const at = placement(kind, img);
         const ref = this.cr.image({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: false, contend: true,
             visible: vis, x: at.x, y: at.y, w: at.w, h: at.h, iw: img.w, ih: img.h,
@@ -505,12 +579,30 @@ class ClusterLogo {
         if (!ref) { this.log.warn('cluster logo: image layer refused by the client'); return; }
         this._send(ref, img);
         const old = this.ref;
-        this.ref = ref; this.kind = kind; this.visible = vis; this.frameKey = 'still'; this.animAt = this.now(); this.madeAt = this.now();
+        this.ref = ref; this.kind = kind; this.key = w.key; this.visible = vis; this.frameKey = 'still'; this.animAt = this.now(); this.madeAt = this.now();
         this.ownSeen = false; this.ownMissing = 0; this.contend = true;
         this.layerState = vis ? 'new' : 'hidden';
         this.stats.layers++;
         if (old) { this.cr.drop(old); this.stats.drops++; }
-        this.log.info('cluster logo: ' + kind + ' image ' + img.w + 'x' + img.h + ' (' + Math.round(img.d.length / 1024) + ' KB, once) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (vis ? '' : ', hidden'));
+        this.log.info('cluster logo: ' + w.key + ' image ' + img.w + 'x' + img.h + ' (' + Math.round(img.d.length / 1024) + ' KB, once) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (vis ? '' : ', hidden'));
+    }
+    /** 0.13.1: the look's G as one still effect layer: 0 bytes of pixel budget, nothing sent after */
+    _makeFx(w, vis) {
+        const at = { x: Math.round((MAP_W - LOGO_W) / 2), y: Math.round((MAP_H - LOGO_H) / 2), w: LOGO_W, h: LOGO_H };
+        let ref = 0;
+        try {
+            ref = this.cr.effect({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: false, contend: true,
+                visible: vis, x: at.x, y: at.y, w: at.w, h: at.h, fs: CORE.fragment(w.look) });
+        } catch (e) { ref = 0; }
+        if (!ref) { this.fxBad[w.look] = true; this.log.warn('cluster logo: ' + w.look + ' shader logo refused by the client - its picture instead'); return this._apply(); }
+        if (this.anim) { this.T.clearInterval(this.anim); this.anim = null; }
+        const old = this.ref;
+        this.ref = ref; this.kind = 'fx'; this.key = w.key; this.visible = vis; this.frameKey = 'still'; this.madeAt = this.now();
+        this.ownSeen = false; this.ownMissing = 0; this.contend = true;
+        this.layerState = vis ? 'new' : 'hidden';
+        this.stats.layers++;
+        if (old) { this.cr.drop(old); this.stats.drops++; }
+        this.log.info('cluster logo: ' + w.look + ' shader logo (effect, still, 0 KB) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (vis ? '' : ', hidden'));
     }
     _send(ref, img) {
         if (this.cr.pixels(ref, null, img.d) !== false) { this.stats.sends++; this.stats.bytes += img.d.length; }
@@ -606,4 +698,4 @@ function motion(t, ew) {
 }
 
 module.exports = { ClusterLogo, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, appName, pixelImage, regularImage, placement, motion, cellRaster,
-    rawText, TARGET, MAP_W, MAP_H, CELL, LOGO_W, LOGO_H, FPS_STILL, FPS_ANIM, POLL_MS, HOLD_MS, YIELD_MS, FRESH_MS, RECONNECT_MS, ERR_RETRY_MS, NAV_KLASS, NAV_Z, GUIDE_ON_MS, GUIDE_OFF_MS };
+    FX_BAD, rawText, TARGET, MAP_W, MAP_H, CELL, LOGO_W, LOGO_H, FPS_STILL, FPS_ANIM, POLL_MS, HOLD_MS, YIELD_MS, FRESH_MS, RECONNECT_MS, ERR_RETRY_MS, NAV_KLASS, NAV_Z, GUIDE_ON_MS, GUIDE_OFF_MS };

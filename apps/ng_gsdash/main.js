@@ -241,10 +241,13 @@ mgu.run({
         if (ui.onVisible) ui.onVisible((st, on) => { if (!on) { page = 0; ask = null; skinMode = 'skin'; } });
         // the logo in the cluster's map area (cluster_logo.js, setting "clusterLogo"): only while G's Dash
         // is open, the regular logo or (Pixel look) the pixel emblem, its motion only while standing still
-        let regImg = null;
+        let regImg = null, bakedImg = null;
         const clogo = new CL.ClusterLogo({ log, app: 'ng_gsdash', images: {
             regular: () => regImg || (regImg = CL.regularImage(Canvas, L.badge, L.badgeWidth)),
             pixel: (o) => CL.pixelImage(P, o),
+            // 0.13.1: the look's baked picture, the fallback when its shader logo cannot be drawn; only the
+            // active look's is decoded and kept (the one before is let go)
+            baked: (id) => { if (!bakedImg || bakedImg.id !== id) { bakedImg = null; bakedImg = { id, img: PNG.decode(fs.readFileSync(path.join(__dirname, 'logo_' + id + '.png'))) }; } return bakedImg.img; },
         } });
         const logoOn = () => settings.get('clusterLogo') !== 'off';
         // your look on the car's displays (0.10.0, setting "displays"): the cluster skins (Cluster dials), the
@@ -279,7 +282,7 @@ mgu.run({
         const clogoUpdate = (open) => {
             const d = car.data(), src = srcPick();
             clogo.update({ on: CSRC.logoWanted(src, open, settings.get('clusterLogo')), enabled: src === 'auto' ? logoOn() : (src === 'logo' || src === 'music'),
-                pixel: look().id === 'pixel', parked: L.isNum(d.speed) && d.speed < 1,
+                pixel: look().id === 'pixel', look: look().id, parked: L.isNum(d.speed) && d.speed < 1,
                 idleText: src === 'auto' ? 'On - while G\'s Dash is open' : 'Off - ' + CSRC.NAMES[src] + ' picked' });
         };
         // in the background (the screen's loop stops when it is hidden): the logo kept per the pick every second
