@@ -17,11 +17,12 @@
 /* ---------- your look on the car's displays ---------- */
 const DISPLAYS = [
     ['skin', 'Cluster dials', 'Your look on the cluster dials'],
-    ['hud', 'HUD', 'Big gear and a tach with shift lights'],
+    ['hud', 'HUD', 'Experimental: big gear, tach and shift lights'],
     ['none', 'Neither', "The car's own dials and HUD"],
 ];
 const DISPLAY_IDS = DISPLAYS.map((d) => d[0]);
-const DEFAULT_DISPLAY = 'skin';
+// 0.13.3: a fresh install starts with Neither (the car's own dials and HUD); a saved pick is kept
+const DEFAULT_DISPLAY = 'none';
 const OLD_KEYS = ['clusterSkin', 'hudShift'];
 const validDisplay = (v) => DISPLAY_IDS.indexOf(v) >= 0;
 const displayName = (v) => { const d = DISPLAYS.find((x) => x[0] === v); return d ? d[1] : DISPLAYS[0][1]; };

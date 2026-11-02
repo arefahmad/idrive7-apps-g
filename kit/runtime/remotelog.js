@@ -27,7 +27,6 @@ const url = require('url');
 const childProcess = require('child_process');
 const x25519 = require('./x25519.js');
 
-const PUBLIC_KEY = 'WacJDP50yuyDBywYGtuEgHaJi15mNqf5Rv3Ork4GrS8=';
 const MAGIC = Buffer.from('NGRL1');
 const INFO = Buffer.from('ng-remotelog v1');
 
@@ -93,7 +92,7 @@ function hkdf(ikm, salt, info, n) {
 }
 /** NGRL1 | ephemeral public key (32) | iv (12) | AES-256-GCM ciphertext | tag (16) */
 function seal(plain, pubB64) {
-    const pk = Buffer.from(pubB64 || PUBLIC_KEY, 'base64');
+    const pk = Buffer.from(typeof pubB64 === 'string' ? pubB64 : '', 'base64');
     if (pk.length !== 32) throw new Error('bad public key');
     const esk = crypto.randomBytes(32), epk = x25519.publicKey(esk);
     const shared = x25519.scalarMult(esk, pk);
@@ -145,9 +144,11 @@ function readDrop(dataDir) {
     try {
         const j = JSON.parse(fs.readFileSync(f, 'utf8'));
         if (!/^[\w.-]+\/[\w.-]+$/.test(j.repo || '') || !/^[\w-]{20,255}$/.test(j.token || '')) return { state: 'bad', why: 'incomplete' };
+        // the destination and its encryption key both come only from this privately installed file
+        if (typeof j.pub !== 'string' || Buffer.from(j.pub, 'base64').length !== 32) return { state: 'bad', why: 'incomplete' };
         let api = 'https://api.github.com';
         if (j.api && process.env.NG_REMOTELOG_TEST_API) api = j.api;
-        return { state: 'ok', repo: j.repo, token: j.token, api, dir: /^[\w.-]{1,40}$/.test(j.dir || '') ? j.dir : 'bundles' };
+        return { state: 'ok', repo: j.repo, token: j.token, pub: j.pub, api, dir: /^[\w.-]{1,40}$/.test(j.dir || '') ? j.dir : 'bundles' };
     } catch (e) { return { state: 'bad', why: 'unreadable' }; }
 }
 
@@ -308,7 +309,9 @@ function create(o) {
     function bundle(reason, since) {
         busy = busy.then(async () => {
             const drop = readDrop(o.dataDir);
-            const secrets = drop.state === 'ok' ? [drop.token, drop.repo] : [];
+            // no drop installed (every car but the owner's): nothing is collected, nothing sent
+            if (drop.state !== 'ok') return null;
+            const secrets = [drop.token, drop.repo];
             const doc = {
                 v: 1, app: o.id, version: o.version, created: new Date(now()).toISOString(), reason,
                 uptimeS: uptime(), boot: bootId().slice(0, 8), previous: previous ? { version: previous.version, started: previous.started, beat: previous.beat, boot: (previous.boot || '').slice(0, 8), code: previous.code, fatal: !!previous.fatal } : null,
@@ -323,7 +326,7 @@ function create(o) {
             for (let cut = 0; cut < 4; cut++) {
                 const z = await new Promise((res, rej) => zlib.gzip(Buffer.from(JSON.stringify(doc)), { level: 6 }, (e, b) => e ? rej(e) : res(b)));
                 await new Promise((r) => setImmediate(r));
-                sealed = seal(z);
+                sealed = seal(z, drop.pub);
                 if (sealed.length <= LIMITS.sealed) break;
                 Object.keys(doc.sections).forEach((k) => { doc.sections[k] = tail(doc.sections[k], Math.floor(doc.sections[k].length / 2)); });
                 sealed = null;
@@ -452,7 +455,7 @@ function create(o) {
 
 let instance = null;
 module.exports = {
-    create, scrub, seal, open, hkdf, readDrop, LIMITS, PUBLIC_KEY,
+    create, scrub, seal, open, hkdf, readDrop, LIMITS,
     /** the app's recorder (mgu.js makes it), or null */
     get: () => instance, set: (r) => { instance = r; return r; },
 };
