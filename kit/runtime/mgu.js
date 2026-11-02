@@ -43,7 +43,7 @@ try { fs.readdirSync(RHMI_RES).filter((f) => /^dyn_/.test(f)).forEach((f) => { t
 function fileLog(level, msg) {
     try {
         const st = fs.existsSync(LOG_FILE) ? fs.statSync(LOG_FILE) : null;
-        if (st && st.size > 256 * 1024) fs.renameSync(LOG_FILE, LOG_FILE + '.1');
+        if (st && st.size > 1024 * 1024) fs.renameSync(LOG_FILE, LOG_FILE + '.1');
         fs.appendFileSync(LOG_FILE, new Date().toISOString() + ' ' + level + ' ' + msg + '\n');
     } catch (e) { /* data dir not writable (host preview) */ }
 }
@@ -72,8 +72,18 @@ const log = {};
 Error.stackTraceLimit = 40;
 let startStage = 'loading';
 const stage = (s) => { startStage = s; };
-process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught (start stage: ' + startStage + '): ' + (e && e.stack || e)); process.exit(1); });
-process.on('exit', (code) => fileLog(code ? 'FATAL' : 'INFO', 'exit code ' + code + ' rss=' + Math.round(process.memoryUsage().rss / 1048576) + 'MB'));
+// encrypted crash logs (remotelog.js): the session marker now, the timers once running; a bundle only after
+// a crash or when asked, uploaded only with a drop installed on the unit
+let remote = null;
+try {
+    if (process.env.NG_REMOTELOG !== '0') {
+        const rl = require('./remotelog.js');
+        remote = rl.set(rl.create({ id: SPEC.id, version: SPEC.version, dataDir: DATA_DIR, logFile: LOG_FILE, log: (l, m) => fileLog(l.toUpperCase(), m) }));
+        remote.begin();
+    }
+} catch (e) { remote = null; fileLog('WARN', 'remote logs off: ' + (e && e.message)); }
+process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught (start stage: ' + startStage + '): ' + (e && e.stack || e)); try { if (remote) remote.fatal(); } catch (x) {} process.exit(1); });
+process.on('exit', (code) => { fileLog(code ? 'FATAL' : 'INFO', 'exit code ' + code + ' rss=' + Math.round(process.memoryUsage().rss / 1048576) + 'MB'); try { if (remote) remote.end(code); } catch (x) {} });
 
 /* ---------------- settings (persisted in data/settings.json) ---------------- */
 class Settings {
@@ -489,6 +499,7 @@ async function run(impl) {
 async function runInner(impl) {
     const app = new OnlineApp();
     log.info('starting ' + SPEC.id + ' ' + SPEC.version);
+    try { if (remote) remote.start(); } catch (e) { log.warn('remote logs: ' + (e && e.message)); }
     // interfaces this unit lacks, which the installer left out (app.json "_optional")
     try {
         const missing = JSON.parse(fs.readFileSync(path.join(__dirname, 'missing-interfaces.json'), 'utf8'));
@@ -526,7 +537,7 @@ async function runInner(impl) {
     const display = new Display(ui, log, SPEC, settings, () => themeFn());
     ui.display = display;
     const ctx = {
-        app, ui, settings, log, spec: SPEC, dataDir: DATA_DIR, display, widget,
+        app, ui, settings, log, spec: SPEC, dataDir: DATA_DIR, display, widget, remoteLog: remote,
         signals: require('./signals'),
         theme: () => themeFn(),
         /**

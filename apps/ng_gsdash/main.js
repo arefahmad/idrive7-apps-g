@@ -939,6 +939,25 @@ mgu.run({
             if (now - toolAt >= TOOL_READ_MS) { toolAt = now; toolSeen = TOOLS.map((x) => [x[1], toolVersion(x[0])]); }
             return toolSeen;
         };
+        /**
+         * 0.13.2: Remote logs (Diagnostics card): encrypted crash logs (kit remotelog.js), sent only after a crash
+         * or with Send logs now, and only with a drop installed on the unit (else 'Not set up'). The status is
+         * read at most every 2 s; sending runs in the background.
+         */
+        const rlog = ctx.remoteLog || null;
+        if (rlog && rlog.share) { try { rlog.share(); } catch (e) {} }
+        if (rlog && rlog.context) rlog.context('cluster', () => ({ logo: clogo.view().text, skins: skinOn() ? cskin.view().text : 'off', hud: hudOn() ? hud.view().text : 'off',
+            refusals: [cskin.refusal(), hud.refusal(), fcl.refusal()].filter(Boolean), fullScreenTest: fcTest, source: srcPick(), look: look().id }));
+        let rlSeen = { at: 0, v: null }, rlAsked = 0;
+        const rlStatus = () => {
+            if (!rlog) return { setup: 'none', on: false, lastSent: null, pending: 0, others: [] };
+            if (Date.now() - rlSeen.at > 2000) { try { rlSeen = { at: Date.now(), v: rlog.status() }; } catch (e) { rlSeen = { at: Date.now(), v: { setup: 'none', on: false, others: [] } }; } }
+            return rlSeen.v;
+        };
+        const rlWhen = (at) => {
+            const d = new Date(at), n = new Date(), hm = clock.fmt ? clock.fmt(d) : (d.getHours() % 12 || 12) + ':' + ('0' + d.getMinutes()).slice(-2) + (d.getHours() < 12 ? ' AM' : ' PM');
+            return d.toDateString() === n.toDateString() ? hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+        };
         let diagView = 'cluster';           // Diagnostics: 'cluster' or 'car'
         /**
          * Diagnostics (Options > Diagnostics). Two views, picked at the top. Cluster: the tools and their
@@ -1008,8 +1027,34 @@ mgu.run({
             const vt = v.kind === 'on' ? HUB.GREEN : v.kind === 'pending' || v.kind === 'busy' ? '#ffb020' : v.kind === 'conflict' || v.kind === 'error' ? (t.crit || '#ff3b30') : null;
             if (vt) cv.circle(x + 20, y - 6, 5, vt);
             put(x + (vt ? 32 : 14), y, w - 46, v.value, t.text, 20); y += LH + 2;
-            [v.line, v.render, v.note].filter(Boolean).forEach((s2) => wrapLines(cv, s2, 16, w - 28, 3).forEach((l) => { put(x + 14, y, w - 28, l, t.dim, 16); y += 22; }));
+            // Waze's notes stop above the Remote logs card
+            const rlTop = top + S.h - 14 - 92 - 10 - 112;
+            [v.line, v.render, v.note].filter(Boolean).forEach((s2) => wrapLines(cv, s2, 16, w - 28, 3).forEach((l) => { if (y + 6 < rlTop) put(x + 14, y, w - 28, l, t.dim, 16); y += 22; }));
             const fh = 92, fy = top + S.h - 14 - fh, done = Date.now() - refreshedAt < REFRESHED_MS;
+            // Remote logs, above Refresh cluster
+            {
+                const rs = rlStatus(), ready = rs.setup === 'ok', on = ready && rs.on, acc3 = t.sel || t.accent;
+                const rh = 112, ry = rlTop, x3 = x + 14, w3 = w - 28;
+                cv.roundRect(x3, ry, w3, rh, u.radius, L.withAlpha(on ? acc3 : '#ffffff', on ? 0.14 : 0.05));
+                cv.strokeRoundRect(x3, ry, w3, rh, u.radius, on ? 2 : 1, on ? acc3 : L.withAlpha('#ffffff', 0.16));
+                cv.text('Remote logs', x3 + 16, ry + 30, 20, t.text, { font: 'bold', literal: true });
+                const sw = 66, sh = 34, sx = x3 + w3 - 14 - sw, sy = ry + 9;
+                if (ready) {
+                    cv.roundRect(sx, sy, sw, sh, sh / 2, on ? acc3 : L.withAlpha('#ffffff', 0.18));
+                    cv.circle(on ? sx + sw - sh / 2 : sx + sh / 2, sy + sh / 2, sh / 2 - 4, '#ffffff');
+                    cv.target(sx - 10, ry, sw + 24, 52, () => { rlog.setEnabled(!on); rlSeen.at = 0; }, 'dg:rlog', sh / 2);
+                } else cv.text('Not set up', x3 + w3 - 16, ry + 30, 16, '#ffb020', { align: 'right', literal: true });
+                const ls = rs.lastSent, pend = rs.pending ? ' (' + rs.pending + ' waiting)' : '';
+                const l1 = !ready ? (rs.setup === 'bad' ? 'Drop file not usable: ' + (rs.why || '?') : 'No drop installed on this unit.')
+                    : on ? 'On: encrypted, sent after a crash or on request.' : 'Off: kept on the unit only.';
+                const l2 = ls ? 'Last sent: ' + (ls.ok ? rlWhen(ls.at) : rlWhen(ls.at) + ' - ' + ls.msg) + pend : 'Last sent: never' + pend;
+                put(x3 + 16, ry + 56, w3 - 32, l1, ready ? t.text : t.dim, 15);
+                const asked = Date.now() - rlAsked < REFRESHED_MS, bw = 150, bh = 36, bx = x3 + w3 - 14 - bw, by = ry + rh - 10 - bh;
+                put(x3 + 16, by + 24, bx - x3 - 26, l2, ls && !ls.ok ? '#ffb020' : t.dim, 15);
+                cv.roundRect(bx, by, bw, bh, u.radius, L.withAlpha(on ? acc3 : '#ffffff', asked ? 0.40 : on ? 0.24 : 0.05));
+                cv.text(asked ? 'Sending...' : 'Send logs now', bx + bw / 2, by + 24, 16, on ? t.text : t.dim, { align: 'center', literal: true });
+                if (on) cv.target(bx, by, bw, bh, () => { rlAsked = Date.now(); rlSeen.at = 0; rlog.sendNow().then(() => { rlSeen.at = 0; }, () => {}); }, 'dg:rlsend', u.radius);
+            }
             cv.roundRect(x + 14, fy, w - 28, fh, u.radius, L.withAlpha(t.sel || t.accent, done ? 0.30 : 0.16));
             cv.strokeRoundRect(x + 14, fy, w - 28, fh, u.radius, 2, t.sel || t.accent);
             const ax = x + 14 + 44, ay = fy + fh / 2;
