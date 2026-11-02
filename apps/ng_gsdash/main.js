@@ -192,6 +192,8 @@ mgu.run({
         // the kit's own parts (header, the controller's marks) in the look's colours
         if (ctx.setTheme) ctx.setTheme(palette);
         settings.onChange((k) => { if (k === 'look' && ctx.setTheme) ctx.setTheme(palette); });
+        // 0.13.7: the Settings list's temperatures (kept in °F) shown in Options > Units' temperature unit
+        settings.format = (it, v) => (it && it.unit === '\u00b0F' ? UNITS.tempSetting(v, UNITS.pick(settings).temp) : null);
         // 0.13.4: every look switch one line (the remote logs' ring keeps it with the cluster / HUD lines around it)
         settings.onChange((k, v) => { if (k === 'look') log.info('look: ' + lookOf(v).id); });
 
@@ -307,7 +309,7 @@ mgu.run({
             const speedAvail = !!(sub && sub.available && !sub.error);
             // 0.12.0: the full-screen cluster test pauses the skins and the HUD (closed for them while it is on)
             cskin.update({ on: !!open && !fcTest && (skinOn() || skinMode !== 'skin'), enabled: skinOn() || skinMode !== 'skin', look: look().id, mode: skinMode, data: d,
-                speedAvail, gear: L.gearText(d.gear, d.stage), at: car.at || null });
+                speedAvail, gear: L.gearText(d.gear, d.stage), at: car.at || null, speedUnit: UNITS.pick(settings).speed });
             const redline = num('redline', 6500);
             hud.update({ on: !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: hudOn(), look: look().id, data: d, gear: L.gearText(d.gear, d.stage),
                 at: car.at || null, redline, shift: redline - (Number(settings.get('shiftBefore')) || 0) });
@@ -330,7 +332,7 @@ mgu.run({
         if (ui.onVisible) ui.onVisible((st, on) => { if (st === 'MAIN') logoUpdate(on); });
         settings.onChange((k) => {
             if (k === 'clusterSource') publishSource('change');
-            if (k === 'clusterSource' || k === 'clusterLogo' || k === 'displays' || k === 'look' || k === 'redline' || k === 'shiftBefore') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
+            if (k === 'clusterSource' || k === 'clusterLogo' || k === 'displays' || k === 'look' || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
         });
         process.once('exit', () => { clearInterval(bgLogo); clogo.close(); cskin.close(); hud.close(); fcl.close(); });
         // route guidance (0.7.4, 0.7.5): the logo steps aside while it runs, and only then (or for G's TV). The stock navigation's guidingState
@@ -798,8 +800,8 @@ mgu.run({
             // what it covers, right of the choices
             const nx = S.x + 3 * (bw + g) + 40, nw = S.x + S.w - nx;
             lbl('Shown in', nx, top + 6, 18, t.dim);
-            ['Drive (every look), Warm-up, Tires', 'and the full-screen cluster test.', '',
-                'Warm-up zones and the Engine settings', 'keep their values; only the unit shown', 'changes. The cluster dials and the', "head unit's own settings list stay", 'in mph and \u00b0F.']
+            ['Drive (every look), Warm-up, Tires,', 'the cluster skins\' speed dial and', 'readout, the full-screen cluster', 'test and the Settings list.', '',
+                'Warm-up zones and the Engine settings', 'keep their values; only the unit shown', 'changes.']
                 .forEach((l2, k) => { if (l2) cv.text(fitText(cv, l2, 17, nw), nx, top + 44 + k * 26, 17, t.dim, { literal: true }); });
         }
         function drivingPage(cv, S, lk) {

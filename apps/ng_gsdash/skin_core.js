@@ -122,7 +122,8 @@ function cutsOf(side) {
 /* ---------------- the uniforms ---------------- */
 /**
  * The car's values -> the side's uniforms, for the look's meta (skin_looks.js). st: { speed (mph, as
- * shown), rpm, gear ('P', 'R', 'N', 'D', '1'..'9', or '-' / null: unknown) }.
+ * shown), readout (0.13.7: the digits' number, in the unit shown; the speed if not given), rpm, gear ('P', 'R',
+ * 'N', 'D', '1'..'9', or '-' / null: unknown) }.
  * -> { u_fill, u_nm, u_gl, u_cut }: 4 numbers each. u_gl: left, the speed's ones, tens, hundreds digit
  * (-1: no digit there); right, the gear's cell.
  */
@@ -151,7 +152,8 @@ function uniforms(meta, side, st) {
     const cells = meta.cells[side];
     let cell = -1;
     if (side === 'L') {
-        const n = isNum(st.speed) ? clamp(Math.round(st.speed), 0, SPEED_MAX) : -1;
+        const rd = isNum(st.readout) ? st.readout : st.speed;          // 0.13.7: the readout in the unit shown (km/h)
+        const n = isNum(rd) ? clamp(Math.round(rd), 0, SPEED_MAX) : -1;
         out.u_gl = n < 0 || !cells.labels.length ? [-1, -1, -1, 0] : [n % 10, n >= 10 ? Math.floor(n / 10) % 10 : -1, n >= 100 ? Math.floor(n / 100) % 10 : -1, 0];
     } else {
         cell = cells.labels.indexOf(String(st.gear));

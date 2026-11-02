@@ -27,6 +27,15 @@ function slice(meta, img) {
     });
     return out;
 }
+/** 0.13.7: slice(), with the left art from a look's km/h file (skin_<id>_kmh.png: the left art alone) when given */
+function sliceUnit(meta, img, kmhImg) {
+    const out = slice(meta, img);
+    if (!kmhImg) return out;
+    const k = meta.kmh;
+    if (!k || kmhImg.w !== k.size[0] || kmhImg.h !== k.size[1]) throw new Error((k ? k.file : 'km/h art') + ': ' + kmhImg.w + 'x' + kmhImg.h + (k ? ', not ' + k.size.join('x') : ''));
+    out.art.L = crop(kmhImg, k.art[0], k.art[1], SK.REGION_W, SK.REGION_H);
+    return out;
+}
 /** 0.8.4: the field at half resolution (FIELD_K): the Cluster renderer (0.2.2) keeps 16 MiB for every
  * client's pixels together, an asset counted twice, and the full field (2 x 860x636 rgba) with the look's
  * art came to about 20 MB: refused ("the service's pixel memory is full"). Each 2x2 block keeps its top-left
@@ -99,4 +108,4 @@ function packField(f) { return { L: pack(f.L), R: pack(f.R) }; }
 function dimsOf(look, field, side) { return { art: look.art[side].dims, band: look.band[side].dims, field: field[side].dims }; }
 /** the renderer's count for textures (cluster-render 0.2.2: w x h x 4, twice) */
 function rendererBytes(list) { return list.reduce((n, t) => n + t.w * t.h * 4 * 2, 0); }
-module.exports = { crop, slice, sliceField, half, pack, texelOf, packLook, packField, dimsOf, rendererBytes };
+module.exports = { crop, slice, sliceUnit, sliceField, half, pack, texelOf, packLook, packField, dimsOf, rendererBytes };

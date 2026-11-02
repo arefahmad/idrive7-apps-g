@@ -107,7 +107,21 @@ function values(s) {
     const d = (s && s.data) || {};
     let gear = s && s.gear ? String(s.gear) : '-';
     if (d.gearGuessed && /^[0-9]$/.test(gear)) gear = '-';
-    return { speed: shownSpeed(d.speed), rpm: SK.isNum(d.rpm) ? d.rpm : null, gear };
+    const speed = shownSpeed(d.speed);
+    // 0.13.7: the needle stays on the mph arc (a km/h dial is the same arc relabelled); the readout in the unit
+    const readout = speed !== null && kmhOf(s) ? speed * 1.609344 : speed;
+    return { speed, readout, rpm: SK.isNum(d.rpm) ? d.rpm : null, gear };
+}
+/** 0.13.7: the skins in km/h (Options > Units: speed); mph (the car's own) otherwise */
+function kmhOf(s) { return !!(s && s.speedUnit === 'kmh'); }
+/** 0.13.7: a look's id with its speed unit ('m', 'm@kmh': the same look, its km/h speedo) */
+const KMH_SUFFIX = '@kmh';
+function baseOf(id) { return String(id || '').replace(KMH_SUFFIX, ''); }
+/** the meta of a look id (skin_looks.js); a km/h id: the look's, its name and km/h art noted */
+function metaOf(id) {
+    const m = META.looks[baseOf(id)];
+    if (!m || id === baseOf(id)) return m || null;
+    return m.kmh ? Object.assign({}, m, { unit: 'kmh' }) : null;
 }
 const toBuf = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
 
@@ -184,9 +198,10 @@ class ClusterSkin {
     }
     lookId() {
         const s = this.st || {};
-        if (s.mode === 'align') return 'align';
-        if (s.mode === 'stock') return 'stock';
-        return LOOK_SKIN[s.look] || 'm';          // M Style: the default look (0.9.0)
+        if (s.mode === 'align') return 'align';      // the car's geometry: in its own units
+        const id = s.mode === 'stock' ? 'stock' : LOOK_SKIN[s.look] || 'm';          // M Style: the default look (0.9.0)
+        // 0.13.7: km/h a look of its own, so a units change takes the look switch's way (drops first, settle, gate, memory check)
+        return kmhOf(s) && META.looks[id].kmh ? id + KMH_SUFFIX : id;
     }
 
     _connect() {
@@ -443,7 +458,7 @@ class ClusterSkin {
 
     /** The look's assets and two layers (hidden); the old look's go after. false: could not. */
     _make(id) {
-        const cr = this.cr, meta = META.looks[id];
+        const cr = this.cr, meta = metaOf(id);
         if (!meta) return false;
         // an older Cluster renderer tool: no effect layers; the skins stay off (the logo is not affected)
         if (['effect', 'asset', 'bind', 'uniform', 'animate'].some((k) => typeof cr[k] !== 'function')) {
@@ -453,7 +468,8 @@ class ClusterSkin {
         let tex;
         try {
             // 0.11.2: tiled (skin_assets.js pack): the same texels in under half the renderer's memory
-            if (this.cache.id !== id) { this.cache = { id, tex: ASSETS.packLook(ASSETS.slice(meta, this.o.load(meta.file))) }; }
+            // 0.13.7: km/h: the look's own file with its left art from skin_<id>_kmh.png (the old cache let go first)
+            if (this.cache.id !== id) { this.cache = { id: '', tex: null }; this.cache = { id, tex: ASSETS.packLook(ASSETS.sliceUnit(meta, this.o.load(meta.file), meta.unit === 'kmh' ? this.o.load(meta.kmh.file) : null)) }; }
             tex = this.cache.tex;
             if (!this.fieldTex) this.fieldTex = ASSETS.packField(ASSETS.sliceField(this.o.load(META.field.file)));
             // the old look's go first (0.12.1: _apply drops them and waits for the renderer to let them go)
@@ -568,7 +584,7 @@ class ClusterSkin {
         if (this.noEffect) return { kind: 'none', text: 'Update Cluster renderer' };
         const why = this.why || this._why();
         if (!why && this.visible) {
-            const n = this.cur ? META.looks[this.cur.id].name : '';
+            const n = this.cur ? this.cur.meta.name + (this.cur.meta.unit === 'kmh' ? ' (km/h)' : '') : '';
             return { kind: 'on', text: 'Shown - ' + n };
         }
         const TXT = { moving: 'Stock while driving', 'stale values': 'Stock - signal delayed', 'in gear': 'Stock while in gear',
@@ -589,5 +605,5 @@ class ClusterSkin {
 function shortReason(r) { return String(r || '').replace(/^[a-z?]+: /, ''); }
 const SHORT_ERR = { missing: 'Needs Cluster renderer', noclient: 'Update Cluster renderer', untrusted: 'Renderer not trusted', load: 'Renderer failed to load' };
 
-module.exports = { shortReason, ClusterSkin, blocker, staleness, values, shownSpeed, panelLayers, LOOK_SKIN, TARGET, KLASS, SKIN_Z, LAYOUT, PARKED_KMH,
+module.exports = { shortReason, ClusterSkin, blocker, staleness, values, shownSpeed, kmhOf, baseOf, metaOf, KMH_SUFFIX, panelLayers, LOOK_SKIN, TARGET, KLASS, SKIN_Z, LAYOUT, PARKED_KMH,
     POLL_MS, PUMP_MS, PUSH_MS, REARM_MS, FRESH_HOLD, FRESH_FADE, STALE_MS, LIVE_MS, RESHOW_MS, HOLD_MS, SPEED_PCT, SPEED_ADD };

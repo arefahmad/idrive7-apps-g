@@ -130,9 +130,18 @@ class Settings {
         const s = this.item(key), v = this.values[key];
         if (!s) return String(v);
         if (s.type === 'choice') { const o = (s.options || []).find((x) => x[0] === v); return o ? o[1] : String(v); }
-        if (s.type === 'number') return String(v) + (s.unit ? ' ' + s.unit : '') + (s.markDefault && v === s.default ? ' (default)' : '');
+        if (s.type === 'number') return this.numText(s, v);
         if (s.type === 'bool') return v ? 'On' : 'Off';
         return String(v);
+    }
+    /**
+     * A number setting's value as a row shows it: '194 °F (default)'. An app may set settings.format =
+     * (item, value) -> text | null to show it otherwise (e.g. in the user's units; the value kept as is).
+     */
+    numText(s, v) {
+        let t = null;
+        if (typeof this.format === 'function') { try { t = this.format(s, v); } catch (e) { t = null; } }
+        return (t != null ? String(t) : String(v) + (s.unit ? ' ' + s.unit : '')) + (s.markDefault && v === s.default ? ' (default)' : '');
     }
     /** Advance a choice/number setting to its next value (wraps). */
     cycle(key) {

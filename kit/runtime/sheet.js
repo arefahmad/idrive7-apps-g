@@ -95,9 +95,10 @@ function list(r, t, key, rows, focus, y0, controller) {
 list.scroll = {};
 
 /* ---------------- settings ---------------- */
-function values(s) {
+function values(s, settings) {
     if (s.type === 'choice') return (s.options || []).map((o) => [o[0], o[1]]);
-    if (s.type === 'number') return (s.steps || []).map((v) => [v, String(v) + (s.unit ? ' ' + s.unit : '') + (s.markDefault && v === s.default ? ' (default)' : '')]);
+    if (s.type === 'number') return (s.steps || []).map((v) => [v, settings && typeof settings.numText === 'function' ? settings.numText(s, v)
+        : String(v) + (s.unit ? ' ' + s.unit : '') + (s.markDefault && v === s.default ? ' (default)' : '')]);
     return null;
 }
 
@@ -112,11 +113,11 @@ function listSheet(settings, title, opts) {
         rows() {
             if (this.open) {
                 const cur = settings.get(this.open.key);
-                return values(this.open).map((v) => ({ label: v[1], kind: 'radio', on: v[0] === cur }));
+                return values(this.open, settings).map((v) => ({ label: v[1], kind: 'radio', on: v[0] === cur }));
             }
             return schema.map((s) => (s.type === 'bool'
                 ? { label: s.label, kind: 'toggle', on: !!settings.get(s.key) }
-                : { label: s.label, value: settings.display(s.key), kind: values(s) ? 'more' : null }));
+                : { label: s.label, value: settings.display(s.key), kind: values(s, settings) ? 'more' : null }));
         },
         draw(r, t) {
             r.clear(t.bg);
@@ -156,7 +157,7 @@ function listSheet(settings, title, opts) {
         },
         choose() {
             if (this.open) {
-                const v = values(this.open)[this.sub];
+                const v = values(this.open, settings)[this.sub];
                 if (v && v[0] !== settings.get(this.open.key)) settings.set(this.open.key, v[0]);
                 this.open = null;
                 return null;
@@ -164,9 +165,9 @@ function listSheet(settings, title, opts) {
             const s = schema[this.focus];
             if (!s) return null;
             if (s.type === 'bool') settings.set(s.key, !settings.get(s.key));
-            else if (values(s)) {
+            else if (values(s, settings)) {
                 this.open = s;
-                this.sub = Math.max(0, values(s).findIndex((v) => v[0] === settings.get(s.key)));
+                this.sub = Math.max(0, values(s, settings).findIndex((v) => v[0] === settings.get(s.key)));
             } else settings.cycle(s.key);
             return null;
         },
