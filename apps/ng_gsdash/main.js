@@ -182,6 +182,8 @@ mgu.run({
         // the kit's own parts (header, the controller's marks) in the look's colours
         if (ctx.setTheme) ctx.setTheme(palette);
         settings.onChange((k) => { if (k === 'look' && ctx.setTheme) ctx.setTheme(palette); });
+        // 0.13.4: every look switch one line (the remote logs' ring keeps it with the cluster / HUD lines around it)
+        settings.onChange((k, v) => { if (k === 'look') log.info('look: ' + lookOf(v).id); });
 
         let peak = null, since = Date.now(), env = [], hist = [], gSeen = false, sessionAt = 0;
         const SESSION_FLASH_MS = 450;

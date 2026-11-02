@@ -15,6 +15,10 @@
  *
  * Coordination between apps (each has its own uid and data): a small folder in /tmp where G's Dash
  * leaves "send now" requests and the on/off switch, and each app its last-sent status.
+ *
+ * The ring (ringlog.js, G's Dash 0.13.4): the HUD / cluster renderer / look / memory lines of this run and the
+ * one before, kept on the app's data area so a head unit restart still leaves them; written only while a drop
+ * is installed and the switch is on, added to every bundle (scrubbed and sealed as the rest).
  */
 const fs = require('fs');
 const path = require('path');
@@ -26,6 +30,7 @@ const dns = require('dns');
 const url = require('url');
 const childProcess = require('child_process');
 const x25519 = require('./x25519.js');
+const ringlog = require('./ringlog.js');
 
 const MAGIC = Buffer.from('NGRL1');
 const INFO = Buffer.from('ng-remotelog v1');
@@ -209,6 +214,17 @@ function create(o) {
     let session = null, previous = null, crash = null, state = { lastSent: null, crashes: [], manualAt: 0 };
     let timers = [], uploading = false, failures = 0, retryTimer = null, blocked = false, lastReq = 0, busy = Promise.resolve();
     const contexts = [];
+    // the crash-surviving ring: on only with a drop installed and the switch on; no drop: nothing kept
+    const ring = ringlog.create(Object.assign({ dir: path.join(dir, 'ring'), id: o.id, version: o.version, now, boot: () => bootId(),
+        gate: () => (readDrop(o.dataDir).state !== 'ok' ? 'none' : enabled() ? 'on' : 'off') }, o.ring || {}));
+    // absolute paths in a bundle made app-relative (the data folder, the app's own folder)
+    const appDir = path.resolve(__dirname, '..');
+    const relative = (s) => {
+        let r = String(s);
+        [[o.dataDir, '<data>'], [appDir, '<app>']].filter((p) => p[0] && p[0].length > 1).sort((a, b) => b[0].length - a[0].length)
+            .forEach((p) => { r = r.split(path.resolve(p[0])).join(p[1]); });
+        return r;
+    };
 
     const bootId = () => (readSync(proc.bootId) || '').trim().slice(0, 64);
     const uptime = () => { const u = parseFloat(readSync(proc.uptime) || ''); return isFinite(u) ? u : null; };
@@ -220,6 +236,7 @@ function create(o) {
         try { previous = JSON.parse(fs.readFileSync(sessionFile, 'utf8')); } catch (e) { previous = null; }
         try { state = Object.assign(state, JSON.parse(fs.readFileSync(stateFile, 'utf8'))); } catch (e) { /* first */ }
         crash = classify(previous);
+        try { ring.begin(); } catch (e) { /* never in the way */ }
         session = { v: 1, started: now(), beat: now(), boot: bootId(), version: o.version, clean: false, fatal: false };
         writeSyncSafe(sessionFile, JSON.stringify(session));
         if (crash) note('warn', 'the last session ended uncleanly (' + crash.kind + ')');
@@ -239,8 +256,8 @@ function create(o) {
         return gap < REBOOT_GAP_MS ? { kind: 'reboot', why: 'the head unit restarted while the app ran', gapS: Math.round(gap / 1000) } : null;
     }
     function beat() { if (session) { session.beat = now(); writeAsync(sessionFile, JSON.stringify(session)); } }
-    function end(code) { if (!session) return; session.clean = !code; session.code = code; session.beat = now(); writeSyncSafe(sessionFile, JSON.stringify(session)); }
-    function fatal() { if (!session) return; session.fatal = true; session.beat = now(); writeSyncSafe(sessionFile, JSON.stringify(session)); }
+    function end(code) { try { ring.flushSync(); } catch (e) {} if (!session) return; session.clean = !code; session.code = code; session.beat = now(); writeSyncSafe(sessionFile, JSON.stringify(session)); }
+    function fatal() { try { ring.flushSync(); } catch (e) {} if (!session) return; session.fatal = true; session.beat = now(); writeSyncSafe(sessionFile, JSON.stringify(session)); }
 
     /* --- policy / shared folder --- */
     function sharedRead(name) { try { return JSON.parse(fs.readFileSync(path.join(shared, name), 'utf8')); } catch (e) { return null; } }
@@ -260,6 +277,7 @@ function create(o) {
         state.on = !!on; saveState();
         sharedWrite('policy.json', { on: !!on, at: now() });
         note('info', on ? 'on' : 'off');
+        try { ring.refresh(); } catch (e) {}
         if (on) { blocked = false; kick(0); }
     }
     /** G's Dash: its switch shared at start, so the others follow it */
@@ -320,8 +338,14 @@ function create(o) {
             };
             contexts.forEach((c) => { try { doc.sections['status:' + c.name] = JSON.stringify(c.fn()); } catch (e) {} });
             doc.sections.log = await sessionLines(since);
+            // the ring: the run before's (a crash bundle: the run that crashed) and this run's
+            try {
+                const rg = ring.read();
+                if (rg.prev) doc.sections['ring:prev-run'] = tail(rg.prev, LIMITS.extraBytes);
+                if (rg.now && reason.kind === 'manual') doc.sections['ring:this-run'] = tail(rg.now, LIMITS.extraBytes);
+            } catch (e) { /* no ring */ }
             Object.assign(doc.sections, await extras(reason.kind));
-            Object.keys(doc.sections).forEach((k) => { doc.sections[k] = scrub(doc.sections[k], secrets); });
+            Object.keys(doc.sections).forEach((k) => { doc.sections[k] = scrub(relative(doc.sections[k]), secrets); });
             let sealed = null;
             for (let cut = 0; cut < 4; cut++) {
                 const z = await new Promise((res, rej) => zlib.gzip(Buffer.from(JSON.stringify(doc)), { level: 6 }, (e, b) => e ? rej(e) : res(b)));
@@ -430,6 +454,7 @@ function create(o) {
         const t = (fn, ms) => { const h = setInterval(fn, ms); if (h.unref) h.unref(); timers.push(h); };
         t(beat, BEAT_MS);
         t(poll, 15e3);
+        try { ring.start(); } catch (e) {}
         const r = sharedRead('request.json'); lastReq = r ? r.at : 0;
         const d = setTimeout(() => {
             if (crash && crashAllowed()) bundle(crash, previous && previous.started).then(() => kick(0));
@@ -438,7 +463,7 @@ function create(o) {
         if (d.unref) d.unref();
         timers.push(d);
     }
-    function stop() { timers.forEach((h) => { clearInterval(h); clearTimeout(h); }); timers = []; if (retryTimer) clearTimeout(retryTimer); }
+    function stop() { timers.forEach((h) => { clearInterval(h); clearTimeout(h); }); timers = []; if (retryTimer) clearTimeout(retryTimer); try { ring.stop(); } catch (e) {} }
 
     function status() {
         const drop = readDrop(o.dataDir);
@@ -448,6 +473,9 @@ function create(o) {
     }
     return {
         begin, start, stop, end, fatal, status, sendNow, setEnabled, share, bundle, upload, kick, listOutbox,
+        /** a log line for the ring (mgu.js's file log); nothing when the ring is off */
+        ring(level, msg) { try { ring.note(level, msg); } catch (e) {} },
+        get ringLog() { return ring; },
         context(name, fn) { contexts.push({ name, fn }); },
         get crash() { return crash; }, _state: () => state,
     };

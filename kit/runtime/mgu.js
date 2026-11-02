@@ -40,12 +40,15 @@ const LOG_FILE = path.join(DATA_DIR, SPEC.id + '.log');
 const RUN_TAG = Date.now().toString(36);
 // drop drawn frames left by earlier runs
 try { fs.readdirSync(RHMI_RES).filter((f) => /^dyn_/.test(f)).forEach((f) => { try { fs.unlinkSync(path.join(RHMI_RES, f)); } catch (e) {} }); } catch (e) {}
+let remote = null;     // the encrypted remote logs (below), once made
 function fileLog(level, msg) {
     try {
         const st = fs.existsSync(LOG_FILE) ? fs.statSync(LOG_FILE) : null;
         if (st && st.size > 1024 * 1024) fs.renameSync(LOG_FILE, LOG_FILE + '.1');
         fs.appendFileSync(LOG_FILE, new Date().toISOString() + ' ' + level + ' ' + msg + '\n');
     } catch (e) { /* data dir not writable (host preview) */ }
+    // the crash-surviving ring (remotelog.js / ringlog.js): only with a drop installed and the switch on; batched
+    if (remote) { try { remote.ring(level, msg); } catch (e) { /* never in the way */ } }
 }
 // The SDK can swallow the first RHMI resource error and fail later with a misleading
 // null entry-point factory. Preserve the original warnings/errors in the app log.
@@ -74,7 +77,6 @@ let startStage = 'loading';
 const stage = (s) => { startStage = s; };
 // encrypted crash logs (remotelog.js): the session marker now, the timers once running; a bundle only after
 // a crash or when asked, uploaded only with a drop installed on the unit
-let remote = null;
 try {
     if (process.env.NG_REMOTELOG !== '0') {
         const rl = require('./remotelog.js');
