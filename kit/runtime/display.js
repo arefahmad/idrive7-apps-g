@@ -59,6 +59,10 @@ const HMI = {
     // font = our 'label' font at 40 px x 1.465 (measured: "Next page" 412, "Previous page" 507,
     // "Settings" 370 px wide)
     btn: { x: 132, pad: 180, size: 40, k: 1.465 },
+    // the HMI's own screen title, drawn in the strip UNDER our surface: from x 104 in the bar
+    // buttons' font (our 'label' at 40 px x 1.465). From car photos, its tail showed right of a
+    // header narrower than it ("G's Dash" ends at about x 300, "G's Music" at about 318)
+    title: { x: 104, size: 40, k: 1.465, pad: 24 },
     left: 84,                                   // the HMI's back arrow column (x 0..84): kept see-through
     barTop: 596,                                // top of the HMI's own button bar (its 2 px edge line; body from 600)
     colEnd: 530,                                // the back arrow column shows the HMI down to here (home, back arrow)
@@ -766,6 +770,13 @@ class Display {
      * Full-screen layout: header, slim bar and the see-through status corner, appended to the
      * frame in the surface's own pixels (xf). Software playback skips this part.
      */
+    /** Where the HMI's own title (the app's or this screen's title) ends, in screen px. */
+    hmiTitleEnd(...titles) {
+        const m = this.chromeRec || new Recorder(1, 1), T = HMI.title;
+        const w = titles.reduce((a, s) => Math.max(a, s ? m.textWidth(String(s), T.size, { font: 'label' }) : 0), 0);
+        return w ? T.x + w * T.k + T.pad : 0;
+    }
+
     _drawChrome(r) {
         const pl = this.place, t = this.theme(), W = pl.w, H = pl.h;
         const c = this.chromeRec || (this.chromeRec = new Recorder(W, H));
@@ -779,7 +790,10 @@ class Display {
         // the HMI's own title is in the strip under the header: a narrower header (a sheet: no tabs) stays
         // as wide as the app's widest, so none of that title shows beside it
         if (!this.sheet) this.headMax = Math.max(this.headMax || 0, end);
-        const sx = this.headEnd = Math.min(HMI.status.x - pl.x, Math.ceil(Math.max(end, this.headMax || 0)));
+        // and at least as wide as the HMI's own title, which is bigger than ours: else its tail shows
+        // in the see-through part right of the header, a second, partial copy of the name
+        const hmiEnd = this.hmiTitleEnd(this.spec.title, this.screen.title) - pl.x;
+        const sx = this.headEnd = Math.min(HMI.status.x - pl.x, Math.ceil(Math.max(end, this.headMax || 0, hmiEnd)));
         if (sx > end) { c.fillRect(end, 0, sx - end, FULL.headH - 2, HMI.headBg); c.fillRect(end, FULL.headH - 2, sx - end, 2, G.withAlpha('#ffffff', 0.22)); }
         // the tab the controller is on (the kit holds it: Display._ccu)
         const ft = this.focusTab != null && (!this.sheet || this.sheetHead) && (c.tabRects || []).find((q) => q.i === this.focusTab);
