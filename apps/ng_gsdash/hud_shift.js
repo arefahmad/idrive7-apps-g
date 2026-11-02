@@ -1,25 +1,28 @@
 'use strict';
 /**
- * hud_shift.js - G's Dash's HUD (0.9.0: the full HUD - speed, gear, shift lights; 0.8.2 had the
- * lights + gear band), through the separately installed Cluster renderer tool (the client as
- * cluster_logo.js loads it). While G's Dash is open and the setting "displays" ("Your look on the car's
- * displays", 0.10.0; 0.9.0: "hudShift") is HUD (one choice with the cluster dials and Neither: the panel
- * and the HUD share one scene) the whole HUD shows, in the look's style (hud_core.js): the
- * speed in mph, big; the gearbox's own gear (R, N, D, 1..9; nothing in P, unknown or guessed); the shift
- * lights over the last RANGE (2000) rpm before the shift point (the redline less "Shift point, before
- * redline") with a flash at about 4 Hz from the shift point. Any drive mode. No speed limit (hud_core TODO).
+ * hud_shift.js - G's Dash's HUD (0.13.0: a big gear and a tach arc - the car's own HUD shows the speed;
+ * 0.9.0-0.12.0 also drew the speed, 0.8.2 had a lights + gear band), through the separately installed
+ * Cluster renderer tool (the client as cluster_logo.js loads it). While G's Dash is open and the setting
+ * "displays" ("Your look on the car's displays", 0.10.0; 0.9.0: "hudShift") is HUD (one choice with the
+ * cluster dials and Neither: the panel and the HUD share one scene) the whole HUD shows, in the look's
+ * style (hud_core.js): the gearbox's own gear, big (R, N, D; a number as D3 - the selector's letter, then
+ * the number; nothing in P, unknown or guessed) and a tach arc from 0 to the max rpm with the shift-light
+ * colours over the last RANGE (2000) rpm before the shift point (the redline less "Shift point, before
+ * redline"); past the shift point the whole arc flashes at about 4 Hz. Any drive mode. No speed limit
+ * (hud_core TODO).
  *
  * The layer: one "effect" layer covering the "hud" target (800 x 480), class "content" at z HUD_Z (80:
  * under G's TV's HUD video at 100), never exclusive, never the alert class. Contending as G's TV's HUD
- * layer does (the HUD belongs to whoever contends; the panel is not taken). Assets once a look: the
- * style's band panes (hud_shift.png) and the look's big cells (hud_full.png). Per frame only u_lv
- * (fill, mode, gear, mph), and only when it changed, PUSH_MS (33 ms, 30 Hz) at most. The flash is the
- * mode in u_lv, sent by the pump every BLINK_MS while at the shift point.
+ * layer does (the HUD belongs to whoever contends; the panel is not taken). The arc is drawn by the
+ * shader; one asset a look: its glyph atlas (hud_gear_<look>.png) as r8. Per frame only u_lv (rpm, mode,
+ * gear, prefix) and u_cfg (shift point, max rpm, the gear's x positions), and only when they changed,
+ * PUSH_MS (33 ms, 30 Hz) at most. The flash is the mode in u_lv, sent by the pump every BLINK_MS while at
+ * the shift point.
  *
  * Hidden: closed, off, demo data, no speed signal, values older than LIVE_MS (300 ms) while moving or
- * while the lights run (shown again after RESHOW_MS of fresh values), G's Dash's loop older than
+ * while the shift lights run (shown again after RESHOW_MS of fresh values), G's Dash's loop older than
  * STALE_MS, another app's layer on the HUD or the panel (G's TV's video: back HOLD_MS, about 1 s, after
- * it goes), any renderer error. No rpm or no shift point: no lights, the speed and gear still shown.
+ * it goes), any renderer error. No rpm: the arc dim, the gear still shown.
  * Fail-safe as the cluster skins (failsafe.js): u_fresh held by a renderer animation re-armed every REARM_MS; G's Dash
  * stopping or hanging and the HUD fades by itself within about 0.3 s. 0.11.3: re-armed new-first (no frame with
  * u_fresh 0 between a stop and the next start: the HUD strobed with the stock HUD under it), the client's u_fresh 1
@@ -28,7 +31,6 @@
  */
 const HC = require('./hud_core');
 const CL = require('./cluster_logo');
-const ASSETS = require('./skin_assets');
 const CS = require('./cluster_skin');
 const FS = require('./failsafe');
 const MEM = require('./cluster_memory');
@@ -38,7 +40,6 @@ const PARKED_KMH = 1;
 const POLL_MS = 1000, PUMP_MS = 33, PUSH_MS = 33, REARM_MS = 60, FRESH_HOLD = 200, FRESH_FADE = 40, STALE_MS = 600;
 const LIVE_MS = 300, RESHOW_MS = 500;
 const HOLD_MS = 1000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 3;
-const ART = 'hud_shift.png';
 const LOOKS = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel'], DEFAULT_LOOK = 'm';
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 
@@ -62,10 +63,10 @@ function staleness(s, now) {
     if (isNum(d.rpm) && (!isNum(at.rpm) || now - at.rpm > LIVE_MS)) return 'stale values';
     return '';
 }
-/** the HUD's values: { lit, mode, gear, mph } (hud_core.frame), the gear the gearbox's only */
+/** the HUD's values: { rpm, mode, lit, gear, pre } (hud_core.frame), the gear the gearbox's only */
 function values(s, now) {
     const d = (s && s.data) || {};
-    return HC.frame({ rpm: d.rpm, shift: s && s.shift, gear: s && s.gear, guessed: !!d.gearGuessed, kmh: d.speed }, now);
+    return HC.frame({ rpm: d.rpm, shift: s && s.shift, gear: s && s.gear, stage: d.stage, guessed: !!d.gearGuessed }, now);
 }
 const toBuf = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
 const mib = (b) => (b / 1048576).toFixed(1) + ' MiB';
@@ -81,11 +82,12 @@ class HudShift {
         this.T = o.timers || { setInterval, clearInterval };
         this.st = null; this.stAt = -1e15; this.want = false; this.why = 'closed';
         this.err = null; this.errAt = -1e15;
-        this.art = null;                                    // the decoded hud_shift.png
-        this.big = null;                                    // { id, img }: the look's big cells (hud_full.png)
+        this.big = null;                                    // { id, w, h, data }: the look's atlas as r8
         this.stats = { connects: 0, layers: 0, assets: 0, bytes: 0, uniforms: 0, rearms: 0, drops: 0, refreshes: 0, samples: 0, pushes: 0, staleHides: 0, shows: 0, hides: 0 };
         this.staleAt = -1e15; this.lastPush = -1e15;
         this.diag = new FS.Diag(this.log, 'hud shift', this.now);   // 0.11.3: rate-limited counters
+        this.up = new MEM.UploadWatch(this.log, 'hud shift', this.now);   // 0.13.0: failed / partial uploads counted
+        this.mem = new MEM.MemWatch(this.log, 'hud shift', this.app, this.now);   // 0.13.0: the memory watchdog
         this._reset();
     }
     _reset() {
@@ -139,7 +141,7 @@ class HudShift {
         this.stats.connects++;
         cr.on('ready', () => {
             if (this.cr !== cr) return;
-            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset();
+            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
             this.log.info('hud shift: connected');
             this._ask();
             if (this.cur) this._unconfirm(this.cur);       // 0.8.5: the client's replay, confirmed by this ask
@@ -167,6 +169,7 @@ class HudShift {
             if (this.cr !== cr) return;
             const now = this.now();
             this.statusText = String(text || '');
+            this.up.see(MEM.uploads(this.statusText, this.app, TARGET)); this.mem.see(this.statusText);
             const others = CS.panelLayers(text, this.app).filter((l) => !l.own && (l.state === 'shown' || l.state === 'waiting' || l.state === 'suspended'));
             if (others.length) this.busyAt = now;
             const was = this.others.map((l) => l.app).join(','), is = others.map((l) => l.app).join(',');
@@ -195,6 +198,7 @@ class HudShift {
         const ours = !!(c && ref && (ref === c.ref || c.assets.indexOf(ref) >= 0));
         if (op === 'drop' || !ours) { this.log.info('hud shift: refused ' + r + (op === 'drop' ? '' : ' (not in use)')); return; }
         this.log.warn('hud shift: refused ' + r);
+        if (MEM.MEM_FULL.test(String(reason || ''))) this.mem.refused();   // 0.13.0: the watchdog counts it
         if (!c.ok) { if (!c.err) c.err = r; return; }
         const lost = /^no such (layer|asset)$/.test(String(reason || ''));
         if (lost && !this.healed) {
@@ -216,13 +220,18 @@ class HudShift {
             this._dropLook();
             return;
         }
+        // 0.13.0: shown only once the renderer's status says every asset of ours on the target is written whole
+        const up = MEM.uploads(this.statusText, this.app, TARGET);
+        // 0.13.0: not written yet (the renderer writes at its next draw): asked again on the next pump (33 ms), not at once
+        if (up.unwritten) { this.up.waited(); this.upWait = true; c.until = this.asked + 1; return; }
         c.ok = true;
-        if (!c.bound) { cr.bind(c.ref, 'u_hud', c.a); cr.bind(c.ref, 'u_big', c.g); c.base = -1; FS.setBase(cr, c, 0); c.bound = true; }
+        if (!c.bound) { cr.bind(c.ref, 'u_big', c.g); c.base = -1; FS.setBase(cr, c, 0); c.bound = true; }
         this.log.info('hud shift: ' + c.id + ' confirmed by the renderer');
     }
     _tick() {
         if (!this.want || !this.cr) return;
         this.diag.tick();
+        this.up.tick(); this.mem.tick();
         if (!this.ready) {
             if (this.now() - this.downAt >= RECONNECT_MS) this._restart('not connected for ' + Math.round((this.now() - this.downAt) / 1000) + ' s');
             return;
@@ -262,7 +271,7 @@ class HudShift {
         // 0.12.1: a look shown stays until the choice settles (a quick run of switches makes the last only)
         const settling = !!(this.cur && this.cur.ok && this.cur.id !== id && now - this.seen.at < MEM.SETTLE_MS);
         if (!settling && (!this.cur || this.cur.id !== id)) {
-            // 0.12.1: the old look's layer and assets dropped, and the new ones sent only once the renderer let them go
+            // 0.12.1: the old look's layer and atlas dropped, and the new one sent only once the renderer let them go
             if (this.cur) this._dropLook();
             if (!this.gate.open(this.answered)) { this.why = 'making'; return; }
             let ok = false;
@@ -289,6 +298,7 @@ class HudShift {
     }
     _pump() {
         if (!this.want || !this.cr || !this.ready) return;
+        if (this.upWait) { this.upWait = false; this._ask(); }
         if (this._why()) { if (this.visible) this._apply(); return; }
         // 0.12.1: a look switch (once settled) and a gated upload are taken up here
         if (this.cur && this.cur.id !== this.lookId()) this._apply();
@@ -303,11 +313,12 @@ class HudShift {
         this.lastRearm = this.now(); this.stats.rearms++; this.diag.rearmed();
     }
     _uniforms(all) {
-        const v = values(this.st, this.now());
-        const u = [v.lit, v.mode, v.gear, v.mph], key = u.join(',');
+        const s = this.st || {}, v = values(s, this.now());
+        const u = HC.uniforms(this.cur.meta, v, s.shift, HC.maxRpmOf(s.redline));
+        const key = u.u_lv.join(',') + '|' + u.u_cfg.join(',');
         if (!all && this.cur.sent === key) return;
         this.cur.sent = key;
-        this.cr.uniform(this.cur.ref, 'u_lv', u); this.stats.uniforms++;
+        this.cr.uniform(this.cur.ref, 'u_lv', u.u_lv); this.cr.uniform(this.cur.ref, 'u_cfg', u.u_cfg); this.stats.uniforms += 2;
         this.lastPush = this.now(); this.stats.pushes++;
     }
 
@@ -318,49 +329,47 @@ class HudShift {
             if (!this.noEffect) this.log.warn('hud shift: this Cluster renderer has no effect layers');
             this.noEffect = true; return false;
         }
-        const style = HC.styleOf(id), big = HC.bigOf(id);
-        if (!big) return false;
-        let pane, cells;
+        const meta = HC.atlasOf(id);
+        if (!meta) return false;
+        let atlas;
         try {
-            if (!this.art) this.art = this.o.load(ART);
-            const r = HC.paneRect(style);
-            pane = ASSETS.crop(this.art, r.x, r.y, r.w, r.h);
-            // one look's block at a time (hud_full.png is decoded, cropped and let go)
-            if (!this.big || this.big.id !== id) this.big = { id, img: ASSETS.crop(this.o.load(big.file), big.x, big.y, big.w, big.h) };
-            cells = this.big.img;
+            // one look's atlas at a time (decoded, made one byte a pixel, the decode let go)
+            if (!this.big || this.big.id !== id) { const img = this.o.load(meta.file); this.big = { id, w: img.w, h: img.h, data: HC.r8(img) }; }
+            atlas = this.big;
         } catch (e) { this.log.warn('hud shift: ' + id + ' assets: ' + e.message); return false; }
         // the old look's assets go first (0.12.1: _apply drops them and waits for the renderer to let them go)
         if (this.cur) { this._dropLook(); return false; }
         // 0.12.1: checked against the renderer's memory (its last status, asked after our drops) before sending
-        const need = MEM.asset(pane.w, pane.h, false) + MEM.asset(cells.w, cells.h, false), fit = MEM.fits(this.statusText, need);
+        const need = MEM.asset(atlas.w, atlas.h, true), fit = MEM.fits(this.statusText, need);
         if (this.statusText && !fit.ok) {
             const r = 'asset: the service\'s pixel memory is full (checked before sending: ' + mib(fit.used) + ' in use, ' + mib(need) + ' needed)';
+            this.mem.refused();   // 0.13.0: the watchdog counts it (not sent)
             this.log.warn('hud shift: ' + id + ' not sent - ' + r.slice(7));
             this.layerErr = r; this.lastErr = r;
             return false;
         }
-        const cur = { id, style, assets: [], ref: 0, anim: 0, sent: '', base: -1 };
-        const a = this._asset(pane, 'nearest'), g = this._asset(cells, big.sampling);
-        [a, g].forEach((r) => { if (r) cur.assets.push(r); });
-        if (!a || !g) { this._dropAll(cur); return false; }
+        const cur = { id, meta, assets: [], ref: 0, anim: 0, sent: '', base: -1 };
+        const g = this._asset(atlas, meta.sampling);
+        if (g) cur.assets.push(g);
+        if (!g) { this._dropAll(cur); return false; }
         const B = HC.HUD;
         // 0.8.4: made visible at once, as G's TV's HUD video is (it wants the HUD from its first
         // message; u_fresh 0 keeps it clear until the first values)
         this.layerState = 'new';
         const ref = cr.effect({ target: TARGET, klass: KLASS, z: HUD_Z, exclusive: false, contend: true, visible: true,
-            x: 0, y: 0, w: B.w, h: B.h, fs: HC.fragment(style, big) });
+            x: 0, y: 0, w: B.w, h: B.h, fs: HC.fragment(id, meta) });
         if (!ref) { this.log.warn('hud shift: effect layer refused by the client'); this._dropAll(cur); return false; }
         cur.ref = ref;
         // 0.8.5: bound and its uniforms sent once the service confirms it (0.8.4 sent them at once)
-        cur.a = a; cur.g = g; cur.bound = false;
+        cur.g = g; cur.bound = false;
         this.stats.layers++;
         this.cur = cur; this.visible = false;
         this._ask(); this._unconfirm(cur);
-        this.log.info('hud shift: ' + id + ' (' + style + ') made (' + Math.round(this.stats.bytes / 1024) + ' KB sent this run)');
+        this.log.info('hud shift: ' + id + ' made (' + Math.round(this.stats.bytes / 1024) + ' KB sent this run)');
         return true;
     }
     _asset(t, sampling) {
-        const ref = this.cr.asset({ target: TARGET, format: 'rgba8', w: t.w, h: t.h, sampling });
+        const ref = this.cr.asset({ target: TARGET, format: 'r8', w: t.w, h: t.h, sampling });
         if (!ref) { this.log.warn('hud shift: asset ' + t.w + 'x' + t.h + ' refused by the client'); return 0; }
         this.cr.pixels(ref, null, toBuf(t.data));
         this.stats.assets++; this.stats.bytes += t.data.length;
@@ -405,7 +414,7 @@ class HudShift {
         }
         this._reset();
     }
-    close() { this._off(); this.want = false; this.art = null; this.big = null; }
+    close() { this._off(); this.want = false; this.big = null; }
 
     /** The Options line: { kind: 'on' | 'wait' | 'off' | 'none' | 'error', text } */
     view() {
@@ -439,4 +448,4 @@ class HudShift {
 const SHORT_ERR = { missing: 'Needs Cluster renderer', noclient: 'Update Cluster renderer', untrusted: 'Renderer not trusted', load: 'Renderer failed to load' };
 
 module.exports = { HudShift, blocker, staleness, values, LOOKS, DEFAULT_LOOK, TARGET, KLASS, HUD_Z, PARKED_KMH,
-    POLL_MS, PUMP_MS, PUSH_MS, REARM_MS, FRESH_HOLD, FRESH_FADE, STALE_MS, LIVE_MS, RESHOW_MS, HOLD_MS, ART };
+    POLL_MS, PUMP_MS, PUSH_MS, REARM_MS, FRESH_HOLD, FRESH_FADE, STALE_MS, LIVE_MS, RESHOW_MS, HOLD_MS };

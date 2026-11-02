@@ -44,6 +44,7 @@ const BAND = 16;                                     // rows per dirty-rect band
 const POLL_MS = 1000, HOLD_MS = 3000, FRESH_MS = 2000, LOAD_RETRY_MS = 30000, RECONNECT_MS = 8000;
 const GUIDE_ON_MS = 1000, GUIDE_OFF_MS = 3000;
 const ERR_RETRY_MS = 5000, ERR_RETRIES = 3;
+const FREE_MS = 150;                                 // 0.7.1: a layer remade no sooner after its drop (the renderer lets go at its next draw)
 const PAUSE_DROP_MS = 30000;
 const PROGRESS_MS = 3000;                            // the progress line is redrawn no more often
 const LEAD_MS = 250;                                 // a lyric line a moment early, as on the screen
@@ -426,8 +427,10 @@ class MusicCluster {
             }
             this.errRetries++;
             this.log.info('music cluster: layer in error - making it again (' + this.errRetries + ' of ' + ERR_RETRIES + ')');
+            // 0.7.1: the old layers dropped now, made again FREE_MS later (an update or the next poll): never the
+            // old and the new on the cluster's GPU in one batch (G's Dash 0.12.1's bug)
             this._dropLayers();
-            this._apply();
+            this.freeUntil = now + FREE_MS;
         }
     }
 
@@ -486,6 +489,7 @@ class MusicCluster {
             this._animate(false);
             return;
         }
+        if (!this.text && now < (this.freeUntil || 0)) return;     // 0.7.1: just dropped, not let go yet
         // the text layer: made once, then only its changes
         const v = this._view(mode, now), key = textKey(v);
         if (!this.text) {

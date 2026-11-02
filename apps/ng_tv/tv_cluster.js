@@ -93,6 +93,7 @@ const Z = 100;                            // above other "content" layers on the
                                           // service orders by class, then z, then newest; the CarPlay map of
                                           // waze-on-cluster is content at z 0), never "alert"
 const EXCLUSIVE = true;                   // the layers below ours on the map are suspended while ours is drawn
+const FREE_MS = 150;                      // 0.4.6: a new layer no sooner after a drop (the renderer lets go at its next draw)
 const STALL_MS = 1000;                    // the service's minimum
 const READY_MS = 5000;                    // no hello within this: "not answering"
 
@@ -224,7 +225,7 @@ class ClusterOut {
         this.ready = false; this.connectAt = 0;
         this.ref = 0; this.geo = null; this.key = '';
         this.atlas = null; this.maps = null; this.id = 0;
-        this.fps = FPS; this.lastAt = -1e15; this.sent = 0;
+        this.fps = FPS; this.lastAt = -1e15; this.sent = 0; this.dropAt = -1e15;
         this.layerState = ''; this.layerReason = '';
         this.target = { state: '', holder: '', reason: '', rendering: '' };
         this.budget = null;
@@ -367,6 +368,9 @@ class ClusterOut {
                 this.atlas = blackAtlas(g.vw, g.vh);
                 this.log.info(this.tag + ': the picture ' + g.pw + 'x' + g.ph + ' shown ' + g.sw + 'x' + g.sh + ' at ' + g.sx + ',' + g.sy);
             }
+            // 0.4.6: just dropped (stop, then pictures again at once): the next picture makes the layer, never the
+            // old and the new video on the cluster's GPU in one batch (G's Dash 0.12.1's bug)
+            if (!this.ref && now - this.dropAt < FREE_MS) return false;
             if (!this.ref) {
                 const g = geometry(f.w, f.h, T.key);
                 const ref = this.cr.video({ target: T.name, klass: 'content', z: Z, exclusive: T.exclusive, x: g.x, y: g.y, w: g.w, h: g.h,
@@ -391,7 +395,7 @@ class ClusterOut {
         const ref = this.ref;
         this.ref = 0; this.kind = ''; this.key = ''; this.geo = null; this.layerState = ''; this.layerReason = ''; this.lastAt = -1e15;
         this.refused = ''; this.refusedReason = ''; this.others = null;   // 0.4.5: a new layer starts clean
-        if (ref && this.cr) { try { this.cr.drop(ref); } catch (e) { /* gone */ } }
+        if (ref && this.cr) { try { this.cr.drop(ref); } catch (e) { /* gone */ } this.dropAt = this.now(); }
     }
 
     /** Off the cluster now: the layer is dropped (the service removes it at once, without a fade). */

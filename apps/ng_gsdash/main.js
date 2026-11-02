@@ -72,10 +72,11 @@
  *     again every G's Dash layer in the cluster (the logo takes the map back from the stock map). On the
  *     diagnostics page, parked: the alignment card (a 1 px outline of the measured geometry) and the
  *     Stock redraw.
- *   - HUD (speed, gear, shift lights) (0.9.0's full HUD; 0.8.2 had the lights + gear; hud_shift.js,
- *     "displays" HUD): while open, the whole HUD in the look's style - the speed in
- *     mph, big, the gearbox's own gear (none in P, unknown or guessed) and a band of shift lights at the
- *     top over the last 2000 rpm before the shift point (a flash from it); any drive mode. No speed limit.
+ *   - HUD (gear, tach, shift lights) (0.13.0; 0.9.0-0.12.0 also showed the speed, 0.8.2 had the lights +
+ *     gear; hud_shift.js, "displays" HUD): while open, the whole HUD in the look's style - the gearbox's
+ *     own gear, big, D3 style (none in P or unknown; a guessed number: D alone) and a tach arc with the
+ *     shift-light colours over the last 2000 rpm before the shift point (the whole arc flashing from it);
+ *     the car's own HUD shows the speed. Any drive mode. No speed limit.
  *     Hidden on values over 300 ms old, no speed signal, demo data or a renderer error, and while G's TV
  *     plays on the HUD (back about 1 s after). The panel and the HUD share one scene: one at a time.
  *   - Full-screen cluster test (0.12.0, fcluster.js / fcluster_core.js, Options > Diagnostics, TEST): classic
@@ -120,7 +121,7 @@ const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id 
 const MPH = 1.609344;
 const TRAIL_MS = 3000;
 const OIL_READY_F = 194, COOLANT_READY_F = 176, HYST_F = 4;
-const VERSION = '0.12.1';
+const VERSION = '0.13.0';
 // Warm-up: the rev limit is COLD_RPM at or below COLD_F oil, rising (250 rpm steps) to WARM_REDLINE at
 // the "oil temp for full revs" setting. Auto-jump: AUTO_MS after READY it opens Drive.
 const COLD_RPM = 4000, COLD_F = 104, WARM_REDLINE = 6000, OIL_FULL_F = 180, AUTO_MS = 5000;
@@ -253,7 +254,7 @@ mgu.run({
         // skinMode from the diagnostics page: 'skin', 'align' (the alignment card), 'stock' (the Stock redraw)
         const cskin = new CS.ClusterSkin({ log, app: 'ng_gsdash', load: (f) => PNG.decode(fs.readFileSync(path.join(__dirname, f))) });
         const skinOn = () => displays() === 'skin';
-        // the HUD - speed, gear, shift lights (0.9.0; hud_shift.js, "displays" hud)
+        // the HUD - gear, tach, shift lights (0.13.0; hud_shift.js, "displays" hud)
         const hud = new HS.HudShift({ log, app: 'ng_gsdash', load: (f) => PNG.decode(fs.readFileSync(path.join(__dirname, f))) });
         const hudOn = () => displays() === 'hud';
         let skinMode = 'skin', refreshedAt = -1e15;

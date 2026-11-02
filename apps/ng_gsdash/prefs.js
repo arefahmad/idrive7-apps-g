@@ -17,7 +17,7 @@
 /* ---------- your look on the car's displays ---------- */
 const DISPLAYS = [
     ['skin', 'Cluster dials', 'Your look on the cluster dials'],
-    ['hud', 'HUD', 'Speed, gear and shift lights'],
+    ['hud', 'HUD', 'Big gear and a tach with shift lights'],
     ['none', 'Neither', "The car's own dials and HUD"],
 ];
 const DISPLAY_IDS = DISPLAYS.map((d) => d[0]);

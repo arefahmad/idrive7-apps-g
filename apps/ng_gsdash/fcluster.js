@@ -74,6 +74,8 @@ class FullCluster {
         this.stats = { connects: 0, layers: 0, assets: 0, bytes: 0, uniforms: 0, rearms: 0, drops: 0, refreshes: 0, samples: 0, pushes: 0, staleHides: 0, shows: 0, hides: 0, fades: 0 };
         this.staleAt = -1e15; this.lastPush = -1e15;
         this.diag = new FS.Diag(this.log, 'full-screen cluster', this.now);
+        this.up = new MEM.UploadWatch(this.log, 'full-screen cluster', this.now);   // 0.13.0: failed / partial uploads counted
+        this.mem = new MEM.MemWatch(this.log, 'full-screen cluster', this.app, this.now);   // 0.13.0: the memory watchdog
         this._reset();
     }
     _reset() {
@@ -125,7 +127,7 @@ class FullCluster {
         this.stats.connects++;
         cr.on('ready', () => {
             if (this.cr !== cr) return;
-            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset();
+            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
             this.log.info('full-screen cluster: connected');
             this._ask();
             if (this.cur) this._unconfirm(this.cur);       // the client's replay, confirmed by this ask
@@ -148,6 +150,7 @@ class FullCluster {
             if (this.cr !== cr) return;
             const now = this.now();
             this.statusText = String(text || '');
+            this.up.see(MEM.uploads(this.statusText, this.app, TARGET)); this.mem.see(this.statusText);
             const others = CS.panelLayers(text, this.app).filter((l) => !l.own && (l.state === 'shown' || l.state === 'waiting' || l.state === 'suspended'));
             if (others.length) this.busyAt = now;
             const was = this.others.map((l) => l.app).join(','), is = others.map((l) => l.app).join(',');
@@ -172,6 +175,7 @@ class FullCluster {
         const ours = !!(c && ref && (ref === c.ref || ref === c.asset));
         if (op === 'drop' || !ours) { this.log.info('full-screen cluster: refused ' + r + (op === 'drop' ? '' : ' (not in use)')); return; }
         this.log.warn('full-screen cluster: refused ' + r);
+        if (MEM.MEM_FULL.test(String(reason || ''))) this.mem.refused();   // 0.13.0: the watchdog counts it
         if (!c.ok) { if (!c.err) c.err = r; return; }
         const lost = /^no such (layer|asset)$/.test(String(reason || ''));
         if (lost && !this.healed) {
@@ -202,6 +206,10 @@ class FullCluster {
             this.layerErr = c.err; this.lastErr = c.err;
             return;
         }
+        // 0.13.0: shown only once the renderer's status says every asset of ours on the target is written whole
+        const up = MEM.uploads(this.statusText, this.app, TARGET);
+        // 0.13.0: not written yet (the renderer writes at its next draw): asked again on the next pump (33 ms), not at once
+        if (up.unwritten) { this.up.waited(); this.upWait = true; c.until = this.asked + 1; return; }
         c.ok = true; this.memRetried = false;
         if (!c.bound) { cr.bind(c.ref, 'u_lab', c.asset); c.base = -1; FS.setBase(cr, c, 0); c.bound = true; }
         this.log.info('full-screen cluster: confirmed by the renderer');
@@ -209,6 +217,7 @@ class FullCluster {
     _tick() {
         if (!this.want || !this.cr) return;
         this.diag.tick();
+        this.up.tick(); this.mem.tick();
         if (!this.ready) {
             if (this.now() - this.downAt >= RECONNECT_MS) this._restart('not connected for ' + Math.round((this.now() - this.downAt) / 1000) + ' s');
             return;
@@ -278,6 +287,7 @@ class FullCluster {
     }
     _pump() {
         if (!this.want || !this.cr || !this.ready) return;
+        if (this.upWait) { this.upWait = false; this._ask(); }
         if (this.fadeAt && !this.visible && this.now() - this.fadeAt >= FADE_MS + PUMP_MS) {
             try { if (this.cur) this.cr.set(this.cur.ref, { visible: false }); } catch (e) { /* gone */ }
             this.fadeAt = 0;
@@ -320,6 +330,7 @@ class FullCluster {
         const need = MEM.asset(A.w, A.h, true), fit = MEM.fits(this.statusText, need);
         if (this.statusText && !fit.ok) {
             const r = 'asset: the service\'s pixel memory is full (checked before sending: ' + (fit.used / 1048576).toFixed(1) + ' MiB in use, ' + (need / 1048576).toFixed(1) + ' MiB needed)';
+            this.mem.refused();   // 0.13.0: the watchdog counts it (not sent)
             this.memUsers = MEM.memoryUsers(this.statusText, this.app);
             this.log.warn('full-screen cluster: not sent - ' + r.slice(7));
             this.layerErr = r; this.lastErr = r;

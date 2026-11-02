@@ -130,6 +130,8 @@ class ClusterSkin {
         this.stats = { connects: 0, layers: 0, assets: 0, bytes: 0, uniforms: 0, rearms: 0, drops: 0, refreshes: 0, samples: 0, pushes: 0, staleHides: 0, shows: 0, hides: 0 };
         this.staleAt = -1e15; this.lastPush = -1e15;
         this.diag = new FS.Diag(this.log, 'cluster skin', this.now);   // 0.11.3: rate-limited counters
+        this.up = new MEM.UploadWatch(this.log, 'cluster skin', this.now);   // 0.13.0: failed / partial uploads counted
+        this.mem = new MEM.MemWatch(this.log, 'cluster skin', this.app, this.now);   // 0.13.0: the memory watchdog
         this._reset();
     }
     _reset() {
@@ -201,7 +203,7 @@ class ClusterSkin {
         this.stats.connects++;
         cr.on('ready', () => {
             if (this.cr !== cr) return;
-            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset();
+            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
             this.log.info('cluster skin: connected');
             this._ask();
             // 0.8.5: the client replayed our layers on connecting (before this): in use again only once the
@@ -233,6 +235,7 @@ class ClusterSkin {
             if (this.cr !== cr) return;
             const now = this.now();
             this.statusText = String(text || '');
+            this.up.see(MEM.uploads(this.statusText, this.app, TARGET)); this.mem.see(this.statusText);
             const others = panelLayers(text, this.app).filter((l) => !l.own && (l.state === 'shown' || l.state === 'waiting' || l.state === 'suspended'));
             if (others.length) this.busyAt = now;
             const was = this.others.map((l) => l.app).join(','), is = others.map((l) => l.app).join(',');
@@ -269,6 +272,7 @@ class ClusterSkin {
         this.refused = r;
         if (op === 'drop' || !this._ours(ref)) { this.log.info('cluster skin: refused ' + r + (op === 'drop' ? '' : ' (not in use)')); return; }
         this.log.warn('cluster skin: refused ' + r);
+        if (MEM.MEM_FULL.test(String(reason || ''))) this.mem.refused();   // 0.13.0: the watchdog counts it
         const c = this.cur;
         if (c && !c.ok) { if (!c.err) c.err = r; return; }
         if (/^no such (layer|asset)$/.test(String(reason || ''))) {
@@ -313,6 +317,10 @@ class ClusterSkin {
             this.layerErr = c.err; this.lastErr = c.err;
             return;
         }
+        // 0.13.0: shown only once the renderer's status says every asset of ours on the target is written whole
+        const up = MEM.uploads(this.statusText, this.app, TARGET);
+        // 0.13.0: not written yet (the renderer writes at its next draw): asked again on the next pump (33 ms), not at once
+        if (up.unwritten) { this.up.waited(); this.upWait = true; c.until = this.asked + 1; return; }
         c.ok = true; this.memRetried = false;
         ['L', 'R'].forEach((s) => {
             const L = c[s];
@@ -333,6 +341,7 @@ class ClusterSkin {
     _tick() {
         if (!this.want || !this.cr) return;
         this.diag.tick();
+        this.up.tick(); this.mem.tick();
         if (!this.ready) {
             if (this.now() - this.downAt >= RECONNECT_MS) this._restart('not connected for ' + Math.round((this.now() - this.downAt) / 1000) + ' s');
             return;
@@ -401,6 +410,7 @@ class ClusterSkin {
     /** Every PUMP_MS while connected: conditions again (so a stale loop hides it), uniforms, the dead-man. */
     _pump() {
         if (!this.want || !this.cr || !this.ready) return;
+        if (this.upWait) { this.upWait = false; this._ask(); }
         if (this._why()) { if (this.visible) this._apply(); return; }
         // 0.12.1: a look switch (once settled) and a gated upload are taken up here
         if (this.cur && this.cur.id !== this.lookId()) this._apply();
@@ -458,6 +468,7 @@ class ClusterSkin {
             if (this.statusText && !fit.ok) {
                 // as a refusal (0.11.2), but nothing sent: tried again once on the next answer, then reported
                 const r = 'asset: the service\'s pixel memory is full (checked before sending: ' + mib(fit.used) + ' in use, ' + mib(need) + ' needed)';
+                this.mem.refused();   // 0.13.0: the watchdog counts it (not sent)
                 const users = memoryUsers(this.statusText, this.app), also = users.length ? ' - also in use by ' + memoryNote(users) : '';
                 this.memUsers = users;
                 this.log.warn('cluster skin: the renderer\'s pixel memory is full (checked before sending ' + id + ': ' + mib(fit.used) + ' in use, ' + mib(need) + ' needed)' + also);

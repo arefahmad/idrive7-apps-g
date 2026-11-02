@@ -104,4 +104,89 @@ class FreeGate {
     }
 }
 
-module.exports = { LIMIT, asset, image, video, MEM_FULL, APP_NAMES, memoryUsers, memoryNote, FREE_MS, SETTLE_MS, MARGIN, statusBytes, fits, FreeGate };
+
+/**
+ * 0.13.0: our assets' uploads as the renderer's status lists them ("asset ID fmt WxH of APP on TARGET: N writes,
+ * K KB, F failed"): { assets, unwritten (no whole write yet), failed (every failed or partial write so far) }.
+ * The renderer draws a layer only once the assets it samples are written whole, and a failed write is retried
+ * whole with the target's flush held (the last picture kept); the apps also wait for it (nothing shown
+ * before the status says every asset of theirs on the target is written) and count the failures.
+ */
+function uploads(text, app, target) {
+    const r = { assets: 0, unwritten: 0, failed: 0 };
+    String(text || '').split('\n').forEach((line) => {
+        const m = /^asset \d+ (?:r8|rgba8) \d+x\d+ of (\S+) on (\S+): (\d+) writes, \d+ KB, (\d+) failed/.exec(line);
+        if (!m || m[1] !== app || (target && m[2] !== target)) return;
+        r.assets++;
+        if (+m[3] < 1) r.unwritten++;
+        r.failed += +m[4];
+    });
+    return r;
+}
+const UPLOAD_LOG_MS = 30000;
+/** 0.13.0: failed / partial uploads of ours, counted from the statuses; one log line a window when any */
+class UploadWatch {
+    constructor(log, tag, now) { this.log = log; this.tag = tag; this.now = now || Date.now; this.last = -1; this.n = 0; this.total = 0; this.at = this.now(); this.waits = 0; }
+    /** a status: the failures since the last one counted (a renderer restart or new assets start again from 0) */
+    see(u) {
+        if (this.last >= 0 && u.failed > this.last) { this.n += u.failed - this.last; this.total += u.failed - this.last; }
+        this.last = u.failed;
+    }
+    waited() { this.waits++; }
+    reset() { this.last = -1; }
+    tick(force) {
+        const t = this.now();
+        if (!force && t - this.at < UPLOAD_LOG_MS) return null;
+        let line = null;
+        if (this.n || this.waits) {
+            line = this.tag + ': uploads last ' + Math.round((t - this.at) / 1000) + ' s: ' + this.n + ' failed or partial (retried whole by the renderer, the last picture kept), ' +
+                this.waits + ' status checks waiting for a write; ' + this.total + ' failed since connecting';
+            this.log.info(line);
+        }
+        this.n = 0; this.waits = 0; this.at = t;
+        return line;
+    }
+}
+
+/**
+ * 0.13.0: the memory watchdog - the renderer's pixel memory (every app's assets, as it counts them) from the
+ * statuses (its assets: the status does not size image and video layers): the peak, ours at the peak and what else held it, and "memory is full" refusals; one log line a
+ * window when the peak passed HIGH (3/4 of the 16 MiB) or anything was refused as full, quiet otherwise.
+ */
+const HIGH = 12 * 1024 * 1024;
+const mib = (b) => (b / 1048576).toFixed(1);
+function ownBytes(text, app) {
+    let b = 0;
+    String(text || '').split('\n').forEach((line) => {
+        const m = /^asset \d+ (r8|rgba8) (\d+)x(\d+) of (\S+) /.exec(line);
+        if (m && m[4] === app) b += (+m[2]) * (+m[3]) * (m[1] === 'r8' ? 1 : 4) * 2;
+    });
+    return b;
+}
+class MemWatch {
+    constructor(log, tag, app, now) { this.log = log; this.tag = tag; this.app = app; this.now = now || Date.now; this.at = this.now(); this._clear(); this.max = 0; this.cur = 0; }
+    _clear() { this.peak = 0; this.ours = 0; this.who = ''; this.full = 0; }
+    /** a status text */
+    see(text) {
+        const b = statusBytes(text);
+        this.cur = b;
+        if (b > this.max) this.max = b;
+        if (b > this.peak) { this.peak = b; this.ours = ownBytes(text, this.app); this.who = memoryNote(memoryUsers(text, this.app).filter((u) => !/^G's Dash/.test(u.name))); }
+    }
+    /** a "pixel memory is full" refusal of ours */
+    refused() { this.full++; }
+    tick(force) {
+        const t = this.now();
+        if (!force && t - this.at < UPLOAD_LOG_MS) return null;
+        let line = null;
+        if (this.peak >= HIGH || this.full) {
+            line = this.tag + ': renderer memory last ' + Math.round((t - this.at) / 1000) + ' s: assets peak ' + mib(this.peak) + ' of ' + mib(LIMIT) + ' MiB (ours ' + mib(this.ours) +
+                (this.who ? '; also ' + this.who + ', image / video layers not sized' : '') + '), now ' + mib(this.cur) + ', ' + this.full + ' refused as full; highest since connecting ' + mib(this.max);
+            this.log.info(line);
+        }
+        this._clear(); this.at = t;
+        return line;
+    }
+}
+
+module.exports = { LIMIT, asset, image, video, MEM_FULL, APP_NAMES, memoryUsers, memoryNote, FREE_MS, SETTLE_MS, MARGIN, statusBytes, fits, FreeGate, uploads, UploadWatch, UPLOAD_LOG_MS, MemWatch, HIGH, ownBytes };

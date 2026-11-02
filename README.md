@@ -2,14 +2,14 @@
 
 Apps for BMW iDrive 7 head units, installed through robertn_store.
 
-- **G's Dash** (`ng_gsdash`): driver display and car hub in six looks, with a home-screen widget. Cluster skins that match your look, a full HUD (speed, gear, shift lights), a Cluster source picker, and favourite looks you switch with a tap on the gear on Drive. 0.11.0 adds a new Showcase, the Carbon Grid M Style and oil / coolant colour zones; 0.11.2 makes the cluster skins fit beside the CarPlay map, G's Music and G's TV; 0.11.3 stops the HUD and cluster dials flickering; 0.12.0 adds a full-screen classic-dials cluster test (Diagnostics, TEST); 0.12.1 fixes head unit crashes with the HUD on when switching looks or swiping pages.
+- **G's Dash** (`ng_gsdash`): driver display and car hub in six looks, with a home-screen widget. Cluster skins that match your look, a HUD (a big gear and a tach with shift lights), a Cluster source picker, and favourite looks you switch with a tap on the gear on Drive. 0.11.0 adds a new Showcase, the Carbon Grid M Style and oil / coolant colour zones; 0.11.2 makes the cluster skins fit beside the CarPlay map, G's Music and G's TV; 0.11.3 stops the HUD and cluster dials flickering; 0.12.0 adds a full-screen classic-dials cluster test (Diagnostics, TEST); 0.12.1 fixes head unit crashes with the HUD on when switching looks or swiping pages. 0.13.0 slims the HUD to a compact D3-style gear under a tach arc with built-in shift lights (no speed; far less renderer memory), shows cluster pictures only once they are uploaded whole, and logs failed uploads and high cluster memory.
   Optional *Cluster map* setting: requires the Waze on cluster tool from the Store; off by default;
   untested on most firmware. To revert, set it Off and restart the head unit, or remove the tool.
 - **G's Music** (`ng_spotify`): full-screen Spotify player with lyrics, a visualizer and a home-screen
-  widget. Needs Spotify Premium and internet through the Store's uplink. Setup: [docs/spotify.md](docs/spotify.md). 0.6.0 shows synced lyrics or a visualizer in the cluster while music plays; 0.7.0 adds a Cluster on/off button and Shuffle Liked Songs.
+  widget. Needs Spotify Premium and internet through the Store's uplink. Setup: [docs/spotify.md](docs/spotify.md). 0.6.0 shows synced lyrics or a visualizer in the cluster while music plays; 0.7.0 adds a Cluster on/off button and Shuffle Liked Songs. 0.7.1 remakes a cluster layer only after the old one is let go.
 - **G's TV** (`ng_tv`): experimental. TV channels with a guide, channel up/down and fullscreen, plus your own
   direct MP4 links added from your phone. Picture only while parked, video only. Needs internet
-  through the Store's uplink. 0.4.3 adds instant resume after driving, a HUD button, and parked-only video in the cluster's centre map area.
+  through the Store's uplink. 0.4.3 adds instant resume after driving, a HUD button, and parked-only video in the cluster's centre map area. 0.4.6 makes a new cluster or HUD video layer only after the previous one is let go.
 
 ## Install
 
