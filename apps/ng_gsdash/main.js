@@ -279,6 +279,9 @@ mgu.run({
         // (fcluster.js). Off by default and held here only - never a setting, never saved: off again after every
         // app or head unit restart. While on, the cluster skins and the HUD are paused (they share the scene).
         let fcTest = false;
+        // 0.13.8: when the test was switched while the HUD / skins (or the test) were up: the other side waits out the
+        // shared scene id's hand-over (fcluster.js HANDOVER_MS)
+        let fcSwitchAt = null;
         const fcl = new FCL.FullCluster({ log, app: 'ng_gsdash', load: (f) => PNG.decode(fs.readFileSync(path.join(__dirname, f))) });
         const SPEED_IFACE = 'de.bmw.infotainment.vehicle.Vehicle2';
         // the Cluster source pick (0.8.3, cluster_source.js): setting "clusterSource", shared with G's Music and
@@ -308,13 +311,18 @@ mgu.run({
             const sub = car.subBy ? car.subBy[SPEED_IFACE] : null;
             const speedAvail = !!(sub && sub.available && !sub.error);
             // 0.12.0: the full-screen cluster test pauses the skins and the HUD (closed for them while it is on)
+            // 0.13.8: keep - closed only because the screen is covered (an HMI popup such as Siri, or left for a moment):
+            // the skins and HUD hidden at once as before, their layers and scene kept and shown again on return
             cskin.update({ on: !!open && !fcTest && (skinOn() || skinMode !== 'skin'), enabled: skinOn() || skinMode !== 'skin', look: look().id, mode: skinMode, data: d,
-                speedAvail, gear: L.gearText(d.gear, d.stage), at: car.at || null, speedUnit: UNITS.pick(settings).speed });
+                speedAvail, gear: L.gearText(d.gear, d.stage), at: car.at || null, speedUnit: UNITS.pick(settings).speed,
+                keep: !open && !fcTest && (skinOn() || skinMode !== 'skin') });
             const redline = num('redline', 6500);
             hud.update({ on: !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: hudOn(), look: look().id, data: d, gear: L.gearText(d.gear, d.stage),
-                at: car.at || null, redline, shift: redline - (Number(settings.get('shiftBefore')) || 0) });
+                at: car.at || null, redline, shift: redline - (Number(settings.get('shiftBefore')) || 0),
+                keep: !open && !fcTest && hudOn() && skinMode === 'skin', after: fcTest ? null : fcSwitchAt });
             // any gear, any speed; night: G's Dash has no day / night signal from the car (no look switches), so day
-            fcl.update({ on: !!open && fcTest, enabled: fcTest, data: d, speedAvail, at: car.at || null, night: false, clock: clock.now(), units: UNITS.pick(settings) });
+            fcl.update({ on: !!open && fcTest, enabled: fcTest, data: d, speedAvail, at: car.at || null, night: false, clock: clock.now(), units: UNITS.pick(settings),
+                after: fcTest ? fcSwitchAt : null });
         };
         // the skins' live path (0.8.1): every speed / rpm / accel sample straight on, not at the loop's 10 fps
         car.onSample(() => {
@@ -1005,6 +1013,8 @@ mgu.run({
         if (rlog && rlog.share) { try { rlog.share(); } catch (e) {} }
         if (rlog && rlog.context) rlog.context('cluster', () => ({ logo: clogo.view().text, skins: skinOn() ? cskin.view().text : 'off', hud: hudOn() ? hud.view().text : 'off',
             refusals: [cskin.refusal(), hud.refusal(), fcl.refusal()].filter(Boolean), fullScreenTest: fcTest, source: srcPick(), look: look().id }));
+        // 0.13.8: the ring's health lines every 10 s while the HUD, the dials or the full-screen test is up (else every minute)
+        if (rlog && rlog.active) rlog.active(() => !!(hud.cr || cskin.cr || fcl.cr));
         let rlSeen = { at: 0, v: null }, rlAsked = 0;
         const rlStatus = () => {
             if (!rlog) return { setup: 'none', on: false, lastSent: null, pending: 0, others: [] };
@@ -1143,6 +1153,8 @@ mgu.run({
                 ls.forEach((l, i) => put(x3 + 16, fy3 + 70 + i * 24, w3 - 32, l, i === 1 ? '#ffb020' : i ? t.dim : t.text, 16));
                 cv.target(x3, fy3, w3, fh3, () => {
                     fcTest = !fcTest;
+                    // 0.13.8: the side letting go had the shared scene up: the other waits out the hand-over
+                    fcSwitchAt = (fcTest ? hud.cr : fcl.cr) ? Date.now() : null;
                     log.info('full-screen cluster test: ' + (fcTest ? 'on (the skins and HUD paused)' : 'off'));
                     logoUpdate(visible());
                 }, 'dg:fctest', u.radius);

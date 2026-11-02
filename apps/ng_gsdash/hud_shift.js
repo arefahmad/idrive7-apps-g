@@ -40,6 +40,9 @@ const PARKED_KMH = 1;
 const POLL_MS = 1000, PUMP_MS = 33, PUSH_MS = 33, REARM_MS = 60, FRESH_HOLD = 200, FRESH_FADE = 40, STALE_MS = 600;
 const LIVE_MS = 300, RESHOW_MS = 500;
 const HOLD_MS = 1000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 3;
+// 0.13.8: after a release of ours, the next connection no sooner than this (quick release / re-acquire runs only)
+const REACQ_MS = [0, 1000, 2000, 5000, 10000], REACQ_QUICK_MS = 30000;
+const HANDOVER_MS = 3500;   // as fcluster.js: the panel and the HUD share one scene id
 const LOOKS = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel'], DEFAULT_LOOK = 'm';
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 
@@ -88,6 +91,9 @@ class HudShift {
         this.diag = new FS.Diag(this.log, 'hud shift', this.now);   // 0.11.3: rate-limited counters
         this.up = new MEM.UploadWatch(this.log, 'hud shift', this.now);   // 0.13.0: failed / partial uploads counted
         this.mem = new MEM.MemWatch(this.log, 'hud shift', this.app, this.now);   // 0.13.0: the memory watchdog
+        this.build = new MEM.BuildWatch(this.log, 'hud shift', this.now);   // 0.13.8: the look's build, timed, retried
+        this.states = new MEM.StateLog(this.log, 'hud shift', this.now);   // 0.13.8: state changes for the ring
+        this.pausedAt = 0; this.relAt = 0; this.relN = 0; this.upAt = -1e15; this.reacqSaid = 0;   // 0.13.8
         this._reset();
     }
     _reset() {
@@ -107,10 +113,45 @@ class HudShift {
         if (prev && prev.at && (!this.st.at || this.st.at === prev.at)) this.st.at = prev.at;
         this.stAt = this.now();
         const on = !!(s && s.on && s.enabled !== false);
-        if (!on) { if (this.cr) this._off(); this.want = false; this.why = blocker(s); return; }
+        if (!on) {
+            // 0.13.8: closed by the screen only (an HMI popup such as Siri, the screen left for a moment): hidden as
+            // before, but its layer, atlas, scene and connection kept for PAUSE_MS, shown again as it was on return
+            if (this.cr && s && s.keep && s.enabled !== false && this.cur && this.cur.ok && this.ready) { this._pause(); return; }
+            if (this.cr) this._off(s && s.enabled === false ? 'off' : 'closed');
+            // the user's switch or the app's own (another display, the full-screen test): no wait next time; only
+            // releases forced by the screen or the renderer back off
+            if (!(s && s.keep && s.enabled !== false)) { this.relAt = 0; this.relN = 0; }
+            this.want = false; this.why = blocker(s); this.states.see(this.why); return;
+        }
+        if (this.pausedAt) this._resume();
         this.want = true;
-        if (!this.cr) this._connect();
+        if (!this.cr) {
+            if (this._reacqWait() > 0) { this.why = 'making'; return; }
+            // 0.13.8: just after the full-screen test let go of the shared scene id: its hand-over waited out (fcluster.js)
+            if (isNum(s.after) && this.now() - s.after < HANDOVER_MS) { this.why = 'making'; return; }
+            this._connect();
+        }
         this._apply();
+    }
+    /** 0.13.8: a popup or the screen covered: hidden at once (as before), everything else kept */
+    _pause() {
+        this.want = false; this.why = 'closed';
+        if (this.pausedAt) return;
+        this.pausedAt = this.now() || 1; this.pauseUsers = MEM.userNames(this.statusText || '', this.app);
+        this._hide('paused'); this._unlift();
+        this.log.info('hud shift: paused - the screen is covered (layer and scene kept up to ' + Math.round(MEM.PAUSE_MS / 1000) + ' s)');
+        this.states.see('paused');
+    }
+    _resume() {
+        this.log.info('hud shift: back after ' + ((this.now() - this.pausedAt) / 1000).toFixed(1) + ' s paused' + (this.cur && this.cur.ok ? '' : ' (made again)'));
+        this.pausedAt = 0;
+    }
+    /** 0.13.8: ms still to wait before connecting again (a run of quick releases backs off; the first is at once) */
+    _reacqWait() {
+        if (!this.relAt) return 0;
+        const left = REACQ_MS[Math.min(this.relN, REACQ_MS.length - 1)] - (this.now() - this.relAt);
+        if (left > 0 && this.reacqSaid !== this.relAt) { this.reacqSaid = this.relAt; this.log.info('hud shift: asking for the HUD again in ' + (left / 1000).toFixed(1) + ' s (' + this.relN + ' quick releases)'); }
+        return left;
     }
     /** a car sample straight away: data, at ({ speed, rpm }), gear (L.gearText) */
     sample(data, at, gear) {
@@ -138,10 +179,10 @@ class HudShift {
         }
         this.err = null;
         const cr = this.cr = new c.ClusterRender(this.app, c.sock);
-        this.stats.connects++;
+        this.stats.connects++; this.upAt = now;
         cr.on('ready', () => {
             if (this.cr !== cr) return;
-            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
+            this.ready = true; this.ansAt = this.now() || 1; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
             this.log.info('hud shift: connected');
             this._ask();
             if (this.cur) this._unconfirm(this.cur);       // 0.8.5: the client's replay, confirmed by this ask
@@ -150,8 +191,10 @@ class HudShift {
             if (this.cr !== cr) return;
             this.ready = false; this.polled = false; this.downAt = this.now();
             this.asked = 0; this.answered = 0; this.gate.reset();
-            if (this.cur) { try { cr.set(this.cur.ref, { visible: false }); } catch (e) { /* gone */ } FS.setBase(cr, this.cur, 0); this.cur.ok = false; }
+            // 0.13.8: replayed hidden: its assets are not written until it is shown, so not waited for (cluster_memory.js)
+            if (this.cur) { try { cr.set(this.cur.ref, { visible: false }); } catch (e) { /* gone */ } FS.setBase(cr, this.cur, 0); this.cur.ok = false; this.cur.lifted = false; this.cur.waitAt = 0; }
             if (this.visible) this.diag.hidden('disconnected', 'hud shift: disconnected'); else this.log.info('hud shift: disconnected');
+            this.states.see('disconnected');
             this.visible = false;
         });
         cr.on('layer', (ref, state, reason) => {
@@ -176,7 +219,14 @@ class HudShift {
             if (was !== is) this.log.info('hud shift: hud ' + (is ? 'in use by ' + is : 'free of other apps'));
             this.others = others;
             this.polled = true;
-            this.answered++;
+            // 0.13.8: answering again after a silence, the asks meanwhile lost: counted from here (a look not
+            // confirmed yet waits for the answer to a new ask, so no refusal of it is missed)
+            if (this.ansAt && this.now() - this.ansAt >= MEM.LOST_MS && this.asked - this.answered > 1) {
+                this.log.info('hud shift: the renderer answers again after ' + Math.round((this.now() - this.ansAt) / 1000) + ' s (' + (this.asked - this.answered - 1) + ' asks lost)');
+                this.answered = this.asked - 1;
+                if (this.cur && !this.cur.ok) { this._ask(); this.cur.until = this.asked; }
+            }
+            this.answered++; this.ansAt = this.now() || 1; this.silentN = 0;
             if (this.cur && !this.cur.ok && this.answered >= this.cur.until) this._confirm();
             this._apply();
         });
@@ -212,23 +262,58 @@ class HudShift {
         this._hide('refused'); this._dropLook();
     }
     _unconfirm(c) { c.ok = false; c.err = ''; c.until = this.asked; }
+    /** 0.13.8: replayed hidden after a reconnect (or hidden by a popup's pause): sent visible again, clear (u_fresh 0,
+     *  nothing bound yet: drawn as nothing) so the renderer writes the atlas, only when the HUD is to be shown now */
+    _lift(c) {
+        const w = this._why();
+        if ((w && w !== 'making') || this.pausedAt || !this.cr) return false;
+        FS.setBase(this.cr, c, 0); try { this.cr.set(c.ref, { visible: true }); } catch (e) { /* gone */ }
+        c.lifted = true; c.waitAt = this.now();
+        this.log.info('hud shift: ' + c.id + ' asked for (still clear), so the renderer writes it');
+        return true;
+    }
+    /** 0.13.8: a lifted look not confirmed yet hidden again (not to be shown now: nothing of ours asks for the target) */
+    _unlift() {
+        const c = this.cur;
+        if (!c || c.ok || !c.lifted || !this.cr) return;
+        try { this.cr.set(c.ref, { visible: false }); } catch (e) { /* gone */ }
+        c.lifted = false; c.waitAt = 0;
+    }
     _confirm() {
         const c = this.cur, cr = this.cr;
         if (c.err) {
             this.layerErr = c.err; this.lastErr = c.err;
             this.log.warn('hud shift: ' + c.id + ' refused (' + c.err + ')');
+            if (this.build.busy) this.build.cancel();     // refusals: their own retries (ERR_RETRIES), then reported
             this._dropLook();
             return;
         }
         // 0.13.0: shown only once the renderer's status says every asset of ours on the target is written whole
         const up = MEM.uploads(this.statusText, this.app, TARGET);
         // 0.13.0: not written yet (the renderer writes at its next draw): asked again on the next pump (33 ms), not at once
-        if (up.unwritten) { this.up.waited(); this.upWait = true; c.until = this.asked + 1; return; }
-        c.ok = true;
+        // 0.13.8: replayed hidden after a reconnect: lifted again first (visible, still clear), then shown once written
+        const w = MEM.writeWait(up, c, this.now());
+        if (w === 'lift' && !this._lift(c)) { this.build.hold(); c.until = this.asked + 1; return; }   // not to be shown yet: the next poll
+        if (w !== 'go') {
+            this.build.hold();                           // the renderer answers: waiting on its writes, not stuck
+            if (w === 'slow' && !c.slowSaid) { c.slowSaid = true; this.log.info('hud shift: ' + c.id + ' still not written after ' + (MEM.WRITE_WAIT_MS / 1000) + ' s (writes failing, or the target taken by the car), checked every second'); }
+            this.up.waited(); if (w !== 'slow') this.upWait = true; c.until = this.asked + 1; return;
+        }
+        c.ok = true; c.waitAt = 0; c.slowSaid = false;
+        this.build.done();
         if (!c.bound) { cr.bind(c.ref, 'u_big', c.g); c.base = -1; FS.setBase(cr, c, 0); c.bound = true; }
         this.log.info('hud shift: ' + c.id + ' confirmed by the renderer');
     }
     _tick() {
+        this.states.flush();
+        // 0.13.8: paused longer than PAUSE_MS: let go of everything (as closing did before)
+        // 0.13.8: paused, another app asking for the renderer's memory: let go at once (nothing of ours in its way)
+        if (this.pausedAt && this.cr && this.polled) {
+            const fresh = MEM.newUsers(this.pauseUsers, this.statusText || '', this.app);
+            if (fresh.length) { this.log.info('hud shift: paused, ' + fresh.join(', ') + ' now in the renderer, letting go'); this.pausedAt = 0; this._off('closed'); return; }
+            this._ask();
+        }
+        if (this.pausedAt && this.now() - this.pausedAt >= MEM.PAUSE_MS) { this.log.info('hud shift: paused for ' + Math.round(MEM.PAUSE_MS / 1000) + ' s, letting go'); this.pausedAt = 0; this._off('closed'); return; }
         if (!this.want || !this.cr) return;
         this.diag.tick();
         this.up.tick(); this.mem.tick();
@@ -236,7 +321,20 @@ class HudShift {
             if (this.now() - this.downAt >= RECONNECT_MS) this._restart('not connected for ' + Math.round((this.now() - this.downAt) / 1000) + ' s');
             return;
         }
+        // 0.13.8: connected, its status asked every second, no answer: reconnected on a backoff (never "making" for ever)
+        const quiet = this.now() - (this.ansAt || this.now());
+        if (quiet >= MEM.silentWait(this.silentN || 0)) {
+            this.silentN = (this.silentN || 0) + 1;
+            this.log.warn('hud shift: the renderer has not answered for ' + Math.round(quiet / 1000) + ' s, reconnecting (' + this.silentN + ')');
+            this._restart('no answer');
+            return;
+        }
         this._ask();
+        // 0.13.8: a build not confirmed within BUILD_STUCK_MS: dropped, made again after the backoff (never stuck at "making")
+        if (this.build.stuck() && this.cur && !this.cur.ok) {
+            this.build.failed('not confirmed in ' + Math.round(MEM.BUILD_STUCK_MS / 1000) + ' s');
+            this._dropLook();
+        }
         if (this.layerErr && this.errCount < ERR_RETRIES) {
             this.errCount++; this.layerErr = '';
             this.log.info('hud shift: making the layer again (' + this.errCount + ' of ' + ERR_RETRIES + ')');
@@ -259,12 +357,14 @@ class HudShift {
         if (now - this.busyAt < HOLD_MS) return 'hud in use';
         if (this.layerErr || this.noEffect) return 'renderer error';
         if (this.cur && !this.cur.ok && this.cur.id === this.lookId()) return 'making';
+        if (!this.cur && this.build.gaveUp) return 'stuck';   // 0.13.8: reported; Refresh cluster or a setting change tries again
         return '';
     }
     _apply() {
         if (!this.want || !this.cr || !this.ready || !this.polled) return;
         const why = this._why();
         this.why = why;
+        this.states.see(why || (this.cur && this.cur.ok ? 'shown' : 'making'));
         if (why) { this._hide(why); return; }
         const id = this.lookId(), now = this.now();
         if (id !== this.seen.id) this.seen = { id, at: now };
@@ -274,9 +374,10 @@ class HudShift {
             // 0.12.1: the old look's layer and atlas dropped, and the new one sent only once the renderer let them go
             if (this.cur) this._dropLook();
             if (!this.gate.open(this.answered)) { this.why = 'making'; return; }
+            if (!this.build.may()) { this.why = 'making'; return; }   // 0.13.8: a failed build's backoff
             let ok = false;
             try { ok = this._make(id); } catch (e) { this.log.warn('hud shift: ' + (e.stack || e)); this.layerErr = 'make: ' + e.message; }
-            if (!ok) { this._hide('assets'); return; }
+            if (!ok) { if (!this.soft && !this.layerErr && !this.noEffect) this.build.failed('could not make it'); this._hide('assets'); return; }
         }
         if (!this.cur.ok) { this.why = 'making'; return; }   // 0.8.5: nothing to it before the service confirms it
         if (!this.visible) {
@@ -330,6 +431,7 @@ class HudShift {
             this.noEffect = true; return false;
         }
         const meta = HC.atlasOf(id);
+        this.soft = false;
         if (!meta) return false;
         let atlas;
         try {
@@ -338,7 +440,7 @@ class HudShift {
             atlas = this.big;
         } catch (e) { this.log.warn('hud shift: ' + id + ' assets: ' + e.message); return false; }
         // the old look's assets go first (0.12.1: _apply drops them and waits for the renderer to let them go)
-        if (this.cur) { this._dropLook(); return false; }
+        if (this.cur) { this._dropLook(); this.soft = true; return false; }
         // 0.12.1: checked against the renderer's memory (its last status, asked after our drops) before sending
         const need = MEM.asset(atlas.w, atlas.h, true), fit = MEM.fits(this.statusText, need);
         if (this.statusText && !fit.ok) {
@@ -348,7 +450,8 @@ class HudShift {
             this.layerErr = r; this.lastErr = r;
             return false;
         }
-        const cur = { id, meta, assets: [], ref: 0, anim: 0, sent: '', base: -1 };
+        this.build.start(id);
+        const cur = { id, meta, assets: [], ref: 0, anim: 0, sent: '', base: -1, lifted: true, waitAt: 0 };   // lifted: made visible
         const g = this._asset(atlas, meta.sampling);
         if (g) cur.assets.push(g);
         if (!g) { this._dropAll(cur); return false; }
@@ -384,6 +487,8 @@ class HudShift {
     /** 0.12.1: then a status asked, and the gate shut until the renderer answered it and FREE_MS passed */
     _dropLook() {
         if (!this.cur) return;
+        if (this.build.busy) this.build.cancel();
+        this.log.info('hud shift: ' + this.cur.id + ' dropped (layer and atlas let go)');
         this._dropAll(this.cur); this.cur = null; this.visible = false;
         this._ask(); this.gate.dropped(this.asked);
     }
@@ -399,18 +504,24 @@ class HudShift {
         this.errCount = 0; this.layerErr = '';
         if (!this.want) return false;
         const had = !!this.cr;
-        this.err = null; this.noEffect = false;
+        this.err = null; this.noEffect = false; this.build.reset();
         this._restart('refresh');
+        this.relAt = 0; this.relN = 0;                    // 0.13.8: the user's own ask: no backoff after it
         return had;
     }
-    _off() {
+    _off(why) {
         this.diag.tick(true);                              // 0.11.3: the window's counters, if any
         if (this.poll) this.T.clearInterval(this.poll);
         if (this.pump) this.T.clearInterval(this.pump);
+        this.pausedAt = 0;
         if (this.cr) {
+            const now = this.now();
+            // 0.13.8: a release soon after the connection counts as quick: the next one waits on REACQ_MS
+            this.relN = now - this.upAt < REACQ_QUICK_MS ? this.relN + 1 : 0; this.relAt = now || 1;
             this._dropLook();
             try { this.cr.close(); } catch (e) { /* gone */ }
-            this.log.info('hud shift: off');
+            this.log.info('hud shift: off' + (why ? ' (' + why + ')' : ''));
+            this.states.see('off');
         }
         this._reset();
     }
@@ -422,9 +533,10 @@ class HudShift {
         if (s.enabled === false) return { kind: 'off', text: 'Off' };
         if (this.err) return { kind: 'none', text: SHORT_ERR[this.err.error] || this.err.text };
         if (!this.want) return { kind: 'off', text: 'On - with G\'s Dash open' };
-        if (!this.cr || !this.ready || !this.polled) return { kind: 'wait', text: 'Connecting to renderer' };
+        const silent = (this.silentN || 0) >= 2 && !this.polled;   // 0.13.8: reconnected twice, still no answer
+        if (!silent && (!this.cr || !this.ready || !this.polled)) return { kind: 'wait', text: 'Connecting to renderer' };
         if (this.noEffect) return { kind: 'none', text: 'Update Cluster renderer' };
-        const why = this.why || this._why();
+        const why = silent ? 'stuck' : this.why || this._why();
         if (!why && this.visible) {
             // as G's TV's HUD status: the layer or the target shown counts first
             if (this.layerState === 'shown' || this.hudState === 'shown' || this.hudState === 'lingering') return { kind: 'on', text: 'Shown on the HUD' };
@@ -438,9 +550,10 @@ class HudShift {
         }
         const TXT = { 'stale values': 'Hidden - signal delayed', 'no speed signal': 'Hidden - no speed signal', 'demo data': 'Hidden - demo data',
             'hud in use': 'Waiting - HUD in use', 'renderer error': 'Renderer refused the HUD', assets: 'HUD failed to load', making: 'Making the HUD',
+            stuck: 'Renderer did not answer - try Refresh cluster',
             'no update': 'Hidden' };
         if (why === 'renderer error' && !this.noEffect && this.lastErr) return { kind: 'error', text: 'Refused: ' + String(this.lastErr).replace(/^[a-z?]+: /, '') };
-        return { kind: why === 'renderer error' || why === 'assets' ? 'error' : 'wait', text: TXT[why] || 'Hidden' };
+        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' ? 'error' : 'wait', text: TXT[why] || 'Hidden' };
     }
     /** the whole refusal (the diagnostics page): '' when none */
     refusal() { return this.lastErr || ''; }

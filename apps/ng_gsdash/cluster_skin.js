@@ -58,6 +58,9 @@ const POLL_MS = 1000, PUMP_MS = 33, PUSH_MS = 33, REARM_MS = 60, FRESH_HOLD = 20
 const LIVE_MS = 300, RESHOW_MS = 500;
 const SPEED_PCT = 0, SPEED_ADD = 0;                      // the speed shown: true * (1 + PCT / 100) + ADD mph
 const HOLD_MS = 3000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 3;
+// 0.13.8: after a release of ours, the next connection no sooner than this (quick release / re-acquire runs only)
+const REACQ_MS = [0, 1000, 2000, 5000, 10000], REACQ_QUICK_MS = 30000;
+const HANDOVER_MS = 3500;   // as fcluster.js: the panel and the HUD share one scene id
 /** G's Dash's look ids -> the skin's (skin_looks.js) */
 const LOOK_SKIN = { m: 'm', gt: 'gt', digital: 'digital', simracing: 'simracing', lumen: 'lumen', pixel: 'pixel' };
 
@@ -146,6 +149,9 @@ class ClusterSkin {
         this.diag = new FS.Diag(this.log, 'cluster skin', this.now);   // 0.11.3: rate-limited counters
         this.up = new MEM.UploadWatch(this.log, 'cluster skin', this.now);   // 0.13.0: failed / partial uploads counted
         this.mem = new MEM.MemWatch(this.log, 'cluster skin', this.app, this.now);   // 0.13.0: the memory watchdog
+        this.build = new MEM.BuildWatch(this.log, 'cluster skin', this.now);   // 0.13.8: the look's build, timed, retried
+        this.states = new MEM.StateLog(this.log, 'cluster skin', this.now);   // 0.13.8: state changes for the ring
+        this.pausedAt = 0; this.relAt = 0; this.relN = 0; this.upAt = -1e15; this.reacqSaid = 0;   // 0.13.8
         this._reset();
     }
     _reset() {
@@ -173,10 +179,44 @@ class ClusterSkin {
         if (prev && prev.at && (!this.st.at || this.st.at === prev.at)) this.st.at = prev.at;
         this.stAt = this.now();
         const on = !!(s && s.on && s.enabled !== false);
-        if (!on) { if (this.cr) this._off(); this.want = false; this.why = blocker(s); return; }
+        if (!on) {
+            // 0.13.8: closed by the screen only (an HMI popup such as Siri, the screen left for a moment): hidden as
+            // before, but the layers, assets and connection kept for PAUSE_MS, shown again as they were on return
+            if (this.cr && s && s.keep && s.enabled !== false && this.cur && this.cur.ok && this.ready) { this._pause(); return; }
+            if (this.cr) this._off(s && s.enabled === false ? 'off' : 'closed');
+            // the user's switch or the app's own (another display, the full-screen test): no wait next time; only
+            // releases forced by the screen or the renderer back off
+            if (!(s && s.keep && s.enabled !== false)) { this.relAt = 0; this.relN = 0; }
+            this.want = false; this.why = blocker(s); this.states.see(this.why); return;
+        }
+        if (this.pausedAt) this._resume();
         this.want = true;
-        if (!this.cr) this._connect();
+        if (!this.cr) {
+            if (this._reacqWait() > 0) { this.why = 'making'; return; }
+            // 0.13.8: just after the full-screen test let go of the shared scene id: its hand-over waited out (fcluster.js)
+            if (SK.isNum(s.after) && this.now() - s.after < HANDOVER_MS) { this.why = 'making'; return; }
+            this._connect();
+        }
         this._apply();
+    }
+    /** 0.13.8: a popup or the screen covered: hidden at once (as before), everything else kept */
+    _pause() {
+        this.want = false; this.why = 'closed';
+        if (this.pausedAt) return;
+        this.pausedAt = this.now() || 1; this.pauseUsers = MEM.userNames(this.statusText || '', this.app);
+        this._hide('paused'); this._unlift();
+        this.log.info('cluster skin: paused - the screen is covered (layers kept up to ' + Math.round(MEM.PAUSE_MS / 1000) + ' s)');
+        this.states.see('paused');
+    }
+    _resume() {
+        this.log.info('cluster skin: back after ' + ((this.now() - this.pausedAt) / 1000).toFixed(1) + ' s paused' + (this.cur && this.cur.ok ? '' : ' (made again)'));
+        this.pausedAt = 0;
+    }
+    _reacqWait() {
+        if (!this.relAt) return 0;
+        const left = REACQ_MS[Math.min(this.relN, REACQ_MS.length - 1)] - (this.now() - this.relAt);
+        if (left > 0 && this.reacqSaid !== this.relAt) { this.reacqSaid = this.relAt; this.log.info('cluster skin: asking for the panel again in ' + (left / 1000).toFixed(1) + ' s (' + this.relN + ' quick releases)'); }
+        return left;
     }
     /**
      * A car sample (car.onSample: speed, rpm, accel), straight away: data (car.data()), at ({ speed,
@@ -215,10 +255,10 @@ class ClusterSkin {
         }
         this.err = null;
         const cr = this.cr = new c.ClusterRender(this.app, c.sock);
-        this.stats.connects++;
+        this.stats.connects++; this.upAt = now;
         cr.on('ready', () => {
             if (this.cr !== cr) return;
-            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
+            this.ready = true; this.ansAt = this.now() || 1; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
             this.log.info('cluster skin: connected');
             this._ask();
             // 0.8.5: the client replayed our layers on connecting (before this): in use again only once the
@@ -234,9 +274,10 @@ class ClusterSkin {
             // 0.8.5: hidden in the client's copy (the replay makes them hidden); nothing in use until confirmed
             if (this.cur) {
                 ['L', 'R'].forEach((s) => { if (this.cur[s]) { try { cr.set(this.cur[s].ref, { visible: false }); } catch (e) { /* gone */ } FS.setBase(cr, this.cur[s], 0); } });
-                this.cur.ok = false;
+                this.cur.ok = false; this.cur.lifted = false; this.cur.waitAt = 0;
             }
             if (this.visible) this.diag.hidden('disconnected', 'cluster skin: disconnected'); else this.log.info('cluster skin: disconnected');
+            this.states.see('disconnected');
             this.visible = false;
         });
         cr.on('layer', (ref, state, reason) => {
@@ -257,7 +298,14 @@ class ClusterSkin {
             if (was !== is) this.log.info('cluster skin: panel ' + (is ? 'in use by ' + is : 'free of other apps'));
             this.others = others;
             this.polled = true;
-            this.answered++;
+            // 0.13.8: answering again after a silence, the asks meanwhile lost: counted from here (a look not
+            // confirmed yet waits for the answer to a new ask, so no refusal of it is missed)
+            if (this.ansAt && this.now() - this.ansAt >= MEM.LOST_MS && this.asked - this.answered > 1) {
+                this.log.info('cluster skin: the renderer answers again after ' + Math.round((this.now() - this.ansAt) / 1000) + ' s (' + (this.asked - this.answered - 1) + ' asks lost)');
+                this.answered = this.asked - 1;
+                if (this.cur && !this.cur.ok) { this._ask(); this.cur.until = this.asked; }
+            }
+            this.answered++; this.ansAt = this.now() || 1; this.silentN = 0;
             // 0.8.5: the service answers in order: every refusal of what was sent before the ask came first
             if (this.cur && !this.cur.ok && this.answered >= this.cur.until) this._confirm();
             this._apply();
@@ -310,10 +358,28 @@ class ClusterSkin {
     /** made (or replayed): not in use until the service's answer to this ask */
     _unconfirm(c) { c.ok = false; c.err = ''; c.until = this.asked; }
     /** the answer came: refused (the first reason, dropped, retried) or in use (bound, then shown) */
+    /** 0.13.8: made hidden, so the renderer writes nothing until a layer of ours on the panel is visible: both sent
+     *  visible, clear (u_fresh 0, nothing bound yet: drawn as nothing), only when the skin is to be shown now */
+    _lift(c) {
+        const w = this._why();
+        if ((w && w !== 'making') || !this.cr) return false;
+        ['L', 'R'].forEach((s) => { FS.setBase(this.cr, c[s], 0); try { this.cr.set(c[s].ref, { visible: true }); } catch (e) { /* gone */ } });
+        c.lifted = true; c.waitAt = this.now();
+        this.log.info('cluster skin: ' + c.id + ' asked for (still clear), so the renderer writes it');
+        return true;
+    }
+    /** 0.13.8: a lifted look not confirmed yet hidden again (not to be shown now: nothing of ours asks for the target) */
+    _unlift() {
+        const c = this.cur;
+        if (!c || c.ok || !c.lifted || !this.cr) return;
+        ['L', 'R'].forEach((s) => { try { this.cr.set(c[s].ref, { visible: false }); } catch (e) { /* gone */ } });
+        c.lifted = false; c.waitAt = 0;
+    }
     _confirm() {
         const c = this.cur, cr = this.cr;
         if (c.err) {
             this.log.warn('cluster skin: ' + c.id + ' refused (' + c.err + ')');
+            if (this.build.busy) this.build.cancel();     // refusals: their own retries, then reported
             this._dropLook(); this._dropField();
             if (MEM_FULL.test(c.err)) {
                 // 0.11.2: the renderer's memory is shared by every app: ours freed first (the drops go before
@@ -335,8 +401,18 @@ class ClusterSkin {
         // 0.13.0: shown only once the renderer's status says every asset of ours on the target is written whole
         const up = MEM.uploads(this.statusText, this.app, TARGET);
         // 0.13.0: not written yet (the renderer writes at its next draw): asked again on the next pump (33 ms), not at once
-        if (up.unwritten) { this.up.waited(); this.upWait = true; c.until = this.asked + 1; return; }
-        c.ok = true; this.memRetried = false;
+        // 0.13.8: the skins' layers are made hidden: the renderer writes nothing for a target nobody shows, so 0.13.0's
+        // wait never ended ("Making the skin" for ever). Now lifted first (sent visible, still clear) so the renderer
+        // asks for the panel and writes them, then shown once written, as 0.13.0 meant (cluster_memory.js writeWait)
+        const w = MEM.writeWait(up, c, this.now());
+        if (w === 'lift' && !this._lift(c)) { this.build.hold(); c.until = this.asked + 1; return; }   // not to be shown yet: the next poll
+        if (w !== 'go') {
+            this.build.hold();                           // the renderer answers: waiting on its writes, not stuck
+            if (w === 'slow' && !c.slowSaid) { c.slowSaid = true; this.log.info('cluster skin: ' + c.id + ' still not written after ' + (MEM.WRITE_WAIT_MS / 1000) + ' s (writes failing, or the target taken by the car), checked every second'); }
+            this.up.waited(); if (w !== 'slow') this.upWait = true; c.until = this.asked + 1; return;
+        }
+        c.ok = true; c.waitAt = 0; c.slowSaid = false; this.memRetried = false;
+        this.build.done();
         ['L', 'R'].forEach((s) => {
             const L = c[s];
             if (L.bound) return;                         // a replay: the client sent the binds again
@@ -354,6 +430,14 @@ class ClusterSkin {
         this.field = null;
     }
     _tick() {
+        this.states.flush();
+        // 0.13.8: paused, another app asking for the renderer's memory: let go at once (nothing of ours in its way)
+        if (this.pausedAt && this.cr && this.polled) {
+            const fresh = MEM.newUsers(this.pauseUsers, this.statusText || '', this.app);
+            if (fresh.length) { this.log.info('cluster skin: paused, ' + fresh.join(', ') + ' now in the renderer, letting go'); this.pausedAt = 0; this._off('closed'); return; }
+            this._ask();
+        }
+        if (this.pausedAt && this.now() - this.pausedAt >= MEM.PAUSE_MS) { this.log.info('cluster skin: paused for ' + Math.round(MEM.PAUSE_MS / 1000) + ' s, letting go'); this.pausedAt = 0; this._off('closed'); return; }
         if (!this.want || !this.cr) return;
         this.diag.tick();
         this.up.tick(); this.mem.tick();
@@ -361,7 +445,20 @@ class ClusterSkin {
             if (this.now() - this.downAt >= RECONNECT_MS) this._restart('not connected for ' + Math.round((this.now() - this.downAt) / 1000) + ' s');
             return;
         }
+        // 0.13.8: connected, its status asked every second, no answer: reconnected on a backoff (never "making" for ever)
+        const quiet = this.now() - (this.ansAt || this.now());
+        if (quiet >= MEM.silentWait(this.silentN || 0)) {
+            this.silentN = (this.silentN || 0) + 1;
+            this.log.warn('cluster skin: the renderer has not answered for ' + Math.round(quiet / 1000) + ' s, reconnecting (' + this.silentN + ')');
+            this._restart('no answer');
+            return;
+        }
         this._ask();
+        // 0.13.8: a build not confirmed within BUILD_STUCK_MS: dropped, made again after the backoff (never stuck at "making")
+        if (this.build.stuck() && this.cur && !this.cur.ok) {
+            this.build.failed('not confirmed in ' + Math.round(MEM.BUILD_STUCK_MS / 1000) + ' s');
+            this._dropLook();
+        }
         if (this.layerErr && this.errCount < ERR_RETRIES) {
             this.errCount++; this.layerErr = '';
             this.log.info('cluster skin: making the layers again (' + this.errCount + ' of ' + ERR_RETRIES + ')');
@@ -385,13 +482,15 @@ class ClusterSkin {
         if (now - this.busyAt < HOLD_MS) return 'panel in use';
         if (this.layerErr || this.noEffect) return 'renderer error';
         if (this.cur && !this.cur.ok && this.cur.id === this.lookId()) return 'making';
+        if (!this.cur && this.build.gaveUp) return 'stuck';   // 0.13.8: reported; Refresh cluster or a setting change tries again
         return '';
     }
     _apply() {
         if (!this.want || !this.cr || !this.ready || !this.polled) return;
         const why = this._why();
         this.why = why;
-        if (why) { this._hide(why); return; }
+        this.states.see(why || (this.cur && this.cur.ok && this.cur.id === this.lookId() ? 'shown ' + this.cur.id : 'making ' + this.lookId()));
+        if (why) { if (why !== 'making') this._unlift(); this._hide(why); return; }
         const id = this.lookId(), now = this.now();
         if (id !== this.seen.id) this.seen = { id, at: now };
         // 0.12.1: a look shown stays until the choice settles (a quick run of switches makes the last only)
@@ -400,9 +499,10 @@ class ClusterSkin {
             // 0.12.1: the old look's layers and assets dropped, the new ones sent only once the renderer let them go
             if (this.cur) this._dropLook();
             if (!this.gate.open(this.answered)) { this.why = 'making'; return; }
+            if (!this.build.may()) { this.why = 'making'; return; }   // 0.13.8: a failed build's backoff (no tight retry loop)
             let ok = false;
             try { ok = this._make(id); } catch (e) { this.log.warn('cluster skin: ' + (e.stack || e)); this.layerErr = 'make: ' + e.message; }
-            if (!ok) { this._hide('assets'); return; }
+            if (!ok) { if (!this.soft && !this.layerErr && !this.noEffect) this.build.failed('could not make ' + id); this._hide('assets'); return; }
         }
         if (!this.cur.ok) { this.why = 'making'; return; }   // 0.8.5: nothing to it before the service confirms it
         if (!this.visible) {
@@ -459,6 +559,7 @@ class ClusterSkin {
     /** The look's assets and two layers (hidden); the old look's go after. false: could not. */
     _make(id) {
         const cr = this.cr, meta = metaOf(id);
+        this.soft = false;
         if (!meta) return false;
         // an older Cluster renderer tool: no effect layers; the skins stay off (the logo is not affected)
         if (['effect', 'asset', 'bind', 'uniform', 'animate'].some((k) => typeof cr[k] !== 'function')) {
@@ -473,7 +574,7 @@ class ClusterSkin {
             tex = this.cache.tex;
             if (!this.fieldTex) this.fieldTex = ASSETS.packField(ASSETS.sliceField(this.o.load(META.field.file)));
             // the old look's go first (0.12.1: _apply drops them and waits for the renderer to let them go)
-            if (this.cur) { this._dropLook(); return false; }
+            if (this.cur) { this._dropLook(); this.soft = true; return false; }
             // 0.12.1: checked against the renderer's memory (its last status, asked after our drops) before sending
             let need = 0;
             ['L', 'R'].forEach((s) => {
@@ -491,7 +592,7 @@ class ClusterSkin {
                 if (!this.memRetried) {
                     this.memRetried = true;
                     this.log.info('cluster skin: nothing sent, making the skin again once');
-                    this._ask();
+                    this._ask(); this.soft = true;
                     return false;
                 }
                 this.layerErr = r; this.lastErr = r + also;
@@ -504,7 +605,8 @@ class ClusterSkin {
                 this.field = refs;
             }
         } catch (e) { this.log.warn('cluster skin: ' + id + ' assets: ' + e.message); return false; }
-        const cur = { id, meta, assets: [] };
+        this.build.start(id);
+        const cur = { id, meta, assets: [], lifted: false, waitAt: 0 };   // lifted: made visible (the skins are made hidden)
         for (let i = 0; i < 2; i++) {
             const s = i ? 'R' : 'L', S = SK.SIDES[s];
             const art = this._asset(tex.art[s]), band = this._asset(tex.band[s]), glyph = this._asset(tex.glyph[s]);
@@ -540,6 +642,8 @@ class ClusterSkin {
     /** 0.12.1: then a status asked, and the gate shut until the renderer answered it and FREE_MS passed */
     _dropLook() {
         if (!this.cur) return;
+        if (this.build.busy) this.build.cancel();
+        this.log.info('cluster skin: ' + this.cur.id + ' dropped (layers and assets let go)');
         this._dropAll(this.cur); this.cur = null; this.visible = false;
         this._ask(); this.gate.dropped(this.asked);
     }
@@ -556,19 +660,25 @@ class ClusterSkin {
         if (!this.want) return false;
         const had = !!this.cr;
         this.err = null; this.noEffect = false;            // a tool installed since: tried again at once
+        this.build.reset();
         this._restart('refresh');
+        this.relAt = 0; this.relN = 0;                    // 0.13.8: the user's own ask: no backoff after it
         return had;
     }
-    _off() {
+    _off(why) {
         const cr = this.cr;
         this.diag.tick(true);                              // 0.11.3: the window's counters, if any
         if (this.poll) this.T.clearInterval(this.poll);
         if (this.pump) this.T.clearInterval(this.pump);
+        this.pausedAt = 0;
         if (cr) {
+            const now = this.now();
+            this.relN = now - this.upAt < REACQ_QUICK_MS ? this.relN + 1 : 0; this.relAt = now || 1;   // 0.13.8
             this._dropLook();
             this._dropField();
             try { cr.close(); } catch (e) { /* gone */ }
-            this.log.info('cluster skin: off');
+            this.log.info('cluster skin: off' + (why ? ' (' + why + ')' : ''));
+            this.states.see('off');
         }
         this._reset();
     }
@@ -580,22 +690,24 @@ class ClusterSkin {
         if (s.enabled === false) return { kind: 'off', text: 'Off' };
         if (this.err) return { kind: 'none', text: SHORT_ERR[this.err.error] || this.err.text };
         if (!this.want) return { kind: 'off', text: 'On - with G\'s Dash open' };
-        if (!this.cr || !this.ready || !this.polled) return { kind: 'wait', text: 'Connecting to renderer' };
+        const silent = (this.silentN || 0) >= 2 && !this.polled;   // 0.13.8: reconnected twice, still no answer
+        if (!silent && (!this.cr || !this.ready || !this.polled)) return { kind: 'wait', text: 'Connecting to renderer' };
         if (this.noEffect) return { kind: 'none', text: 'Update Cluster renderer' };
-        const why = this.why || this._why();
+        const why = silent ? 'stuck' : this.why || this._why();
         if (!why && this.visible) {
             const n = this.cur ? this.cur.meta.name + (this.cur.meta.unit === 'kmh' ? ' (km/h)' : '') : '';
             return { kind: 'on', text: 'Shown - ' + n };
         }
         const TXT = { moving: 'Stock while driving', 'stale values': 'Stock - signal delayed', 'in gear': 'Stock while in gear',
             'no speed signal': 'Stock - no speed signal', 'demo data': 'Stock - demo data', 'panel in use': 'Waiting - panel in use',
-            'renderer error': 'Renderer refused the skin', assets: 'Skin failed to load', 'no update': 'Stock', making: 'Making the skin' };
+            'renderer error': 'Renderer refused the skin', assets: 'Skin failed to load', 'no update': 'Stock', making: 'Making the skin',
+            stuck: 'Stock - renderer did not answer, try Refresh cluster' };
         if (why === 'renderer error' && !this.noEffect && this.lastErr && MEM_FULL.test(this.lastErr)) {
             const names = (this.memUsers || []).map((u) => u.name);
             return { kind: 'error', text: 'Cluster memory full' + (names.length ? ' - ' + names.join(', ') : '') };
         }
         if (why === 'renderer error' && !this.noEffect && this.lastErr) return { kind: 'error', text: 'Refused: ' + shortReason(this.lastErr) };
-        return { kind: why === 'renderer error' || why === 'assets' ? 'error' : 'wait', text: TXT[why] || 'Stock' };
+        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' ? 'error' : 'wait', text: TXT[why] || 'Stock' };
     }
     /** the whole refusal (the diagnostics page): '' when none */
     refusal() { return this.lastErr || ''; 

@@ -446,18 +446,64 @@ function create(o) {
         blocked = false; failures = 0;
         return bundle({ kind: 'manual', why: 'asked from Diagnostics' }, session && session.started).then((n) => { kick(0); return n; });
     }
-    function poll() {
+    function pollRequests() {
         const r = sharedRead('request.json');
         if (r && r.at > lastReq && r.from !== o.id) { lastReq = r.at; if (session && r.at > session.started) manual(); }
     }
+    /* --- 0.13.8: a crash bundle waiting for the drop (not there yet at start): made once it is --- */
+    let crashWaiting = null;
+    function crashBundle() {
+        if (readDrop(o.dataDir).state !== 'ok') { crashWaiting = crash; return Promise.resolve(null); }
+        crashWaiting = null;
+        if (!crashAllowed()) return Promise.resolve(null);
+        return bundle(crash, previous && previous.started).then((n) => { kick(0); return n; });
+    }
+    function poll() {
+        pollRequests();
+        if (crashWaiting && readDrop(o.dataDir).state === 'ok') { note('info', 'the drop is there now: the crash bundle made'); crashBundle(); }
+    }
+
+    /* --- 0.13.8: health lines for the ring only (the event loop's lag, the memory), cheap, rate-limited --- */
+    const H = Object.assign({ sampleMs: 5000, activeMs: 10000, idleMs: 60000, lagNowMs: 200, lagNoteMs: 50, stepMiB: 1 }, o.health || {});
+    const actives = [];
+    const hs = { max: 0, sum: 0, n: 0, at: 0, last: null, lines: 0 };
+    const mib = (b) => Math.round(b / 1048576 * 10) / 10;
+    /** one sample: lag (ms) of the timer that measured it; a line when due */
+    function healthSample(lag) {
+        if (!ring.on) { hs.max = 0; hs.sum = 0; hs.n = 0; return null; }
+        lag = Math.max(0, Math.round(lag));
+        hs.max = Math.max(hs.max, lag); hs.sum += lag; hs.n++;
+        const t = now(), active = actives.some((f) => { try { return !!f(); } catch (e) { return false; } });
+        const m = process.memoryUsage(), cur = { rss: mib(m.rss), heap: mib(m.heapUsed), total: mib(m.heapTotal) };
+        const moved = !hs.last || Math.abs(cur.rss - hs.last.rss) >= H.stepMiB || Math.abs(cur.heap - hs.last.heap) >= H.stepMiB || hs.max >= H.lagNoteMs;
+        const gap = t - hs.at;
+        const due = lag >= H.lagNowMs || (active ? gap >= H.activeMs && (moved || gap >= H.idleMs) : gap >= H.idleMs);
+        if (!due) return null;
+        const line = 'health: lag max ' + hs.max + ' ms, avg ' + Math.round(hs.sum / hs.n) + ' ms over ' + hs.n + '; rss ' + cur.rss + ' MiB, heap ' + cur.heap + ' of ' + cur.total + ' MiB' + (active ? '; cluster on' : '');
+        hs.max = 0; hs.sum = 0; hs.n = 0; hs.at = t; hs.last = cur; hs.lines++;
+        try { ring.note('INFO', line); } catch (e) {}
+        return line;
+    }
+    function healthStart() {
+        let due = 0;
+        const go = () => {
+            due = Date.now() + H.sampleMs;
+            const h = setTimeout(() => { try { healthSample(Date.now() - due); } catch (e) {} if (timers.indexOf(h) >= 0) { timers.splice(timers.indexOf(h), 1); go(); } }, H.sampleMs);
+            if (h.unref) h.unref();
+            timers.push(h);
+        };
+        go();
+    }
+
     function start() {
         const t = (fn, ms) => { const h = setInterval(fn, ms); if (h.unref) h.unref(); timers.push(h); };
         t(beat, BEAT_MS);
         t(poll, 15e3);
         try { ring.start(); } catch (e) {}
+        if (o.health !== false) healthStart();
         const r = sharedRead('request.json'); lastReq = r ? r.at : 0;
         const d = setTimeout(() => {
-            if (crash && crashAllowed()) bundle(crash, previous && previous.started).then(() => kick(0));
+            if (crash) crashBundle();
             else kick(0);
         }, o.startDelay === undefined ? 20e3 : o.startDelay);
         if (d.unref) d.unref();
@@ -477,6 +523,9 @@ function create(o) {
         ring(level, msg) { try { ring.note(level, msg); } catch (e) {} },
         get ringLog() { return ring; },
         context(name, fn) { contexts.push({ name, fn }); },
+        /** 0.13.8: fn() true while the HUD / dials are on (health lines every 10 s then, else every minute) */
+        active(fn) { if (typeof fn === 'function') actives.push(fn); },
+        healthSample, poll, get crashWaiting() { return crashWaiting; }, _health: () => Object.assign({}, hs),
         get crash() { return crash; }, _state: () => state,
     };
 }

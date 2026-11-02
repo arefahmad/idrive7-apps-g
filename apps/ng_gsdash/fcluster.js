@@ -33,6 +33,10 @@ const PARKED_KMH = 1;
 const POLL_MS = 1000, PUMP_MS = 33, PUSH_MS = 33, REARM_MS = 60, FRESH_HOLD = 200, FRESH_FADE = 40, STALE_MS = 600;
 const LIVE_MS = 300, RESHOW_MS = 500, FADE_MS = 150;
 const HOLD_MS = 1000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 3;
+// 0.13.8: the panel and the HUD share one scene id (0x01000400): published again within a second of the other's
+// release it was once mapped and never drawn on the car (the renderer's README). Made only this long after G's Dash's
+// own HUD / skins let go (main.js passes when: s.after), past the renderer's 3 s linger.
+const HANDOVER_MS = 3500;
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 const toBuf = (u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.length);
 
@@ -76,6 +80,8 @@ class FullCluster {
         this.diag = new FS.Diag(this.log, 'full-screen cluster', this.now);
         this.up = new MEM.UploadWatch(this.log, 'full-screen cluster', this.now);   // 0.13.0: failed / partial uploads counted
         this.mem = new MEM.MemWatch(this.log, 'full-screen cluster', this.app, this.now);   // 0.13.0: the memory watchdog
+        this.build = new MEM.BuildWatch(this.log, 'full-screen cluster', this.now);   // 0.13.8: the build, timed, retried
+        this.states = new MEM.StateLog(this.log, 'full-screen cluster', this.now);   // 0.13.8: state changes for the ring
         this._reset();
     }
     _reset() {
@@ -97,7 +103,15 @@ class FullCluster {
         const on = !!(s && s.on && s.enabled !== false);
         if (!on) { if (this.cr) this._off(); this.want = false; this.why = blocker(s); return; }
         this.want = true;
-        if (!this.cr) this._connect();
+        if (!this.cr) {
+            // 0.13.8: after the HUD / skins' release, past the shared scene id's hand-over (HANDOVER_MS)
+            const left = isNum(s.after) ? HANDOVER_MS - (this.now() - s.after) : 0;
+            if (left > 0) {
+                if (this.why !== 'handover') this.log.info('full-screen cluster: waiting ' + (left / 1000).toFixed(1) + ' s for the HUD and skins to let go of the shared scene');
+                this.why = 'handover'; return;
+            }
+            this._connect();
+        }
         this._apply();
     }
     /** a car sample straight away: data, at ({ speed, rpm }) */
@@ -127,7 +141,7 @@ class FullCluster {
         this.stats.connects++;
         cr.on('ready', () => {
             if (this.cr !== cr) return;
-            this.ready = true; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
+            this.ready = true; this.ansAt = this.now() || 1; this.asked = 0; this.answered = 0; this.gate.reset(); this.up.reset();
             this.log.info('full-screen cluster: connected');
             this._ask();
             if (this.cur) this._unconfirm(this.cur);       // the client's replay, confirmed by this ask
@@ -136,8 +150,9 @@ class FullCluster {
             if (this.cr !== cr) return;
             this.ready = false; this.polled = false; this.downAt = this.now();
             this.asked = 0; this.answered = 0; this.gate.reset();
-            if (this.cur) { try { cr.set(this.cur.ref, { visible: false }); } catch (e) { /* gone */ } FS.setBase(cr, this.cur, 0); this.cur.ok = false; }
+            if (this.cur) { try { cr.set(this.cur.ref, { visible: false }); } catch (e) { /* gone */ } FS.setBase(cr, this.cur, 0); this.cur.ok = false; this.cur.lifted = false; this.cur.waitAt = 0; }
             if (this.visible || this.fadeAt) this.diag.hidden('disconnected', 'full-screen cluster: disconnected'); else this.log.info('full-screen cluster: disconnected');
+            this.states.see('disconnected');
             this.visible = false; this.fadeAt = 0;
         });
         cr.on('layer', (ref, state, reason) => {
@@ -157,7 +172,14 @@ class FullCluster {
             if (was !== is) this.log.info('full-screen cluster: panel ' + (is ? 'in use by ' + is : 'free of other apps'));
             this.others = others;
             this.polled = true;
-            this.answered++;
+            // 0.13.8: answering again after a silence, the asks meanwhile lost: counted from here (a look not
+            // confirmed yet waits for the answer to a new ask, so no refusal of it is missed)
+            if (this.ansAt && this.now() - this.ansAt >= MEM.LOST_MS && this.asked - this.answered > 1) {
+                this.log.info('full-screen cluster: the renderer answers again after ' + Math.round((this.now() - this.ansAt) / 1000) + ' s (' + (this.asked - this.answered - 1) + ' asks lost)');
+                this.answered = this.asked - 1;
+                if (this.cur && !this.cur.ok) { this._ask(); this.cur.until = this.asked; }
+            }
+            this.answered++; this.ansAt = this.now() || 1; this.silentN = 0;
             if (this.cur && !this.cur.ok && this.answered >= this.cur.until) this._confirm();
             this._apply();
         });
@@ -189,10 +211,28 @@ class FullCluster {
         this._hide('refused', true); this._drop();
     }
     _unconfirm(c) { c.ok = false; c.err = ''; c.until = this.asked; }
+    /** 0.13.8: made hidden, so the renderer writes nothing until it is visible: sent visible, clear (u_fresh 0,
+     *  nothing bound yet: drawn as nothing), only when it is to be shown now */
+    _lift(c) {
+        const w = this._why();
+        if ((w && w !== 'making') || !this.cr) return false;
+        FS.setBase(this.cr, c, 0); try { this.cr.set(c.ref, { visible: true }); } catch (e) { /* gone */ }
+        c.lifted = true; c.waitAt = this.now();
+        this.log.info('full-screen cluster: asked for (still clear), so the renderer writes it');
+        return true;
+    }
+    /** 0.13.8: a lifted look not confirmed yet hidden again (not to be shown now: nothing of ours asks for the target) */
+    _unlift() {
+        const c = this.cur;
+        if (!c || c.ok || !c.lifted || !this.cr) return;
+        try { this.cr.set(c.ref, { visible: false }); } catch (e) { /* gone */ }
+        c.lifted = false; c.waitAt = 0;
+    }
     _confirm() {
         const c = this.cur, cr = this.cr;
         if (c.err) {
             this.log.warn('full-screen cluster: refused (' + c.err + ')');
+            if (this.build.busy) this.build.cancel();
             this._drop();
             if (MEM.MEM_FULL.test(c.err)) {
                 // the renderer's 16 MiB is every app's: ours freed, made again once, then reported with who holds it
@@ -209,12 +249,21 @@ class FullCluster {
         // 0.13.0: shown only once the renderer's status says every asset of ours on the target is written whole
         const up = MEM.uploads(this.statusText, this.app, TARGET);
         // 0.13.0: not written yet (the renderer writes at its next draw): asked again on the next pump (33 ms), not at once
-        if (up.unwritten) { this.up.waited(); this.upWait = true; c.until = this.asked + 1; return; }
-        c.ok = true; this.memRetried = false;
+        // 0.13.8: made hidden, so never written: lifted first (visible, still clear), then shown once written (writeWait)
+        const w = MEM.writeWait(up, c, this.now());
+        if (w === 'lift' && !this._lift(c)) { this.build.hold(); c.until = this.asked + 1; return; }   // not to be shown yet: the next poll
+        if (w !== 'go') {
+            this.build.hold();                           // the renderer answers: waiting on its writes, not stuck
+            if (w === 'slow' && !c.slowSaid) { c.slowSaid = true; this.log.info('full-screen cluster: still not written after ' + (MEM.WRITE_WAIT_MS / 1000) + ' s (writes failing, or the target taken by the car), checked every second'); }
+            this.up.waited(); if (w !== 'slow') this.upWait = true; c.until = this.asked + 1; return;
+        }
+        c.ok = true; c.waitAt = 0; c.slowSaid = false; this.memRetried = false;
+        this.build.done();
         if (!c.bound) { cr.bind(c.ref, 'u_lab', c.asset); c.base = -1; FS.setBase(cr, c, 0); c.bound = true; }
         this.log.info('full-screen cluster: confirmed by the renderer');
     }
     _tick() {
+        this.states.flush();
         if (!this.want || !this.cr) return;
         this.diag.tick();
         this.up.tick(); this.mem.tick();
@@ -222,7 +271,20 @@ class FullCluster {
             if (this.now() - this.downAt >= RECONNECT_MS) this._restart('not connected for ' + Math.round((this.now() - this.downAt) / 1000) + ' s');
             return;
         }
+        // 0.13.8: connected, its status asked every second, no answer: reconnected on a backoff (never "making" for ever)
+        const quiet = this.now() - (this.ansAt || this.now());
+        if (quiet >= MEM.silentWait(this.silentN || 0)) {
+            this.silentN = (this.silentN || 0) + 1;
+            this.log.warn('full-screen cluster: the renderer has not answered for ' + Math.round(quiet / 1000) + ' s, reconnecting (' + this.silentN + ')');
+            this._restart('no answer');
+            return;
+        }
         this._ask();
+        // 0.13.8: not confirmed within BUILD_STUCK_MS: dropped, made again after the backoff (never stuck at "making")
+        if (this.build.stuck() && this.cur && !this.cur.ok) {
+            this.build.failed('not confirmed in ' + Math.round(MEM.BUILD_STUCK_MS / 1000) + ' s');
+            this._drop();
+        }
         if (this.layerErr && this.errCount < ERR_RETRIES) {
             this.errCount++; this.layerErr = '';
             this.log.info('full-screen cluster: making the layer again (' + this.errCount + ' of ' + ERR_RETRIES + ')');
@@ -245,18 +307,21 @@ class FullCluster {
         if (now - this.busyAt < HOLD_MS) return 'panel in use';
         if (this.layerErr || this.noEffect) return 'renderer error';
         if (this.cur && !this.cur.ok) return 'making';
+        if (!this.cur && this.build.gaveUp) return 'stuck';   // 0.13.8
         return '';
     }
     _apply() {
         if (!this.want || !this.cr || !this.ready || !this.polled) return;
         const why = this._why();
         this.why = why;
-        if (why) { this._hide(why); return; }
+        this.states.see(why || (this.cur && this.cur.ok ? 'shown' : 'making'));
+        if (why) { if (why !== 'making') this._unlift(); this._hide(why); return; }
         if (!this.cur) {
             if (!this.gate.open(this.answered)) { this.why = 'making'; return; }   // 0.12.1
+            if (!this.build.may()) { this.why = 'making'; return; }   // 0.13.8: a failed build's backoff (no tight retry loop)
             let ok = false;
             try { ok = this._make(); } catch (e) { this.log.warn('full-screen cluster: ' + (e.stack || e)); this.layerErr = 'make: ' + e.message; }
-            if (!ok) { this._hide('assets'); return; }
+            if (!ok) { if (!this.soft && !this.layerErr && !this.noEffect) this.build.failed('could not make it'); this._hide('assets'); return; }
         }
         if (!this.cur.ok) { this.why = 'making'; return; }
         if (!this.visible) {
@@ -318,6 +383,7 @@ class FullCluster {
     /** the atlas and the layer (hidden). false: could not. */
     _make() {
         const cr = this.cr;
+        this.soft = false;
         if (['effect', 'asset', 'bind', 'uniform', 'animate'].some((k) => typeof cr[k] !== 'function')) {
             if (!this.noEffect) this.log.warn('full-screen cluster: this Cluster renderer has no effect layers');
             this.noEffect = true; return false;
@@ -336,11 +402,12 @@ class FullCluster {
             this.layerErr = r; this.lastErr = r;
             return false;
         }
+        this.build.start('dials');
         const asset = cr.asset({ target: TARGET, format: 'r8', w: A.w, h: A.h, sampling: 'bilinear' });
         if (!asset) { this.log.warn('full-screen cluster: asset refused by the client'); return false; }
         cr.pixels(asset, null, toBuf(A.data));
         this.stats.assets++; this.stats.bytes += A.data.length;
-        const cur = { ref: 0, asset, anim: 0, base: -1, sent: null, ok: false, bound: false };
+        const cur = { ref: 0, asset, anim: 0, base: -1, sent: null, ok: false, bound: false, lifted: false, waitAt: 0 };   // made hidden
         this.layerState = 'new';
         const ref = cr.effect({ target: TARGET, klass: KLASS, z: FC_Z, exclusive: false, contend: false, visible: false,
             x: 0, y: 0, w: FC.W, h: FC.H, fs: FC.fragment() });
@@ -355,7 +422,9 @@ class FullCluster {
     _drop() {
         const cr = this.cr, c = this.cur;
         this.cur = null; this.visible = false; this.fadeAt = 0;
+        if (this.build.busy) this.build.cancel();
         if (!cr || !c) return;
+        this.log.info('full-screen cluster: dropped (layer and atlas let go)');
         if (c.ref) { try { cr.drop(c.ref); this.stats.drops++; } catch (e) { /* gone */ } }
         if (c.asset) { try { cr.drop(c.asset); this.stats.drops++; } catch (e) { /* gone */ } }
         this._ask(); this.gate.dropped(this.asked);         // 0.12.1
@@ -372,7 +441,7 @@ class FullCluster {
         this.errCount = 0; this.layerErr = '';
         if (!this.want) return false;
         const had = !!this.cr;
-        this.err = null; this.noEffect = false;
+        this.err = null; this.noEffect = false; this.build.reset();
         this._restart('refresh');
         return had;
     }
@@ -384,6 +453,7 @@ class FullCluster {
             this._drop();
             try { this.cr.close(); } catch (e) { /* gone */ }
             this.log.info('full-screen cluster: off');
+            this.states.see('off');
         }
         this._reset();
     }
@@ -394,9 +464,11 @@ class FullCluster {
         const s = this.st || {};
         if (s.enabled === false || !this.want && !this.err) return { kind: 'off', text: 'Off' };
         if (this.err) return { kind: 'none', text: SHORT_ERR[this.err.error] || this.err.text };
-        if (!this.cr || !this.ready || !this.polled) return { kind: 'wait', text: 'Connecting to renderer' };
+        if (this.why === 'handover' && !this.cr) return { kind: 'wait', text: 'Starting - the HUD and skins letting go' };
+        const silent = (this.silentN || 0) >= 2 && !this.polled;   // 0.13.8: reconnected twice, still no answer
+        if (!silent && (!this.cr || !this.ready || !this.polled)) return { kind: 'wait', text: 'Connecting to renderer' };
         if (this.noEffect) return { kind: 'none', text: 'Update Cluster renderer' };
-        const why = this.why || this._why();
+        const why = silent ? 'stuck' : this.why || this._why();
         if (!why && this.visible) return { kind: 'on', text: 'Shown - classic round dials' };
         if (why === 'renderer error' && this.lastErr) {
             if (MEM.MEM_FULL.test(this.lastErr)) return { kind: 'error', text: 'Cluster memory full' + (this.memUsers.length ? ' - ' + this.memUsers.map((u) => u.name).join(', ') : '') };
@@ -404,12 +476,13 @@ class FullCluster {
         }
         const TXT = { 'stale values': 'Hidden - signal delayed', 'no speed signal': 'Hidden - no speed signal', 'demo data': 'Hidden - demo data',
             'panel in use': 'Waiting - cluster panel in use', 'renderer error': 'Renderer refused it', assets: 'Failed to load', making: 'Making the dials',
+            stuck: 'Cannot run - the renderer did not answer (try Refresh cluster)',
             'no update': 'Hidden', closed: 'On - with G\'s Dash open' };
-        return { kind: why === 'renderer error' || why === 'assets' ? 'error' : 'wait', text: TXT[why] || 'Hidden' };
+        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' ? 'error' : 'wait', text: TXT[why] || 'Hidden' };
     }
     refusal() { return this.lastErr || ''; }
 }
 const SHORT_ERR = { missing: 'Needs Cluster renderer', noclient: 'Update Cluster renderer', untrusted: 'Renderer not trusted', load: 'Renderer failed to load' };
 
-module.exports = { FullCluster, blocker, staleness, values, TARGET, KLASS, FC_Z, PARKED_KMH,
+module.exports = { HANDOVER_MS, FullCluster, blocker, staleness, values, TARGET, KLASS, FC_Z, PARKED_KMH,
     POLL_MS, PUMP_MS, PUSH_MS, REARM_MS, FRESH_HOLD, FRESH_FADE, STALE_MS, LIVE_MS, RESHOW_MS, FADE_MS, HOLD_MS };

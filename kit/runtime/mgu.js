@@ -50,6 +50,8 @@ function fileLog(level, msg) {
     // the crash-surviving ring (remotelog.js / ringlog.js): only with a drop installed and the switch on; batched
     if (remote) { try { remote.ring(level, msg); } catch (e) { /* never in the way */ } }
 }
+/** 0.13.8: a line for the ring only (never the file log): nothing unless the remote logs are set up and on */
+function ringNote(msg) { if (remote) { try { remote.ring('INFO', msg); } catch (e) { /* never in the way */ } } }
 // The SDK can swallow the first RHMI resource error and fail later with a misleading
 // null entry-point factory. Preserve the original warnings/errors in the app log.
 ['warn', 'error'].forEach((level) => {
@@ -217,18 +219,30 @@ class Ui {
     /** false while an HMI popup covers the (visible) screen */
     hasFocus(stateName) { return this._focus[stateName] !== false; }
     onFocus(fn) { this._focusHandlers.push(fn); }
-    _setFocus(stateName, on) {
+    _setFocus(stateName, on, src) {
         if (this.hasFocus(stateName) === on) return;
         this._focus[stateName] = on;
         log.info('state ' + stateName + (on ? ' has focus again' : ' covered by an HMI popup'));
+        this._popupNote(stateName, 'covered', !on, src || 'focus');
         this._focusHandlers.forEach((fn) => { try { fn(stateName, on); } catch (e) { log.error(e); } });
     }
     /** forget what the HMI shows (the next image is pushed for sure) */
     _invalidate() { Object.keys(this._img).forEach((k) => { this._img[k].lastPx = null; }); }
     onVisible(fn) { this._visHandlers.push(fn); }
-    _setVisible(stateName, on) {
+    /** 0.13.8: popup start / end for the ring (what covered or hid the screen, how long) */
+    _popupNote(stateName, how, start, src) {
+        const k = stateName + ' ' + how, at = (this._popAt = this._popAt || Object.create(null));
+        if (start) { at[k] = Date.now(); ringNote('popup: ' + stateName + ' ' + how + ' (' + src + ')'); return; }
+        if (!at[k]) return;
+        ringNote('popup: ' + stateName + ' ' + how + ' end after ' + ((Date.now() - at[k]) / 1000).toFixed(1) + ' s (' + src + ')');
+        delete at[k];
+    }
+    _setVisible(stateName, on, src) {
         if (this._visible[stateName] === on) return;
+        const was = this._visible[stateName];
         this._visible[stateName] = on;
+        if (was !== undefined) this._popupNote(stateName, 'hidden', !on, src || 'visible event');
+        if (on && this._focus[stateName] === false) this._popupNote(stateName, 'covered', false, 'shown again');
         if (on) this._focus[stateName] = true;
         if (on) Object.keys(this._img).forEach((k) => { this._img[k].lastPx = null; });      // push the next frame for sure
         log.debug('state ' + stateName + (on ? ' visible' : ' hidden'));
@@ -656,7 +670,7 @@ async function runInner(impl) {
     const tracked = (SPEC.screens || []).concat(SPEC.settings && SPEC.settings.length ? [{ name: 'SETTINGS' }] : []);
     const wireTracked = () => tracked.forEach((s) => {
         const st = ui.comp(s.name);
-        if (st && st.on) st.on('visible', (ev) => ui._setVisible(s.name, !!(ev && ev.visible)));
+        if (st && st.on) st.on('visible', (ev) => ui._setVisible(s.name, !!(ev && ev.visible), 'visible event'));
         // a popup over the screen (options, warnings, calls) takes its focus: the display hides
         // the GPU overlay meanwhile, so the popup is never covered
         if (st && st.on) st.on('focus', (ev) => ui._setFocus(s.name, !(ev && ev.focus === false)));
@@ -668,10 +682,10 @@ async function runInner(impl) {
         const open = [].concat.apply([], Object.keys(stack || {}).map((k) => stack[k] || []));
         tracked.forEach((s) => {
             const st = ui.comp(s.name);
-            if (st) ui._setVisible(s.name, open.indexOf(st.getId ? st.getId() : -1) >= 0);
+            if (st) ui._setVisible(s.name, open.indexOf(st.getId ? st.getId() : -1) >= 0, 'stack: ' + open.length + ' open, last ' + (open.length ? String(open[open.length - 1]).slice(0, 12) : '-'));
             // back in front (reopened after Home or another app): the HMI does not always say the
             // screen has its focus again, and without it the drawn screen stayed hidden
-            if (st && shown && ui.isVisible(s.name)) ui._setFocus(s.name, true);
+            if (st && shown && ui.isVisible(s.name)) ui._setFocus(s.name, true, 'stack');
         });
     };
     // (the HMI application can be late on a cold start: hook it up when it comes)

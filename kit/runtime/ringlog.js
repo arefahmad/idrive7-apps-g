@@ -14,7 +14,8 @@
  *     on the flash (96 KB with the defaults) in at most 2 x SEGS files, none kept longer than 14 days;
  *   - at start the last run's segments become prev-*.log (replacing the run before's), for the next bundle.
  * Written only while the remote logs are set up (the unit's own drop file) and on; without a drop file
- * nothing is written and an old ring is deleted. Never throws, never blocks: the timers are unref'd, the
+ * nothing is written and this run's ring is deleted (0.13.8: the run before's kept, aged out after 14 days, for a
+ * crash bundle made once the drop is there). Never throws, never blocks: the timers are unref'd, the
  * regular writes asynchronous; only a fatal error / exit writes synchronously (what is still in memory).
  */
 const fs = require('fs');
@@ -34,9 +35,9 @@ const DEFAULTS = {
 };
 
 // what goes in the ring at all (level + ' ' + message)
-const KEEP = /^(WARN|ERROR|FATAL|SDK_\w+) |hud|cluster|renderer|memory|MiB|upload|refused|layer|fail-?safe|take.?over|budget|^INFO (look|displays|starting|exit code)\b/i;
+const KEEP = /^(WARN|ERROR|FATAL|SDK_\w+) |^INFO (popup|health): |hud|cluster|renderer|memory|MiB|upload|refused|layer|fail-?safe|take.?over|budget|^INFO (look|displays|starting|exit code)\b/i;
 // what is written at once
-const NOW = /^(WARN|ERROR|FATAL|SDK_\w+) |^INFO (look|displays)\b|^INFO [\w -]+: (hud |connected|disconnected|off$|shown|hidden|refused|making|made|the renderer lost)|take.?over|fail-?safe|renderer memory|memory is full|uploads last|refused|parked behind|scene is held/i;
+const NOW = /^(WARN|ERROR|FATAL|SDK_\w+) |^INFO (look|displays|popup)\b|^INFO [\w -]+: (hud |connected|disconnected|off$|shown|hidden|refused|making|made|the renderer lost)|take.?over|fail-?safe|renderer memory|memory is full|uploads last|refused|parked behind|scene is held/i;
 
 // what is also flushed to the flash itself (fdatasync, rate-limited): a warning, a HUD hand-over, a refusal, memory full
 // (the periodic watchdog / upload windows are written at once but left to the kernel's own writeback)
@@ -65,12 +66,22 @@ function create(o) {
         let g = 'none';
         try { g = c.gate ? c.gate() : 'none'; } catch (e) { g = 'none'; }
         lastGate = now();
-        if (g === 'none') { clear(); on = false; }
+        // 0.13.8: no drop (yet): this run's segments deleted, the run before's kept (aged out after maxAgeMs) for a
+        // crash bundle made once the drop is there (remotelog.js); clear() still deletes everything
+        if (g === 'none') { clearRun(); on = false; }
         else on = g === 'on';
         if (!on) { pending = []; pendBytes = 0; }
         return g;
     }
-    /** every file of the ring deleted (no drop file installed) */
+    /** this run's files deleted, the run before's kept unless older than maxAgeMs */
+    function clearRun() {
+        list(SEG_RE).forEach(rm);
+        list(/\.tmp$/).forEach(rm);
+        list(PREV_RE).forEach((f) => { try { if (now() - fs.statSync(path.join(dir, f)).mtime.getTime() > c.maxAgeMs) rm(f); } catch (e) {} });
+        if (!list(PREV_RE).length) { try { fs.rmdirSync(dir); } catch (e) { /* not empty or gone */ } }
+        seq = 0; curSize = -1;
+    }
+    /** every file of the ring deleted */
     function clear() {
         let names = [];
         try { names = fs.readdirSync(dir); } catch (e) { return; }

@@ -189,4 +189,97 @@ class MemWatch {
     }
 }
 
-module.exports = { LIMIT, asset, image, video, MEM_FULL, APP_NAMES, memoryUsers, memoryNote, FREE_MS, SETTLE_MS, MARGIN, statusBytes, fits, FreeGate, uploads, UploadWatch, UPLOAD_LOG_MS, MemWatch, HIGH, ownBytes };
+
+/**
+ * 0.13.8: the write wait, bounded. The renderer (compositor.cpp's render(), 0.3.3) writes a target's assets only
+ * while the target is asked for (some layer on it visible) and not parked behind the HMI's content. A layer made
+ * hidden (the skins, the full-screen test) or replayed hidden (the HUD after a renderer drop) therefore never had
+ * its assets written, and 0.13.0's "shown only once every asset is written" waited for ever ("Making the skin").
+ * The wait now holds only while our layer is visible in the renderer and for WRITE_WAIT_MS at most; then it is
+ * confirmed as before 0.13.0: the renderer itself draws a layer only once the assets it samples are written whole
+ * (compositor.cpp: "an asset it samples is not written yet"), so nothing half-written is ever on the screen.
+ * c: the look's record ({ lifted: our layer sent visible, waitAt }). 'go': confirm now; 'wait': ask again on the next
+ * pump; 'slow': still
+ * not written after WRITE_WAIT_MS (writes failing, or the target parked by the HMI): asked again on the next poll
+ * (1 s), never shown before it is written; 'lift': the caller sends its layer visible, still clear (u_fresh 0, unbound: draws nothing), so the renderer
+ * asks for the target and writes the assets, then waits (the 0.13.0 guarantee kept: nothing shown before it is written).
+ */
+const WRITE_WAIT_MS = 3000;
+function writeWait(up, c, now) {
+    if (!up || !up.unwritten || !c) return 'go';
+    if (!c.lifted) return 'lift';
+    if (!c.waitAt) c.waitAt = now;
+    return now - c.waitAt < WRITE_WAIT_MS ? 'wait' : 'slow';
+}
+/** the old yes/no form (true: wait) */
+function waitWrites(up, c, now) { return writeWait(up, c, now) === 'wait'; }
+
+/**
+ * 0.13.8: one look's build (made -> confirmed), timed: ring lines for its start, finish, failure and duration; a
+ * build not confirmed within STUCK_MS is dropped and made again after BACKOFF (2, 5, 10, 30 s, then 30 s), never
+ * at once; after MAX_TRIES in a row it is reported (the stock dials stay) until a setting change or Refresh cluster.
+ */
+const BUILD_STUCK_MS = 10000, BUILD_BACKOFF = [2000, 5000, 10000, 30000], BUILD_MAX_TRIES = 5;
+class BuildWatch {
+    constructor(log, tag, now) { this.log = log; this.tag = tag; this.now = now || Date.now; this.reset(); }
+    reset() { this.id = ''; this.at = 0; this.held = 0; this.tries = 0; this.retryAt = -1e15; this.last = null; }
+    start(id) {
+        this.id = String(id); this.at = this.now() || 1; this.held = 0;
+        this.log.info(this.tag + ': build ' + this.id + ' started' + (this.tries ? ' (try ' + (this.tries + 1) + ')' : ''));
+    }
+    get busy() { return !!this.at; }
+    done() {
+        if (!this.at) return;
+        const ms = this.now() - this.at;
+        this.log.info(this.tag + ': build ' + this.id + ' finished in ' + ms + ' ms');
+        this.last = { id: this.id, ok: true, ms }; this.at = 0; this.tries = 0; this.retryAt = -1e15;
+    }
+    /** a failed build: next try after the backoff; returns the wait (ms) */
+    failed(why) {
+        const ms = this.at ? this.now() - this.at : 0;
+        this.tries++;
+        const wait = BUILD_BACKOFF[Math.min(this.tries - 1, BUILD_BACKOFF.length - 1)];
+        this.retryAt = this.now() + wait;
+        this.log.warn(this.tag + ': build ' + (this.id || '?') + ' failed (' + why + ') after ' + ms + ' ms, try ' + this.tries + ', again in ' + Math.round(wait / 1000) + ' s');
+        this.last = { id: this.id, ok: false, ms, why }; this.at = 0;
+        return wait;
+    }
+    /** dropped before it finished (a look switch, closed): no failure */
+    cancel() { this.at = 0; }
+    /** waiting on something that is not the renderer (driving, a popup): not counted as stuck */
+    hold() { if (this.at) this.held = this.now() || 1; }
+    stuck() { return !!this.at && this.now() - Math.max(this.at, this.held) >= BUILD_STUCK_MS; }
+    may() { return this.now() >= this.retryAt && this.tries < BUILD_MAX_TRIES; }
+    get gaveUp() { return this.tries >= BUILD_MAX_TRIES; }
+}
+
+/** 0.13.8: state changes of a layer for the ring ("state a -> b"), at most one line a second (the rest counted) */
+class StateLog {
+    constructor(log, tag, now) { this.log = log; this.tag = tag; this.now = now || Date.now; this.state = ''; this.said = ''; this.at = -1e15; this.n = 0; }
+    see(state) {
+        state = String(state || '');
+        if (state === this.state) return;
+        this.state = state; this.n++;
+        this.flush();
+    }
+    flush() {
+        if (this.state === this.said || this.now() - this.at < 1000) return;
+        this.log.info(this.tag + ': state ' + (this.said || 'start') + ' -> ' + this.state + (this.n > 1 ? ' (' + this.n + ' changes)' : ''));
+        this.said = this.state; this.at = this.now(); this.n = 0;
+    }
+}
+
+/** 0.13.8: another app's art in the renderer that was not there when the pause began (by name; G's Dash's own left
+ *  out): a paused layer lets go at once, so its kept memory never stands in another app's way */
+function userNames(text, app) { return memoryUsers(text, app).map((u) => u.name).filter((n) => !/^G's Dash/.test(n)); }
+function newUsers(before, text, app) { const was = before || []; return userNames(text, app).filter((n) => was.indexOf(n) < 0); }
+
+/** 0.13.8: connected, its status asked every second, no answer this long: reconnected (10, 20, 40, then 60 s) */
+const SILENT_MS = [10000, 20000, 40000, 60000];
+const LOST_MS = 5000;   // silent this long and answering again: the asks meanwhile counted lost
+const silentWait = (n) => SILENT_MS[Math.min(n, SILENT_MS.length - 1)];
+
+/** 0.13.8: a popup's pause - how long a hidden layer is kept made (scene, assets, connection) for the screen to come back */
+const PAUSE_MS = 90000;
+
+module.exports = { LOST_MS, SILENT_MS, silentWait, userNames, newUsers, WRITE_WAIT_MS, writeWait, waitWrites, BuildWatch, BUILD_STUCK_MS, BUILD_BACKOFF, BUILD_MAX_TRIES, StateLog, PAUSE_MS, LIMIT, asset, image, video, MEM_FULL, APP_NAMES, memoryUsers, memoryNote, FREE_MS, SETTLE_MS, MARGIN, statusBytes, fits, FreeGate, uploads, UploadWatch, UPLOAD_LOG_MS, MemWatch, HIGH, ownBytes };
