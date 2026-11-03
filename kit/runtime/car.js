@@ -13,6 +13,9 @@
  * list the interfaces (see SIGNALS below for the exact entries).
  * Demo: setting "demo" = auto (until the car answers) / on / off.
  * data().stage = the selector position 'P' / 'R' / 'N' / 'D' (gearbox signal), else undefined.
+ * data().program = the gearbox program the car's own cluster shows (group 'program', MDrive
+ * .dataDisplayGearbox): 'S', 'M', 'D' (the signal is there, no S / M program), else undefined (never
+ * received, or invalid); data().drivelogic = its Drivelogic stage (0-3, 10 dune mode) or undefined.
  */
 const Sim = require('./sim');
 
@@ -44,6 +47,26 @@ function selectionOf(x) {
     if (n === 4) return { stage: undefined, gear: 0 };              // N or P, not told apart
     if (n >= 5 && n <= 13) return { stage: 'D', gear: n - 4 };
     return undefined;                                               // initialising / invalid
+}
+
+/**
+ * MDrive.dataDisplayGearbox (notifier only): what the cluster shows beside the gear, names or wire numbers.
+ *   displayProgramGearbox: DUNKELSCHALTUNG 0 (none), S_MINUS_PROGRAMM 1, M_MINUS_PROGRAMM 2, L_MINUS_PROGRAMM 3,
+ *   C_MINUS_PROGRAMM 4, B_PROGRAMM 5, SIGNAL_UNGUELTIG 7
+ *   displayDriveLogicGearbox: DUNKELSCHALTUNG 0, _1 1 .. _3 3, DUENENMODUS 10, SIGNAL_UNGUELTIG 15
+ * -> { program: 'S' | 'M' | 'D' (valid, no S / M: L, C, B and none show a plain D) | undefined (invalid,
+ * missing), drivelogic: 0-3 | 10 | undefined, raw: [program, drivelogic] as received }
+ */
+const PROGRAMS = { DUNKELSCHALTUNG: 0, S_MINUS_PROGRAMM: 1, M_MINUS_PROGRAMM: 2, L_MINUS_PROGRAMM: 3, C_MINUS_PROGRAMM: 4, B_PROGRAMM: 5, SIGNAL_UNGUELTIG: 7 };
+const DRIVELOGIC = { DUNKELSCHALTUNG: 0, _1: 1, _2: 2, _3: 3, DUENENMODUS: 10, SIGNAL_UNGUELTIG: 15 };
+const enumNum = (x, names) => (typeof x === 'number' && isFinite(x) ? x : typeof x === 'string' && names[x] !== undefined ? names[x]
+    : typeof x === 'string' && /^\d+$/.test(x) ? Number(x) : undefined);
+function gearboxDisplayOf(v) {
+    const rp = v && typeof v === 'object' ? v.displayProgramGearbox : undefined, rd = v && typeof v === 'object' ? v.displayDriveLogicGearbox : undefined;
+    const p = enumNum(rp, PROGRAMS), dl = enumNum(rd, DRIVELOGIC);
+    const program = p === 1 ? 'S' : p === 2 ? 'M' : p === 0 || p === 3 || p === 4 || p === 5 ? 'D' : undefined;
+    const drivelogic = dl !== undefined && ((dl >= 0 && dl <= 3) || dl === 10) ? dl : undefined;
+    return { program, drivelogic, raw: [rp === undefined ? null : rp, rd === undefined ? null : rd] };
 }
 
 /**
@@ -108,6 +131,8 @@ const SIGNALS = {
     gear: ['de.bmw.infrastructure.VehicleInformation', 'statusGearboxDrive', 'DataPowerTrain2'],
     torque: ['de.bmw.infotainment.drivingexcitement.FES', 'statusActualValueTorque2'],
     drivemode: ['de.bmw.infotainment.drivingexcitement.FES', MODE_FIELD],
+    // the gearbox program the cluster shows (DS, M3): notifier only, on cars with the MDrive service
+    program: ['de.bmw.infotainment.misc.MDrive', 'dataDisplayGearbox'],
     // with Vehicle.statusNewCurrentUnitsStatusExt (the car's units), all "rs"; read every 10 s as well
     tpms: ['de.bmw.infotainment.vehicle.TPMS', 'statusTyrePressure', 'statusTyreTemperature', 'statusTargetTyrePressure', 'statusTyresStatus'],
     units: ['de.bmw.infotainment.vehicle.Vehicle', 'statusNewCurrentUnitsStatusExt'],
@@ -177,6 +202,16 @@ class Car {
                 if (!sel) return;
                 if (sel.stage !== undefined) put('stage', sel.stage);
                 put('gear', sel.gear);
+            });
+        }
+        if (groups.includes('program')) {
+            const seen = [];
+            add(SIGNALS.program[0], SIGNALS.program[1], (v) => {
+                const g = gearboxDisplayOf(v), sig = JSON.stringify(g.raw);
+                // each distinct raw value once (capped), with what it shows
+                if (seen.length < 16 && seen.indexOf(sig) < 0) { seen.push(sig); this.log.info('gearbox display: program ' + JSON.stringify(g.raw[0]) + ' drivelogic ' + JSON.stringify(g.raw[1]) + ' -> ' + (g.program || 'none') + (g.drivelogic !== undefined ? ', drivelogic ' + g.drivelogic : '')); }
+                if (g.program) put('program', g.program); else delete this.live.program;
+                if (g.drivelogic !== undefined) this.live.drivelogic = g.drivelogic; else delete this.live.drivelogic;
             });
         }
         // negative torque (engine braking while the rpm falls) counts as 0
@@ -254,7 +289,8 @@ class Car {
         this.subs = [];
         this.t0 = Date.now();
         Object.keys(watches).forEach((iface) => ctx.signals.watch(iface, '1', watches[iface], this.log, pollOf[iface] ? { pollMs: pollOf[iface] } : undefined)
-            .then((s) => { this.subs.push(s); this.subBy[iface] = s; this.log.info('signal ' + iface.split('.').pop() + (s.error ? ' error: ' + s.error : ' subscribed')); }));
+            .then((s) => { this.subs.push(s); this.subBy[iface] = s; this.log.info('signal ' + iface.split('.').pop() + (s.error ? ' error: ' + s.error : ' subscribed')); })
+            .catch((e) => this.log.warn('signal ' + iface.split('.').pop() + ' error: ' + e)));      // (signals.js resolves with .error; a stand-in may not)
 
         // demo feed (20 Hz) - also keeps the sim warm so switching is seamless. On a busy or
         // slow CPU the timer fires late; replay every missed 50 ms step (up to 3 s) with its own
@@ -323,4 +359,5 @@ Car.MODE_FIELD = MODE_FIELD;
 Car.members = members;
 Car.GearGuess = GearGuess;
 Car.selectionOf = selectionOf;
+Car.gearboxDisplayOf = gearboxDisplayOf;
 module.exports = Car;

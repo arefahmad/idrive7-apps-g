@@ -56,9 +56,27 @@ function loadFonts(log) {
 const fontsInUse = () => fontsLoaded.slice();
 
 /* ---------------- values ---------------- */
-/** The gear as shown: 1..9, R, N, P, D, or '-' (as kit gauges.gear). */
-function gearText(gr, st) {
-    return st === 'P' || st === 'R' || st === 'N' ? st : gr === -1 ? 'R' : isNum(gr) && gr > 0 ? String(gr) : st === 'D' ? 'D' : gr === 0 ? 'N' : '-';
+/**
+ * The gear as shown: 1..9, R, N, P, D, or '-' (as kit gauges.gear). 0.14.1: with the gearbox program the
+ * car's cluster shows (car.js data().program, MDrive.dataDisplayGearbox) as the cluster does: in D, 'D'
+ * (no program), 'DS' (S program), 'M3' (M program and its gear; 'M' with no gear known); P / R / N as
+ * ever. No program (never received, invalid: most cars): exactly as before, the bare gear number or D.
+ */
+function gearText(gr, st, prog) {
+    const t = st === 'P' || st === 'R' || st === 'N' ? st : gr === -1 ? 'R' : isNum(gr) && gr > 0 ? String(gr) : st === 'D' ? 'D' : gr === 0 ? 'N' : '-';
+    if (prog !== 'S' && prog !== 'M' && prog !== 'D') return t;
+    if (!/^[1-9D]$|^10$/.test(t)) return t;                 // P, R, N, '-': the program changes nothing
+    return prog === 'S' ? 'DS' : prog === 'M' ? 'M' + (isNum(gr) && gr > 0 && gr <= 9 ? String(Math.round(gr)) : '') : 'D';
+}
+/**
+ * 0.14.1: the gear's size so its text (two characters: DS, M3) fits maxW px across; one character keeps
+ * the size it is given (every look's single gear exactly as before).
+ */
+function gearFit(cv, text, size, maxW, o) {
+    const s = String(text == null ? '' : text);
+    if (s.length < 2) return size;
+    const w = cv.textWidth(s, size, Object.assign({ literal: true }, o || {}));
+    return w > maxW && w > 0 ? Math.floor(size * maxW / w) : size;
 }
 const num0 = (v) => (isNum(v) ? String(Math.round(v)) : '--');
 const num1 = (v) => (isNum(v) ? v.toFixed(1) : '-.-');
@@ -240,7 +258,7 @@ function tempGauge(v, cols, track, k) {
 module.exports = {
     TEMP_ZONES, ZONE_COLS, tempZone, tempPos, tempNum, tempUnit, tempText, zoneAt, zoneMarks, tempGauge,
     modeTone, sessionTap, inkCentred,
-    loadFonts, lookFonts, fontsInUse, LOOK_FONTS, FAMILIES, gearText, num0, num1, num2, rpmText, clock, lights, LIGHTS, badge, badgeWidth,
+    loadFonts, lookFonts, fontsInUse, LOOK_FONTS, FAMILIES, gearText, gearFit, num0, num1, num2, rpmText, clock, lights, LIGHTS, badge, badgeWidth,
     pt, tick, needle, slant, chamfer, chamferStroke, halfSquare, RAD, withAlpha, mix, clamp, isNum,
     LIGHT_BLUE, DARK_BLUE, RED, LETTER,
 };

@@ -11,7 +11,7 @@
  * tools/bake_gsdash_fcluster.py): the numerals and words. Uniforms (none of the renderer's reserved names):
  *   u_lab   the atlas
  *   u_val   speed mph, rpm / 1000, oil °F, coolant °F (rpm, oil, coolant -1: none, no needle / '--')
- *   u_gear  stage glyph (0 P, 1 R, 2 N, 3 D, -1 none), gear number (1-8, 0 none), drive mode (0-7, -1 none), night (0 / 1)
+ *   u_gear  stage glyph (0 P, 1 R, 2 N, 3 D, 4 M, -1 none), gear number (1-8, 0 none, -1 S: DS), drive mode (0-7, -1 none), night (0 / 1)
  *   u_clock hour (1-12), minute, valid (0 / 1)
  *   u_unit  0.13.6 (Options > Units): km/h (u_val.x then km/h, a 0..320 dial), °C (labels, the oil line; the dials' scales stay °F)
  *   u_fresh the fail-safe (failsafe.js): the output's alpha
@@ -20,7 +20,7 @@
 const W = 1920, H = 720;
 const ATLAS = { file: 'fcluster.png', w: 1024, h: 576 };
 const REDLINE_RPM = 7000;
-const STAGES = { P: 0, R: 1, N: 2, D: 3 };
+const STAGES = { P: 0, R: 1, N: 2, D: 3, M: 4, S: 5 };
 const MODES = ['COMFORT', 'SPORT', 'SPORT+', 'ECO PRO', 'COMFORT+', 'ECO PRO+', 'INDIVIDUAL', 'ADAPTIVE'];
 const KMH_PER_MPH = 1.609344;
 const isNum = (v) => typeof v === 'number' && isFinite(v);
@@ -186,10 +186,11 @@ const FRAG = [
     '        vec3 txt = mix(vec3(0.96), vec3(1.0, 0.70, 0.36), night);',
     '        col = mix(col, ink * 0.85, label(q, vec2(960.0, 192.0), u_gear.z < 0.0 ? -1.0 : u_gear.z + 4.0));',
     '        // gear: the stage letter, and the gear number beside it when there is one',
-    '        float hasN = step(0.5, u_gear.y);',
+    '        // (0.14.1: u_gear.y -1 an S after the letter: DS)',
+    '        float hasN = step(0.5, abs(u_gear.y));',
     '        float gx = 960.0 - 40.0 * hasN;',
     '        col = mix(col, txt, big(q, vec2(gx, 318.0), u_gear.x));',
-    '        col = mix(col, txt, big(q, vec2(1002.0, 318.0), hasN > 0.5 ? 5.0 + u_gear.y : -1.0));',
+    '        col = mix(col, txt, big(q, vec2(1002.0, 318.0), hasN > 0.5 ? (u_gear.y < 0.0 ? 5.0 : 5.0 + u_gear.y) : -1.0));',
     '        col = mix(col, vec3(0.30, 0.32, 0.36) * (1.0 - 0.6 * night), aa(1.0 - abs(q.y - 412.0)) * step(870.0, q.x) * step(q.x, 1050.0));',
     '        // H:MM',
     '        if (u_clock.z > 0.5) {',
@@ -232,13 +233,18 @@ function fragment() { return FRAG; }
 /**
  * The gear shown: { stage, n } (u_gear.xy). P / R / N the selector's letters; D with the gearbox's own gear
  * (D3); the gear alone (no selector signal) as D3 too; R from the gear; nothing when only "N or P" is known
- * or the gear is guessed (as the HUD).
+ * or the gear is guessed (as the HUD). 0.14.1: with the gearbox program (car.js data().program) as the car's
+ * cluster: D alone, DS (n -1: the S glyph), M3 (M with the gear; M alone when none is known for sure).
  */
 function gearOf(d) {
-    const st = d && d.stage, g = d && d.gear, guessed = !!(d && d.gearGuessed);
+    const st = d && d.stage, g = d && d.gear, guessed = !!(d && d.gearGuessed), prog = d && d.program;
     if (st === 'P' || st === 'R' || st === 'N') return { stage: STAGES[st], n: 0 };
     if (g === -1 && !guessed) return { stage: STAGES.R, n: 0 };
     const n = isNum(g) && g >= 1 && g <= 8 && !guessed ? Math.round(g) : 0;
+    const inD = st === 'D' || n > 0 || (isNum(g) && g > 0);
+    if (inD && prog === 'S') return { stage: STAGES.D, n: -1 };
+    if (inD && prog === 'M') return { stage: STAGES.M, n };
+    if (inD && prog === 'D') return { stage: STAGES.D, n: 0 };
     if (st === 'D' || n) return { stage: STAGES.D, n };
     return { stage: -1, n: 0 };
 }

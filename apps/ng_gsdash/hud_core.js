@@ -35,7 +35,7 @@ const NUM_R = ARC.r - ARC.t - 18;   // the numerals' centres
 const LABEL = [400, 355];        // "x1000 r/min", centred
 const NUM_BAND = [33, 1];        // the numerals' and ticks' ring: from R - T - 33 to R - T - 1
 const TICK = [8, 2, 1.2];        // the ticks: from R - T - 8 to R - T - 2, 1.2 px wide
-const GEARS = ['R', 'N', 'D', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const GEARS = ['R', 'N', 'D', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'S', 'M'];      // 0.14.1: S (DS), M (the M program, no gear)
 const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
@@ -97,6 +97,10 @@ function gearShown(text, stage, guessed) {
     const sel = PRE.indexOf(st) >= 0 ? st : null;
     if (!g || g === '-' || g === 'P') return { big: null, pre: null };
     if (/^[1-9]$/.test(g)) return guessed ? { big: sel, pre: null } : { big: g, pre: sel || 'D' };
+    // 0.14.1: the gearbox program (lib.js gearText): DS as D3 is drawn (D small, S big); M3 with M in front;
+    // M alone (no gear, or one only guessed: never a guessed number)
+    if (g === 'DS') return { big: 'S', pre: 'D' };
+    if (/^M[1-9]$/.test(g)) return guessed ? { big: 'M', pre: null } : { big: g.slice(1), pre: 'M' };
     return { big: GEARS.indexOf(g) >= 0 ? g : null, pre: null };
 }
 

@@ -237,7 +237,7 @@ module.exports = {
         if (sh > -0.2 && sh < 1.2) { cv.clip(gx, gy, gw, gh); const sx = gx + gw * sh; cv.quad([[sx, gy], [sx + 60, gy], [sx - 40, gy + gh], [sx - 100, gy + gh]], withAlpha('#ffffff', 0.045)); cv.noclip(); }
         cv.text('GEAR', gx + 22, gy + 34, 14, DIM, { font: TXT, spacing: 5, literal: true });
         if (S.guessed) cv.text('EST', gx + gw - 22, gy + 34, 14, DIM, { align: 'right', font: TXT, spacing: 4, literal: true });
-        const gs = Math.min(gh * 0.92, 250), gcol = S.strobe ? (S.blink ? RED : WHITE) : WHITE;
+        const gs = L.gearFit(cv, S.gearText, Math.min(gh * 0.92, 250), gw - 36, { font: GEAR }), gcol = S.strobe ? (S.blink ? RED : WHITE) : WHITE;
         cv.text(S.gearText, gx + gw / 2, gy + gh / 2 + gs * 0.40, gs, withAlpha(gcol, 0.10), { align: 'center', font: GEAR, literal: true });
         cv.text(S.gearText, gx + gw / 2, gy + gh / 2 + gs * 0.36, gs, gcol, { align: 'center', font: GEAR, literal: true });
         // the favourite looks' tap zones (main.js): the speed inside the ring (under the rpm), the gear capsule

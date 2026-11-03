@@ -185,7 +185,7 @@ module.exports = {
         cv.blit(cardLayer(cv, 'gear', gw, gh, 34, 'carbon'), gx, gy);
         cv.text('GEAR', gx + 22, gy + 38, 16, '#9aa3b1', { font: TXT, spacing: 5, literal: true });
         if (S.guessed) cv.text('EST', gx + gw - 46, gy + 70, 15, t.dim, { align: 'right', font: TXT, spacing: 3, literal: true });
-        const gcol = S.strobe ? (S.blink ? RD : '#ffffff') : '#ffffff', gs = 200 + ex * 0.3;
+        const gcol = S.strobe ? (S.blink ? RD : '#ffffff') : '#ffffff', gs = L.gearFit(cv, S.gearText, 200 + ex * 0.3, gw - 52, { font: GEAR });     // 0.14.1: DS / M3 fit the card
         if (S.strobe) cv.roundRect(gx + 6, gy + 6, gw - 12, gh - 12, 4, withAlpha(RD, S.blink ? 0.16 : 0.06));
         cv.text(S.gearText, gx + gw / 2 + 8, gy + gh / 2 + gs * 0.36, gs, gcol, { align: 'center', font: GEAR, literal: true });
 

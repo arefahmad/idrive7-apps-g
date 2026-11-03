@@ -100,7 +100,7 @@ function emblemNow(S) {
     const now = S.now;
     if (now - ST.lastDraw > 1500) ST.intro = now;            // the look (re)opened: the stripes slide in
     ST.lastDraw = now;
-    const gi = parseInt(S.gearText, 10);
+    const gi = parseInt(String(S.gearText).replace(/^M/, ''), 10);        // 0.14.1: M3 hops too
     if (isNum(gi) && isNum(ST.gear) && gi > ST.gear) ST.hop = now;      // an upshift: a hop
     if (isNum(gi)) ST.gear = gi;
     const k = (now - ST.intro) / 700;
@@ -258,7 +258,8 @@ module.exports = {
         frame(cv, gx + 12, gy + 12, gw - 24, gh - 24, withAlpha(FRAME, 0.25), BOX);
         ptxt(cv, 'GEAR', gx + 24, gy + 24, 3, DIM);
         if (S.guessed) ptxt(cv, 'EST', gx + gw - 24, gy + 24, 3, DIM, { align: 'right' });
-        const gu = Math.floor(Math.min((gh - 70) / 7, 26));
+        let gu = Math.floor(Math.min((gh - 70) / 7, 26));
+        while (gu > 4 && P.width(S.gearText, gu) > gw - 48) gu--;                 // 0.14.1: DS / M3 fit the item box
         ptxt(cv, S.gearText, gx + gw / 2, gy + 52 + (gh - 70 - 7 * gu) / 2, gu, hb.ko ? (S.blink ? RED : WHITE) : WHITE, { align: 'center' });
 
         // ---- the speed (the hero) and the rpm, the mode badge

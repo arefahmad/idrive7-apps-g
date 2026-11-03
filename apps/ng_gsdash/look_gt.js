@@ -143,7 +143,8 @@ module.exports = {
             estX = tx - 12;
         }
         if (S.guessed) cv.text('EST', estX, top + 26, 17, flash ? '#000000' : '#9a9a9a', { align: 'right', font: TXT, spacing: 1.5, literal: true });
-        cv.text(S.gearText, cx[1] + cw[1] / 2, top + H - 64 - ex * 0.05, 250 + ex * 0.45, flash ? '#000000' : '#ffffff', { align: 'center', font: GEAR, literal: true });
+        const gs = 250 + ex * 0.45, gz = L.gearFit(cv, S.gearText, gs, cw[1] - 40, { font: GEAR });     // 0.14.1: DS / M3 fit the cell
+        cv.text(S.gearText, cx[1] + cw[1] / 2, top + H - 64 - ex * 0.05 - (gs - gz) * 0.36, gz, flash ? '#000000' : '#ffffff', { align: 'center', font: GEAR, literal: true });
         cv.fillRect(cx[1] + 14, top + H - 52, cw[1] - 28, 2, flash ? '#000000' : LINE);
         cv.text('RPM', cx[1] + 14, top + H - 16, 17, flash ? '#000000' : '#9a9a9a', { font: TXT, spacing: 1.5, literal: true });
         cv.text(isNum(S.rpm) ? String(Math.round(S.rpm / 10) * 10) : '----', cx[1] + cw[1] - 16, top + H - 12, 34, flash ? '#000000' : S.strobe ? '#ff2020' : '#ffffff', { align: 'right', font: NUM, literal: true });

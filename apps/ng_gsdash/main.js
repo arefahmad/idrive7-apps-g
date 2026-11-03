@@ -168,7 +168,7 @@ mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
         // car data only: no demo feed (opts.demo false), a value not sent shows '--'
-        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'accel', 'gear', 'drivemode', 'tpms', 'units'], { demo: false });
+        const car = new Car(ctx, ['rpm', 'speed', 'temps', 'accel', 'gear', 'program', 'drivemode', 'tpms', 'units'], { demo: false });
         // 0.9.0: a saved look that is gone (simple, heritage, flight) or unknown becomes M Style
         const savedLook = settings.get('look');
         if (!LOOKS.some((l) => l.id === savedLook)) {
@@ -331,10 +331,10 @@ mgu.run({
             if (!on) { fcTest = false; skinMode = 'skin'; }
             const skinWant = on && (skinOn() || skinMode !== 'skin');
             cskin.update({ on: !!open && !fcTest && skinWant, enabled: skinWant, look: skinKey(), mode: skinMode, data: d,
-                speedAvail, gear: L.gearText(d.gear, d.stage), at: car.at || null, speedUnit: UNITS.pick(settings).speed,
+                speedAvail, gear: L.gearText(d.gear, d.stage, d.program), at: car.at || null, speedUnit: UNITS.pick(settings).speed,
                 keep: !open && !fcTest && skinWant });
             const redline = num('redline', 6500);
-            hud.update({ on: on && !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: on && hudOn(), look: skinKey(), data: d, gear: L.gearText(d.gear, d.stage),
+            hud.update({ on: on && !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: on && hudOn(), look: skinKey(), data: d, gear: L.gearText(d.gear, d.stage, d.program),
                 at: car.at || null, redline, shift: redline - (Number(settings.get('shiftBefore')) || 0),
                 keep: on && !open && !fcTest && hudOn() && skinMode === 'skin', after: fcTest ? null : fcSwitchAt });
             // any gear, any speed; night: G's Dash has no day / night signal from the car (no look switches), so day
@@ -343,8 +343,8 @@ mgu.run({
         };
         // the skins' live path (0.8.1): every speed / rpm / accel sample straight on, not at the loop's 10 fps
         car.onSample(() => {
-            if (cskin.want) { const d = car.data(); cskin.sample(d, car.at || null, L.gearText(d.gear, d.stage)); }
-            if (hud.want) { const d = car.data(); hud.sample(d, car.at || null, L.gearText(d.gear, d.stage)); }
+            if (cskin.want) { const d = car.data(); cskin.sample(d, car.at || null, L.gearText(d.gear, d.stage, d.program)); }
+            if (hud.want) { const d = car.data(); hud.sample(d, car.at || null, L.gearText(d.gear, d.stage, d.program)); }
             if (fcl.want) fcl.sample(car.data(), car.at || null);
         });
         /** Diagnostics > Refresh cluster: every G's Dash layer in the cluster dropped and made again */
@@ -486,7 +486,7 @@ mgu.run({
                 // speed in the unit shown (unit: its label); mph: always mph, for what moves with the speed (backgrounds)
                 rpm: d.rpm, speed: UNITS.speed(d.speed, un.speed), mph: speedOf(d.speed), unit: UNITS.speedLabel(un.speed), imperial: un.speed === 'mph',
                 speedMax: un.speed === 'kmh' ? 290 : 180, units: un,
-                gear: d.gear, stage: d.stage, guessed: !!d.gearGuessed, gearText: L.gearText(d.gear, d.stage),
+                gear: d.gear, stage: d.stage, guessed: !!d.gearGuessed, gearText: L.gearText(d.gear, d.stage, d.program),
                 redline, shift, range: 2000, maxRpm: Math.ceil((redline + 500) / 1000) * 1000,
                 strobe, blink: Math.floor(now / 120) % 2 === 0, lightStyle: LIGHT_STYLE,
                 gLat: d.gLat, gLong: d.gLong, gMax: Number(settings.get('gScale')) || 1.5,

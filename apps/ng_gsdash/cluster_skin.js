@@ -115,7 +115,7 @@ function shownSpeed(kmh) { return SK.isNum(kmh) ? Math.max(0, kmh / 1.609344 * (
 function values(s) {
     const d = (s && s.data) || {};
     let gear = s && s.gear ? String(s.gear) : '-';
-    if (d.gearGuessed && /^[0-9]$/.test(gear)) gear = '-';
+    if (d.gearGuessed && /^M?[0-9]$/.test(gear)) gear = '-';           // 0.14.1: M3 with a guessed 3 too
     const speed = shownSpeed(d.speed);
     // 0.13.7: the needle stays on the mph arc (a km/h dial is the same arc relabelled); the readout in the unit
     const readout = speed !== null && kmhOf(s) ? speed * 1.609344 : speed;

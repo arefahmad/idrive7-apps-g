@@ -182,7 +182,7 @@ module.exports = {
         cv.strokeRoundRect(gx, sy + 28, gw, sh - 28, 2, 1, hot || S.strobe ? gcol : C.edge);
         brackets(cv, gx, sy + 28, gw, sh - 28, 18, hot || S.strobe ? gcol : C.label);
         for (let i = 1; i < 10; i++) cv.fillRect(gx + gw * i / 10, sy + 28, 1, i % 5 ? 4 : 8, C.faint);
-        const gs = Math.min(220, sh - 50);
+        const gs = L.gearFit(cv, S.gearText, Math.min(220, sh - 50), gw - 40, { font: GEAR, spacing: 0 });     // 0.14.1: DS / M3 fit the box
         T(cv, S.gearText, gx + gw / 2, sy + 28 + (sh - 28) / 2 + gs * 0.36, gs, gcol, { font: GEAR, align: 'center', spacing: 0 });
         if (S.mode) {
             const tw = cv.textWidth(S.mode, 14, { font: NUM, spacing: 3, literal: true }), mc = S.modeTone === 'sport+' || S.modeTone === 'track' ? C.crit : S.modeTone === 'sport' ? C.shift : C.label;

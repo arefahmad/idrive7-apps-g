@@ -156,13 +156,30 @@ function uniforms(meta, side, st) {
         const n = isNum(rd) ? clamp(Math.round(rd), 0, SPEED_MAX) : -1;
         out.u_gl = n < 0 || !cells.labels.length ? [-1, -1, -1, 0] : [n % 10, n >= 10 ? Math.floor(n / 10) % 10 : -1, n >= 100 ? Math.floor(n / 100) % 10 : -1, 0];
     } else {
-        cell = cells.labels.indexOf(String(st.gear));
-        out.u_gl = [cell, 0, 0, 0];
+        // 0.14.1: u_gl = [cell, second cell (-1: none), their x offsets]: a two-character gear (DS, M3) as two
+        // of the look's cells side by side (gearPair), centred where the one cell sits
+        const gs = st.gear === null || st.gear === undefined ? '' : String(st.gear);
+        cell = cells.labels.indexOf(gs);
+        const pr = cell < 0 ? gearPair(cells, gs) : null;
+        if (pr) { cell = pr[0]; out.u_gl = pr; } else out.u_gl = [cell, -1, 0, 0];
     }
     // the gear unknown (or only guessed): its whole widest box cut out, so the stock gear shows
     const gb = GEAR_COVER;
     out.u_cut = side === 'R' && cell < 0 && cells.labels.length ? local('R', [gb[0] - 4, gb[1] - 4, gb[2] + 4, gb[3] + 4]).map(r2) : [0, 0, 0, 0];
     return out;
+}
+/**
+ * 0.14.1: a two-character gear (DS, M3) from two single cells: [first, second, x offset of each] (cell px from
+ * the cell's place), their inks GEAR_GAP apart and centred on the cell; null when a look's cells cannot (an
+ * atlas from before 0.14.1: no inks, no S / M) - the gear then shows as unknown (the stock one).
+ */
+function gearPair(cells, s) {
+    if (!cells || !cells.ink || !s || s.length !== 2) return null;
+    const a = cells.labels.indexOf(s[0]), b = cells.labels.indexOf(s[1]);
+    if (a < 0 || b < 0) return null;
+    const ia = cells.ink[a], ib = cells.ink[b], gap = cells.gap || 0;
+    const wa = ia[1] - ia[0], wb = ib[1] - ib[0], left = cells.rect[2] / 2 - (wa + gap + wb) / 2;
+    return [a, b, Math.round(left - ia[0]), Math.round(left + wa + gap - ib[0])];
 }
 function isNum(v) { return typeof v === 'number' && isFinite(v); }
 const r2 = (v) => Math.round(v * 100) / 100, r4 = (v) => Math.round(v * 10000) / 10000;
@@ -281,14 +298,17 @@ function fragment(meta, side, dims) {
         '',
     ].join('\n');
 }
-/** the readout cells: the gear (one cell, u_gl.x) or the speed's places (cells.slots: u_gl.x, .y, .z) */
+/**
+ * the readout cells: the gear (one cell, u_gl.x; 0.14.1: a second, u_gl.y, the two u_gl.z / .w px across) or
+ * the speed's places (cells.slots: u_gl.x, .y, .z)
+ */
 function glyphGlsl(cells) {
-    const slots = cells.slots ? cells.slots : (cells.labels.length ? [[cells.rect[0], cells.rect[1]]] : []);
+    const slots = cells.slots ? cells.slots : (cells.labels.length ? gearSlots(cells) : []);
     const cw = cells.slots ? cells.cell[0] : cells.rect[2], ch = cells.slots ? cells.cell[1] : cells.rect[3];
     const comp = ['x', 'y', 'z'];
     return slots.map((o, p) => [
         '    if (u_gl.' + comp[p] + ' >= 0.0) {',
-        '        vec2 g = q - vec2(' + f1(o[0]) + ', ' + f1(o[1]) + ');',
+        '        vec2 g = q - vec2(' + f1(o[0]) + (o[2] ? ' + u_gl.' + o[2] : '') + ', ' + f1(o[1]) + ');',
         '        if (g.x >= 0.0 && g.y >= 0.0 && g.x < ' + f1(cw) + ' && g.y < ' + f1(ch) + ') {',
         '            float col = mod(u_gl.' + comp[p] + ', ' + f1(cells.cols) + '), row = ' + (cells.slots ? f1(p) : 'floor(u_gl.x / ' + f1(cells.cols) + ' + 0.001)') + ';',
         '            vec4 t = texel(u_glyph, g + vec2(col * ' + f1(cw) + ', row * ' + f1(ch) + '), GSZ);',
@@ -297,6 +317,8 @@ function glyphGlsl(cells) {
         '    }',
     ].join('\n')).join('\n');
 }
+/** 0.14.1: the gear's two places: the cell's own, each moved u_gl.z / u_gl.w px across ([x, y, offset]) */
+function gearSlots(cells) { return [[cells.rect[0], cells.rect[1], 'z'], [cells.rect[0], cells.rect[1], 'w']]; }
 function fillCall(U, rows, f, q, tr, hd, g) {
     if (!f || f.kind === 'none') return '';
     const p = q ? 'floor(q / ' + f1(q) + ') * ' + f1(q) + ' + ' + f1(q / 2) : 'q';
@@ -348,4 +370,4 @@ function nominalDims() {
     return { art: d(REGION_W, REGION_H), band: d(BAND_W, BAND_ROWS), field: d(Math.ceil(REGION_W / FIELD_K), Math.ceil(REGION_H / FIELD_K)) };
 }
 module.exports = { FIELD_K, TILE, ATLAS_W, atlasLayout, nominalDims, GEOM, PANEL_W, PANEL_H, REGION_W, REGION_H, SIDES, BAND_W, BAND_ROWS, MAIN_ROWS, SMALL_ROW, SMALL_ROWS, ALT_ROW,
-    SMALL_CODE, S_SCALE, CUTS, CUT_PAD, RANGE, ACC_AREA, CENTRE, SMALL_BOX, MAIN_ZONE, SPEED_COVER, GEAR_COVER, SPEED_MAX, LEN, MAJ, at, sOf, dirAt, local, cutsOf, uniforms, fragment, clamp, isNum, RESERVED, reservedUses };
+    SMALL_CODE, S_SCALE, CUTS, CUT_PAD, RANGE, ACC_AREA, CENTRE, SMALL_BOX, MAIN_ZONE, SPEED_COVER, GEAR_COVER, SPEED_MAX, LEN, MAJ, at, sOf, dirAt, local, cutsOf, uniforms, fragment, gearPair, gearSlots, clamp, isNum, RESERVED, reservedUses };

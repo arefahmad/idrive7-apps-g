@@ -212,7 +212,7 @@ module.exports = {
         if (st.strobe && S.blink) cv.roundRect(gx - 8, gy - 8, gw + 16, gh + 16, 8, withAlpha(RED, 0.12));
         cv.text('GEAR', gx + 14, gy + 26, 16, DIM, { font: TXT, spacing: 3, literal: true });
         if (S.guessed) cv.text('EST', gx + gw - 14, gy + 26, 16, DIM, { align: 'right', font: TXT, spacing: 3, literal: true });
-        const gs = Math.min(gh * 1.02, 300);
+        const gs = L.gearFit(cv, S.gearText, Math.min(gh * 1.02, 300), gw - 40, { font: GEAR });     // 0.14.1: DS / M3 fit the box
         cv.text(S.gearText, g.cx, gy + gh / 2 + gs * 0.36, gs, gcol, { align: 'center', font: GEAR, literal: true });
         modePill(cv, g.cx, gy, S);                 // on the box's top edge
         // the favourite looks' tap zones (main.js): the speed above the data blocks (the session block keeps its
