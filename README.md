@@ -20,6 +20,10 @@ Apps for BMW iDrive 7 head units, installed through robertn_store.
 The Store builds each app on the head unit from this repository (`mgu-repo.json`, `kit/`); nothing
 here contains BMW's SDK. To remove an app, uninstall it in the Store.
 
+## Support
+
+Enjoying the apps? You can support development via [GitHub Sponsors](https://github.com/sponsors/nickgcode).
+
 ## Disclaimer
 
 Unofficial. Not made, endorsed or supported by BMW or by the Store's author. Use at your own risk:
