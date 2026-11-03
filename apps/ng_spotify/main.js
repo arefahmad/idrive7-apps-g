@@ -15,8 +15,8 @@
  * else Auto. Its own Cluster setting goes to /dev/shm/ng-cluster-music/state.json for G's Dash's page.
  * 0.7.0: a Cluster button left of the heart on Now Playing (cluster_toggle.js) turns the Cluster setting
  * off, or back on to its last on value; an amber dot (and its toast) when G's Dash's pick (Map, Stock or
- * Logo) keeps the cluster for something else. With nothing playing, a Shuffle Liked Songs button
- * (spotify.js shuffleLiked()).
+ * Logo) keeps the cluster for something else. 0.7.9: with nothing playing, a line to open Spotify on the
+ * phone (the 0.7.0 Shuffle Liked Songs button removed).
  *
  * Source: the Spotify Web API (spotify.js) over mgu-uplink (mgu-store), so it controls whatever device
  * your account plays on - the phone that is connected to the car included. Player commands need
@@ -478,19 +478,6 @@ mgu.run({
             if (playing) return run('pause', () => sp.pause(), () => { pb.progress = position(); pb.at = Date.now(); pb.playing = false; });
             return run('play', async () => started(await sp.start()), () => { if (pb === was) { pb.at = Date.now(); pb.playing = true; } });
         };
-        /** The Shuffle Liked Songs button (0.7.0): shuffle on, the Liked Songs on the active / last device. */
-        let likedBusy = false;
-        const shuffleLiked = async () => {
-            if (likedBusy) return;
-            likedBusy = true;
-            try {
-                await run('shuffle liked songs', async () => {
-                    const r = await sp.shuffleLiked();
-                    log.info('shuffle liked songs: ' + r.count + ' tracks' + (r.device ? ' (' + r.device + ')' : ''));
-                    say('Shuffling your Liked Songs' + (r.device ? ' on ' + r.device : ''), 4000);
-                });
-            } finally { likedBusy = false; soon(); }
-        };
         /** What Play started, as a toast when it was more than a resume on the same device. */
         function started(r) {
             if (!r) return;
@@ -879,35 +866,15 @@ mgu.run({
         }
 
         /**
-         * Nothing playing: what to do, and the Shuffle Liked Songs button (0.7.0) centred in the text column
-         * over the dock: a big pill in the app's accent (spotify.js shuffleLiked()).
+         * Nothing playing: what to do, in words only (0.7.9: the Shuffle Liked Songs button of 0.7.0 removed;
+         * Play in the dock still picks up the last track).
          */
         function drawIdle(cv, t, Q) {
             artBox(cv, t, Q, false);
             const X = Q.X, y0 = Q.A.y;
             cv.text('Nothing playing', X, y0 + 104, 56, t.text, { font: 'bold' });
-            cv.text(fit(cv, 'Tap Play to pick up your last track, or shuffle your Liked Songs.', 28, Q.W), X, y0 + 160, 28, t.dim, { literal: true });
-            cv.text(fit(cv, 'Plays on your phone (or the last Spotify device) - keep Spotify open there.', 24, Q.W), X, y0 + 200, 24, t.dim, { literal: true });
-            likedButton(cv, t, Q);
-        }
-        /** The Shuffle Liked Songs pill: 112 px tall, up to 560 wide, centred between the hint lines and the dock. */
-        function likedButton(cv, t, Q) {
-            const k = 'liked', acc = t.accent2 || t.accent, down = isDown(k) || likedBusy;
-            const w = Math.min(560, Q.W), h = 112, top = Q.A.y + 236, bot = Q.DY - 24;
-            const x = Q.X + (Q.W - w) / 2, y = Math.round(top + Math.max(0, (bot - top - h) / 2));
-            cv.roundRect(x, y, w, h, h / 2, down ? G.mix(acc, '#000000', 0.25) : acc);
-            if (down) cv.strokeRoundRect(x, y, w, h, h / 2, 2, G.withAlpha('#ffffff', 0.5));
-            // the shuffle glyph: two crossing arrows
-            // the ink: near-black on a light accent (the light blue), white on a dark one
-            const rgb = /^#([0-9a-f]{6})$/i.exec(acc), lum = rgb ? [0, 2, 4].reduce((v, i, j) => v + [0.299, 0.587, 0.114][j] * parseInt(rgb[1].substr(i, 2), 16), 0) : 0;
-            const gx = x + 64, gy = y + h / 2, ink = lum > 150 ? '#07111c' : '#ffffff';
-            cv.line(gx - 22, gy - 14, gx - 6, gy - 14, 4, ink); cv.line(gx - 6, gy - 14, gx + 10, gy + 14, 4, ink); cv.line(gx + 10, gy + 14, gx + 22, gy + 14, 4, ink);
-            cv.line(gx - 22, gy + 14, gx - 6, gy + 14, 4, ink); cv.line(gx - 6, gy + 14, gx + 10, gy - 14, 4, ink); cv.line(gx + 10, gy - 14, gx + 22, gy - 14, 4, ink);
-            cv.line(gx + 22, gy - 14, gx + 14, gy - 21, 4, ink); cv.line(gx + 22, gy - 14, gx + 14, gy - 7, 4, ink);
-            cv.line(gx + 22, gy + 14, gx + 14, gy + 7, 4, ink); cv.line(gx + 22, gy + 14, gx + 14, gy + 21, 4, ink);
-            const opt = { font: 'bold', spacing: 1.5, literal: true };
-            cv.text(fit(cv, likedBusy ? 'STARTING\u2026' : 'SHUFFLE LIKED SONGS', 28, w - 140, opt), x + 104, gy + 10, 28, ink, opt);
-            FS.button(cv, k, x, y, w, h, () => { downKey = k; downAt = Date.now(); return shuffleLiked(); }, { slop: 8, r: h / 2 });
+            cv.text(fit(cv, 'Open Spotify on your phone to play music', 28, Q.W), X, y0 + 160, 28, t.dim, { literal: true });
+            cv.text(fit(cv, 'Or tap Play to pick up your last track.', 24, Q.W), X, y0 + 200, 24, t.dim, { literal: true });
         }
 
         /**

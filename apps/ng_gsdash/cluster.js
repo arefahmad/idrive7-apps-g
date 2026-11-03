@@ -231,6 +231,22 @@ class ClusterMap {
         if (p.state === 'error') return V('error', null, null, 'Error', 'The patch service reports an error' + why);
         return V('error', null, null, 'Unknown', 'Unknown state' + (p.state !== 'unknown' ? ' "' + p.state + '"' : '') + why);
     }
+    /**
+     * 0.13.9: what Waze on cluster's map does now, from its renderer's own status file only (no socket):
+     * { state, reason }. state: none (the tool is not installed), down (its renderer is not running or its
+     * status is stale), showing (its map layer is shown on the cluster: the cluster renderer said so),
+     * idle (CarPlay is not sending a map: no route, or Waze not on the phone's screen), starting (waiting for
+     * the map area: reason says who holds it), frozen (the phone's map froze), error, unknown.
+     */
+    mapNow() {
+        const f = this.readFiles(), r = f.render;
+        if (!f.tool && !r) return { state: 'none', reason: '' };
+        if (!r) return { state: 'down', reason: '' };
+        if (f.renderAge > STALE_MS) return { state: 'down', reason: 'status ' + Math.round(f.renderAge / 1000) + ' s old' };
+        const st = str(r.state, 20), why = str(r.reason, 100);
+        if (['showing', 'idle', 'starting', 'frozen', 'error'].indexOf(st) >= 0) return { state: st, reason: why };
+        return { state: 'unknown', reason: st };
+    }
     /** The map renderer's status file, as one line. */
     renderLine() {
         const f = this.files, r = f.render;
