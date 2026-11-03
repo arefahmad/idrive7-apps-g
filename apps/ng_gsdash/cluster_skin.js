@@ -158,13 +158,14 @@ class ClusterSkin {
         this.build = new MEM.BuildWatch(this.log, 'cluster skin', this.now);   // 0.13.8: the look's build, timed, retried
         this.states = new MEM.StateLog(this.log, 'cluster skin', this.now);   // 0.13.8: state changes for the ring
         this.pausedAt = 0; this.relAt = 0; this.relN = 0; this.upAt = -1e15; this.reacqSaid = 0;   // 0.13.8
+        this.guard = new MEM.CrashGuard(this.log, 'cluster skin', this.now, 'panel');   // 0.14.2: a renderer crashing on our ask
         this._reset();
     }
     _reset() {
         this.cr = null; this.ready = false; this.polled = false;
         this.field = null;                        // { L, R } asset refs, once a connection
         this.cur = null;                          // { id, assets: [...], L: { ref, anim, sent }, R }
-        this.visible = false; this.lastRearm = -1e15; this.lastPump = -1e15;
+        this.visible = false; this.lastRearm = -1e15; this.lastPump = -1e15; this.held = false; this.reshow = false; this.panelState = '';   // 0.14.2
         this.others = []; this.busyAt = -1e15; this.layerErr = ''; this.lastErr = ''; this.errCount = 0; this.refused = ''; this.noEffect = false;
         this.asked = 0; this.answered = 0;            // 0.8.5: status asks and answers, this connection
         this.healed = false;                          // 0.8.5: a lost layer made again once already
@@ -192,7 +193,7 @@ class ClusterSkin {
             if (this.cr) this._off(s && s.enabled === false ? 'off' : 'closed');
             // the user's switch or the app's own (another display, the full-screen test): no wait next time; only
             // releases forced by the screen or the renderer back off
-            if (!(s && s.keep && s.enabled !== false)) { this.relAt = 0; this.relN = 0; }
+            if (!(s && s.keep && s.enabled !== false)) { this.relAt = 0; this.relN = 0; this.guard.forgive(); }
             this.want = false; this.why = blocker(s); this.states.see(this.why); return;
         }
         if (this.pausedAt) this._resume();
@@ -205,18 +206,34 @@ class ClusterSkin {
         }
         this._apply();
     }
-    /** 0.13.8: a popup or the screen covered: hidden at once (as before), everything else kept */
+    /**
+     * 0.13.8: a popup or the screen covered: cleared at once, everything else kept.
+     * 0.14.2: as the HUD (hud_shift.js): kept visible but clear (u_fresh 0, the fail-safe animation stopped: the
+     * car's own dials show through), so the renderer keeps the panel target and never has to be asked for its
+     * scene again on return (0.13.8 hid the layers, and the target was released after its 3 s linger).
+     */
     _pause() {
         this.want = false; this.why = 'closed';
         if (this.pausedAt) return;
         this.pausedAt = this.now() || 1; this.pauseUsers = MEM.userNames(this.statusText || '', this.app);
-        this._hide('paused'); this._unlift();
-        this.log.info('cluster skin: paused - the screen is covered (layers kept up to ' + Math.round(MEM.PAUSE_MS / 1000) + ' s)');
+        const c = this.cur, cr = this.cr;
+        if (this.visible && c && c.ok && c.L && c.R && cr) {
+            ['L', 'R'].forEach((k) => {
+                FS.setBase(cr, c[k], 0);
+                if (c[k].anim && typeof cr.stop === 'function') { try { cr.stop(c[k].ref, c[k].anim); } catch (e) { /* gone */ } }
+                c[k].anim = 0;
+            });
+            this.visible = false; this.held = true;
+            this.stats.hides++; this.diag.hidden('paused', 'cluster skin: cleared (paused)');
+        } else this._hide('paused');
+        this._unlift();
+        this.log.info('cluster skin: paused - the screen is covered (' + (this.held ? 'the panel target held, clear,' : 'nothing shown, layers kept') + ' up to ' + Math.round(MEM.PAUSE_MS / 1000) + ' s)');
         this.states.see('paused');
     }
     _resume() {
-        this.log.info('cluster skin: back after ' + ((this.now() - this.pausedAt) / 1000).toFixed(1) + ' s paused' + (this.cur && this.cur.ok ? '' : ' (made again)'));
+        this.log.info('cluster skin: back after ' + ((this.now() - this.pausedAt) / 1000).toFixed(1) + ' s paused' + (this.cur && this.cur.ok ? (this.held ? ' (target held)' : '') : ' (made again)'));
         this.pausedAt = 0;
+        if (this.held) { this.held = false; this.visible = true; this.reshow = true; }
     }
     _reacqWait() {
         if (!this.relAt) return 0;
@@ -275,6 +292,9 @@ class ClusterSkin {
             if (this.cr !== cr) return;
             // the service removes a closed client's layers; the dead-man fades ours meanwhile. Made again
             // whole on the next connection (the client's own reconnect, or ours after RECONNECT_MS).
+            // 0.14.2: gone while our ask for the panel was pending: a strike (cluster_memory.js CrashGuard)
+            if (this.guard.lost()) this.states.see(this.guard.why());
+            this.panelState = ''; this.held = false; this.reshow = false;
             this.ready = false; this.polled = false; this.downAt = this.now();
             this.asked = 0; this.answered = 0; this.gate.reset();
             // 0.8.5: hidden in the client's copy (the replay makes them hidden); nothing in use until confirmed
@@ -293,6 +313,13 @@ class ClusterSkin {
             }
         });
         cr.on('refused', (op, ref, reason) => this._refused(cr, op, ref, reason));
+        // 0.14.2: the panel target's state, for the crash guard (and the ring)
+        cr.on('target', (name, state, holder, reason) => {
+            if (this.cr !== cr || name !== TARGET) return;
+            if ((state || '') !== this.panelState) this.log.info('cluster skin: panel ' + state + (holder ? ' holder ' + holder : '') + (reason ? ' (' + reason + ')' : ''));
+            this.panelState = state || '';
+            this.guard.see(state);
+        });
         cr.on('status', (text) => {
             if (this.cr !== cr) return;
             const now = this.now();
@@ -437,6 +464,7 @@ class ClusterSkin {
     }
     _tick() {
         this.states.flush();
+        this.guard.tick();                                 // 0.14.2: shown a while: the strikes forgotten
         // 0.13.8: paused, another app asking for the renderer's memory: let go at once (nothing of ours in its way)
         if (this.pausedAt && this.cr && this.polled) {
             const fresh = MEM.newUsers(this.pauseUsers, this.statusText || '', this.app);
@@ -478,6 +506,8 @@ class ClusterSkin {
         const now = this.now();
         const b = blocker(this.st);
         if (b) return b;
+        const g = this.guard.why();                        // 0.14.2: waiting out a renderer crash on our ask
+        if (g) return g;
         if (now - this.stAt > STALE_MS) return 'no update';
         if (staleness(this.st, now)) {
             if (this.visible) { this.stats.staleHides++; this.diag.stale(); }
@@ -511,7 +541,8 @@ class ClusterSkin {
             if (!ok) { if (!this.soft && !this.layerErr && !this.noEffect) this.build.failed('could not make ' + id); this._hide('assets'); return; }
         }
         if (!this.cur.ok) { this.why = 'making'; return; }   // 0.8.5: nothing to it before the service confirms it
-        if (!this.visible) {
+        if (!this.visible || this.reshow) {
+            this.reshow = false;
             // 0.11.3: u_fresh 1 as the client's own first (a renderer stop restores to it), then the animation
             ['L', 'R'].forEach((s) => FS.setBase(this.cr, this.cur[s], 1));
             this._uniforms(true);
@@ -522,6 +553,7 @@ class ClusterSkin {
         }
     }
     _hide(why) {
+        this.reshow = false;
         if (!this.visible || !this.cur || !this.cur.ok || !this.cr) { this.visible = false; return; }
         ['L', 'R'].forEach((s) => { try { this.cr.set(this.cur[s].ref, { visible: false }); } catch (e) { /* gone */ } });
         ['L', 'R'].forEach((s) => FS.setBase(this.cr, this.cur[s], 0));   // 0.11.3: back to 0 only on hiding
@@ -663,12 +695,13 @@ class ClusterSkin {
     refresh() {
         this.stats.refreshes++;
         this.errCount = 0; this.layerErr = '';
-        if (!this.want) return false;
+        if (!this.want) { this.guard.forgive(); return false; }
         const had = !!this.cr;
         this.err = null; this.noEffect = false;            // a tool installed since: tried again at once
         this.build.reset();
         this._restart('refresh');
         this.relAt = 0; this.relN = 0;                    // 0.13.8: the user's own ask: no backoff after it
+        this.guard.forgive();                             // 0.14.2: and the renderer's restarts forgotten
         return had;
     }
     _off(why) {
@@ -707,13 +740,14 @@ class ClusterSkin {
         const TXT = { moving: 'Stock while driving', 'stale values': 'Stock - signal delayed', 'in gear': 'Stock while in gear',
             'no speed signal': 'Stock - no speed signal', 'demo data': 'Stock - demo data', 'panel in use': 'Waiting - panel in use',
             'renderer error': 'Renderer refused the skin', assets: 'Skin failed to load', 'no update': 'Stock', making: 'Making the skin',
-            stuck: 'Stock - renderer did not answer, try Refresh cluster' };
+            stuck: 'Stock - renderer did not answer, try Refresh cluster',
+            'renderer restarting': 'Stock - Cluster renderer restarted, back soon', 'renderer crashed': 'Stock - renderer crashed on the dials (Refresh cluster)' };
         if (why === 'renderer error' && !this.noEffect && this.lastErr && MEM_FULL.test(this.lastErr)) {
             const names = (this.memUsers || []).map((u) => u.name);
             return { kind: 'error', text: 'Cluster memory full' + (names.length ? ' - ' + names.join(', ') : '') };
         }
         if (why === 'renderer error' && !this.noEffect && this.lastErr) return { kind: 'error', text: 'Refused: ' + shortReason(this.lastErr) };
-        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' ? 'error' : 'wait', text: TXT[why] || 'Stock' };
+        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' || why === 'renderer crashed' ? 'error' : 'wait', text: TXT[why] || 'Stock' };
     }
     /** the whole refusal (the diagnostics page): '' when none */
     refusal() { return this.lastErr || ''; 

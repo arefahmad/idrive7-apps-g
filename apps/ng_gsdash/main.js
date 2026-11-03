@@ -1056,7 +1056,10 @@ mgu.run({
         const rlog = ctx.remoteLog || null;
         if (rlog && rlog.share) { try { rlog.share(); } catch (e) {} }
         if (rlog && rlog.context) rlog.context('cluster', () => ({ logo: clogo.view().text, skins: skinOn() ? cskin.view().text : 'off', hud: hudOn() ? hud.view().text : 'off',
-            refusals: [cskin.refusal(), hud.refusal(), fcl.refusal()].filter(Boolean), fullScreenTest: fcTest, source: srcPick(), look: look().id }));
+            refusals: [cskin.refusal(), hud.refusal(), fcl.refusal()].filter(Boolean), fullScreenTest: fcTest, source: srcPick(), look: look().id,
+            // 0.14.2: Waze on cluster's own state (its status file and the patch switch) and the renderer crash guards
+            waze: (() => { try { const mn = cmap.mapNow(), mv = cmap.view(); return { map: mn.state + (mn.reason ? ' (' + mn.reason + ')' : ''), patch: mv.value + (mv.line ? ' - ' + mv.line : ''), note: mv.note || '' }; } catch (e) { return { error: String(e.message || e) }; } })(),
+            crashGuard: { hud: (hud.guard.crashed ? 'off' : hud.guard.strikes + ' strikes'), skins: (cskin.guard.crashed ? 'off' : cskin.guard.strikes + ' strikes') } }));
         // 0.13.8: the ring's health lines every 10 s while the HUD, the dials or the full-screen test is up (else every minute)
         if (rlog && rlog.active) rlog.active(() => !!(hud.cr || cskin.cr || fcl.cr));
         let rlSeen = { at: 0, v: null }, rlAsked = 0;
@@ -1392,7 +1395,7 @@ mgu.run({
             if (mv.kind === 'pending') return 'Waze on cluster: restart the head unit to finish';
             if (mn.state === 'showing') return '';
             if (mn.state === 'idle') return 'CarPlay is not sending a map now (it does while Waze guides a route)';
-            if (mn.state === 'frozen') return "Waze's map froze: reconnect CarPlay";
+            if (mn.state === 'frozen') return "Waze's map froze (the phone sends an empty picture): reconnect the phone, then start the route";   // 0.14.2
             if (mn.state === 'starting') return 'Waze map waiting' + (mn.reason ? ': ' + mn.reason : '');
             if (mn.state === 'down') return 'Waze on cluster is not running';
             return 'Waze on cluster: ' + (mn.reason || mn.state);
@@ -1605,8 +1608,9 @@ mgu.run({
             cv.roundRect(cx, cy, cw, ch, u.radius + 4, t.bg);
             cv.strokeRoundRect(cx, cy, cw, ch, u.radius + 4, 2, '#ffb020');
             lbl(on ? 'Turn the cluster map on?' : 'Turn the cluster map off?', cx + 32, cy + 52, 30, t.text);
+            // 0.14.2: turned on mid-drive, CarPlay restarted and the phone's cluster stream stayed empty until reconnected
             [on ? 'The Waze on cluster tool patches CarPlay on the head unit.' : 'The Waze on cluster tool puts CarPlay back as stock.',
-                'CarPlay may restart now: a call or music on CarPlay may drop.',
+                on ? 'CarPlay may restart (calls, music drop): then reconnect the phone.' : 'CarPlay may restart now: a call or music on CarPlay may drop.',
                 'Otherwise it takes effect at the next head-unit start.'].forEach((l, i) => {
                 cv.text(fitText(cv, l, 21, cw - 64), cx + 32, cy + 100 + i * 32, 21, i === 1 ? '#ffb020' : t.dim, { literal: true });
             });

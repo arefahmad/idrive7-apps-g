@@ -167,7 +167,8 @@ class ClusterMap {
         if (this.timers.reply) { clearTimeout(this.timers.reply); this.timers.reply = null; }
         if (this.op && st.state !== 'busy') {
             const what = this.op.cmd === 'apply' ? 'Turned on' : 'Turned off';
-            this.note = st.state === 'error' ? '' : st.carplay === 'restarted' ? what + ': CarPlay restarted'
+            // 0.14.2: after a CarPlay restart the phone's cluster stream can stay empty ("frozen") until it reconnects
+            this.note = st.state === 'error' ? '' : st.carplay === 'restarted' ? what + ': CarPlay restarted' + (this.op.cmd === 'apply' ? ' - map empty? reconnect the phone' : '')
                 : st.carplay === 'deferred' || st.pending ? what + ': takes effect at the next head-unit start' : what;
             this.log.info('cluster map: ' + this.op.cmd + ' answered: ' + st.state + (st.carplay ? ' (CarPlay ' + st.carplay + ')' : '') + (st.reason ? ' ' + st.reason : ''));
             this.op = null;
@@ -256,7 +257,7 @@ class ClusterMap {
         if (st === 'showing') return 'Map: showing on the cluster';
         if (st === 'idle') return 'Map: waiting for CarPlay' + (why ? ' (' + why + ')' : '');
         if (st === 'starting') return 'Map: starting';
-        if (st === 'frozen') return 'Map: frozen, reconnect CarPlay';
+        if (st === 'frozen') return 'Map: frozen - the phone sends an empty picture, reconnect it';   // 0.14.2
         if (st === 'error') return 'Map: error' + (why ? ': ' + why : '');
         return 'Map: ' + (st || 'unknown');
     }

@@ -94,12 +94,13 @@ class HudShift {
         this.build = new MEM.BuildWatch(this.log, 'hud shift', this.now);   // 0.13.8: the look's build, timed, retried
         this.states = new MEM.StateLog(this.log, 'hud shift', this.now);   // 0.13.8: state changes for the ring
         this.pausedAt = 0; this.relAt = 0; this.relN = 0; this.upAt = -1e15; this.reacqSaid = 0;   // 0.13.8
+        this.guard = new MEM.CrashGuard(this.log, 'hud shift', this.now, 'HUD');   // 0.14.2: a renderer crashing on our ask
         this._reset();
     }
     _reset() {
         this.cr = null; this.ready = false; this.polled = false;
         this.cur = null;                                    // { id, style, assets, ref, anim, sent }
-        this.visible = false; this.lastRearm = -1e15;
+        this.visible = false; this.lastRearm = -1e15; this.held = false; this.reshow = false;   // 0.14.2: held = paused, kept visible but clear
         this.others = []; this.busyAt = -1e15; this.layerErr = ''; this.lastErr = ''; this.errCount = 0; this.refused = ''; this.noEffect = false;
         this.asked = 0; this.answered = 0; this.healed = false;   // 0.8.5: as the skins (cluster_skin.js)
         // 0.12.1: drops first, the new look's upload only after the renderer let them go (cluster_memory.js)
@@ -120,7 +121,7 @@ class HudShift {
             if (this.cr) this._off(s && s.enabled === false ? 'off' : 'closed');
             // the user's switch or the app's own (another display, the full-screen test): no wait next time; only
             // releases forced by the screen or the renderer back off
-            if (!(s && s.keep && s.enabled !== false)) { this.relAt = 0; this.relN = 0; }
+            if (!(s && s.keep && s.enabled !== false)) { this.relAt = 0; this.relN = 0; this._forgive(); }
             this.want = false; this.why = blocker(s); this.states.see(this.why); return;
         }
         if (this.pausedAt) this._resume();
@@ -133,19 +134,37 @@ class HudShift {
         }
         this._apply();
     }
-    /** 0.13.8: a popup or the screen covered: hidden at once (as before), everything else kept */
+    /**
+     * 0.13.8: a popup or the screen covered: cleared at once, everything else kept.
+     * 0.14.2: kept visible but clear (u_fresh 0, its fail-safe animation stopped: drawn as nothing), so the
+     * renderer keeps the HUD target for us. 0.13.8 hid it (visible 0), and a target no visible layer wants is
+     * released after its 3 s linger: the scene was let go, and asking for it again on return is what took
+     * cluster-render down on the car. Let go for real after PAUSE_MS, or at once when another app needs the memory.
+     */
     _pause() {
         this.want = false; this.why = 'closed';
         if (this.pausedAt) return;
         this.pausedAt = this.now() || 1; this.pauseUsers = MEM.userNames(this.statusText || '', this.app);
-        this._hide('paused'); this._unlift();
-        this.log.info('hud shift: paused - the screen is covered (layer and scene kept up to ' + Math.round(MEM.PAUSE_MS / 1000) + ' s)');
+        const c = this.cur, cr = this.cr;
+        if (this.visible && c && c.ok && cr) {
+            FS.setBase(cr, c, 0);
+            if (c.anim && typeof cr.stop === 'function') { try { cr.stop(c.ref, c.anim); } catch (e) { /* gone */ } }
+            c.anim = 0;
+            this.visible = false; this.held = true;
+            this.stats.hides++; this.diag.hidden('paused', 'hud shift: cleared (paused)');
+        } else this._hide('paused');
+        this._unlift();
+        this.log.info('hud shift: paused - the screen is covered (' + (this.held ? 'the HUD target held, clear,' : 'nothing shown, layer and scene kept') + ' up to ' + Math.round(MEM.PAUSE_MS / 1000) + ' s)');
         this.states.see('paused');
     }
     _resume() {
-        this.log.info('hud shift: back after ' + ((this.now() - this.pausedAt) / 1000).toFixed(1) + ' s paused' + (this.cur && this.cur.ok ? '' : ' (made again)'));
+        this.log.info('hud shift: back after ' + ((this.now() - this.pausedAt) / 1000).toFixed(1) + ' s paused' + (this.cur && this.cur.ok ? (this.held ? ' (target held)' : '') : ' (made again)'));
         this.pausedAt = 0;
+        // 0.14.2: still visible on the renderer: shown again on the next _apply (or hidden for real if it may not show)
+        if (this.held) { this.held = false; this.visible = true; this.reshow = true; }
     }
+    _forgive() { this.guard.forgive(); }
+    get strikes() { return this.guard.strikes; }
     /** 0.13.8: ms still to wait before connecting again (a run of quick releases backs off; the first is at once) */
     _reacqWait() {
         if (!this.relAt) return 0;
@@ -189,6 +208,9 @@ class HudShift {
         });
         cr.on('disconnected', () => {
             if (this.cr !== cr) return;
+            // 0.14.2: gone while our ask for the HUD was pending: a strike (cluster_memory.js CrashGuard)
+            if (this.guard.lost()) this.states.see(this.guard.why());
+            this.hudState = ''; this.held = false; this.reshow = false;
             this.ready = false; this.polled = false; this.downAt = this.now();
             this.asked = 0; this.answered = 0; this.gate.reset();
             // 0.13.8: replayed hidden: its assets are not written until it is shown, so not waited for (cluster_memory.js)
@@ -206,6 +228,7 @@ class HudShift {
         cr.on('target', (name, state, holder, reason) => {
             if (this.cr !== cr || name !== TARGET) return;
             if (state !== this.hudState || (holder || '') !== this.hudHolder) this.log.info('hud shift: hud ' + state + (holder ? ' holder ' + holder : '') + (reason ? ' (' + reason + ')' : ''));
+            this.guard.see(state);                         // 0.14.2
             this.hudState = state || ''; this.hudHolder = holder || ''; this.hudReason = reason || '';
         });
         cr.on('status', (text) => {
@@ -313,6 +336,7 @@ class HudShift {
             if (fresh.length) { this.log.info('hud shift: paused, ' + fresh.join(', ') + ' now in the renderer, letting go'); this.pausedAt = 0; this._off('closed'); return; }
             this._ask();
         }
+        this.guard.tick();                                 // 0.14.2: shown a while: the strikes forgotten
         if (this.pausedAt && this.now() - this.pausedAt >= MEM.PAUSE_MS) { this.log.info('hud shift: paused for ' + Math.round(MEM.PAUSE_MS / 1000) + ' s, letting go'); this.pausedAt = 0; this._off('closed'); return; }
         if (!this.want || !this.cr) return;
         this.diag.tick();
@@ -347,6 +371,8 @@ class HudShift {
         const now = this.now();
         const b = blocker(this.st);
         if (b) return b;
+        const g = this.guard.why();                        // 0.14.2: waiting out a renderer crash on our ask
+        if (g) return g;
         if (now - this.stAt > STALE_MS) return 'no update';
         if (staleness(this.st, now)) {
             if (this.visible) { this.stats.staleHides++; this.diag.stale(); }
@@ -380,7 +406,8 @@ class HudShift {
             if (!ok) { if (!this.soft && !this.layerErr && !this.noEffect) this.build.failed('could not make it'); this._hide('assets'); return; }
         }
         if (!this.cur.ok) { this.why = 'making'; return; }   // 0.8.5: nothing to it before the service confirms it
-        if (!this.visible) {
+        if (!this.visible || this.reshow) {
+            this.reshow = false;
             // 0.11.3: u_fresh 1 as the client's own first (a renderer stop restores to it), then the animation
             FS.setBase(this.cr, this.cur, 1);
             this._uniforms(true);
@@ -391,6 +418,7 @@ class HudShift {
         }
     }
     _hide(why) {
+        this.reshow = false;
         if (!this.visible || !this.cur || !this.cur.ok || !this.cr) { this.visible = false; return; }
         try { this.cr.set(this.cur.ref, { visible: false }); } catch (e) { /* gone */ }
         FS.setBase(this.cr, this.cur, 0);                  // 0.11.3: back to 0 only on hiding
@@ -502,11 +530,12 @@ class HudShift {
     refresh() {
         this.stats.refreshes++;
         this.errCount = 0; this.layerErr = '';
-        if (!this.want) return false;
+        if (!this.want) { this._forgive(); return false; }
         const had = !!this.cr;
         this.err = null; this.noEffect = false; this.build.reset();
         this._restart('refresh');
         this.relAt = 0; this.relN = 0;                    // 0.13.8: the user's own ask: no backoff after it
+        this._forgive();                                  // 0.14.2: and the renderer's restarts forgotten
         return had;
     }
     _off(why) {
@@ -551,9 +580,10 @@ class HudShift {
         const TXT = { 'stale values': 'Hidden - signal delayed', 'no speed signal': 'Hidden - no speed signal', 'demo data': 'Hidden - demo data',
             'hud in use': 'Waiting - HUD in use', 'renderer error': 'Renderer refused the HUD', assets: 'HUD failed to load', making: 'Making the HUD',
             stuck: 'Renderer did not answer - try Refresh cluster',
+            'renderer restarting': 'Waiting - Cluster renderer restarted', 'renderer crashed': 'Off - renderer crashed on the HUD (Refresh cluster)',
             'no update': 'Hidden' };
         if (why === 'renderer error' && !this.noEffect && this.lastErr) return { kind: 'error', text: 'Refused: ' + String(this.lastErr).replace(/^[a-z?]+: /, '') };
-        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' ? 'error' : 'wait', text: TXT[why] || 'Hidden' };
+        return { kind: why === 'renderer error' || why === 'assets' || why === 'stuck' || why === 'renderer crashed' ? 'error' : 'wait', text: TXT[why] || 'Hidden' };
     }
     /** the whole refusal (the diagnostics page): '' when none */
     refusal() { return this.lastErr || ''; }

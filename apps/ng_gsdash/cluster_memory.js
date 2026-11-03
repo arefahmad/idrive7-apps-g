@@ -282,4 +282,54 @@ const silentWait = (n) => SILENT_MS[Math.min(n, SILENT_MS.length - 1)];
 /** 0.13.8: a popup's pause - how long a hidden layer is kept made (scene, assets, connection) for the screen to come back */
 const PAUSE_MS = 90000;
 
-module.exports = { LOST_MS, SILENT_MS, silentWait, userNames, newUsers, WRITE_WAIT_MS, writeWait, waitWrites, BuildWatch, BUILD_STUCK_MS, BUILD_BACKOFF, BUILD_MAX_TRIES, StateLog, PAUSE_MS, LIMIT, asset, image, video, MEM_FULL, APP_NAMES, memoryUsers, memoryNote, FREE_MS, SETTLE_MS, MARGIN, statusBytes, fits, FreeGate, uploads, UploadWatch, UPLOAD_LOG_MS, MemWatch, HIGH, ownBytes };
+/**
+ * 0.14.2: the Cluster renderer gone within CRASH_MS of our ask for a target (its 'acquiring' event): a strike.
+ * On the car cluster-render 0.3.3 .. 0.3.6 ended in its vsomeip thread 8 .. 100 ms after the HUD's scene
+ * (0x01000400, shared with the panel and the HMI's speech dialog) was asked for again after a release, and again
+ * at each of its restarts while G's Dash asked again at once: every app's cluster layers (Waze's map too) down
+ * for about 40 s. After a strike the target is asked for again only after STRIKE_WAIT_MS[n]; after STRIKES_MAX
+ * in a row it is left alone for the run (Refresh cluster or the user's own switch: forgive()). Shown
+ * STRIKE_RESET_MS: the strikes forgotten.
+ */
+const CRASH_MS = 3000, STRIKE_WAIT_MS = [20000, 60000], STRIKES_MAX = 3, STRIKE_RESET_MS = 60000;
+class CrashGuard {
+    constructor(log, tag, now, what) { this.log = log; this.tag = tag; this.now = now; this.what = what; this.state = ''; this.forgive(); }
+    forgive() { this.strikes = 0; this.until = 0; this.crashed = false; this.acqAt = 0; this.shownAt = 0; }
+    /** the target's event state */
+    see(state) {
+        const now = this.now() || 1;
+        if (state === 'acquiring' && this.state !== 'acquiring') this.acqAt = now;
+        if (state === 'shown' && this.state !== 'shown') { this.shownAt = now; this.acqAt = 0; }
+        this.state = state || '';
+    }
+    /** the connection lost: a strike when our ask was pending and recent */
+    lost() {
+        const since = this.now() - this.acqAt, pending = this.state === 'acquiring';
+        const recent = !!this.acqAt && since <= CRASH_MS;
+        this.state = ''; this.acqAt = 0;
+        if (!recent) return false;
+        if (!pending) { this.log.info(this.tag + ': the renderer went ' + since + ' ms after the ' + this.what + ' was asked for'); return false; }
+        this.strikes++;
+        const why = 'the Cluster renderer ended ' + since + ' ms after we asked for the ' + this.what;
+        if (this.strikes >= STRIKES_MAX) {
+            this.crashed = true; this.until = 0;
+            this.log.warn(this.tag + ': ' + why + ' (' + this.strikes + ' times in a row) - the ' + this.what + ' stays off until Refresh cluster');
+        } else {
+            const wait = STRIKE_WAIT_MS[Math.min(this.strikes - 1, STRIKE_WAIT_MS.length - 1)];
+            this.until = this.now() + wait;
+            this.log.warn(this.tag + ': ' + why + ' (' + this.strikes + ' of ' + STRIKES_MAX + ') - asking again in ' + Math.round(wait / 1000) + ' s');
+        }
+        return true;
+    }
+    /** '' | 'renderer restarting' (waiting out a strike) | 'renderer crashed' (off for the run) */
+    why() { return this.crashed ? 'renderer crashed' : this.now() < this.until ? 'renderer restarting' : ''; }
+    /** every poll: shown long enough, the strikes forgotten */
+    tick() {
+        if (this.strikes && !this.crashed && this.state === 'shown' && this.now() - this.shownAt >= STRIKE_RESET_MS) {
+            this.log.info(this.tag + ': shown ' + Math.round(STRIKE_RESET_MS / 1000) + ' s - the renderer\'s restarts forgotten');
+            this.strikes = 0;
+        }
+    }
+}
+
+module.exports = { LOST_MS, SILENT_MS, silentWait, userNames, newUsers, WRITE_WAIT_MS, writeWait, waitWrites, BuildWatch, BUILD_STUCK_MS, BUILD_BACKOFF, BUILD_MAX_TRIES, StateLog, PAUSE_MS, CrashGuard, CRASH_MS, STRIKE_WAIT_MS, STRIKES_MAX, STRIKE_RESET_MS, LIMIT, asset, image, video, MEM_FULL, APP_NAMES, memoryUsers, memoryNote, FREE_MS, SETTLE_MS, MARGIN, statusBytes, fits, FreeGate, uploads, UploadWatch, UPLOAD_LOG_MS, MemWatch, HIGH, ownBytes };
