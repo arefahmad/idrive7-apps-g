@@ -45,6 +45,12 @@ const META = require('./skin_looks');
 const CL = require('./cluster_logo');
 const MEM = require('./cluster_memory');
 const FS = require('./failsafe');
+/** 0.14.0: a colour variant's name after the look's (digital-purple@kmh -> " Purple"), none for a look's default */
+const tintName = (id) => {
+    const p = String(id).split('@')[0].split('-'), TV = require('./tints').VARIANTS[p[0]];
+    const v = p[1] && TV ? TV.filter((x) => x.id === p[1])[0] : null;
+    return v ? ' ' + v.name : '';
+};
 const MEM_FULL = MEM.MEM_FULL, memoryUsers = MEM.memoryUsers, memoryNote = MEM.memoryNote;
 const mib = (b) => (b / 1048576).toFixed(1) + ' MiB';
 
@@ -62,7 +68,7 @@ const HOLD_MS = 3000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 
 const REACQ_MS = [0, 1000, 2000, 5000, 10000], REACQ_QUICK_MS = 30000;
 const HANDOVER_MS = 3500;   // as fcluster.js: the panel and the HUD share one scene id
 /** G's Dash's look ids -> the skin's (skin_looks.js) */
-const LOOK_SKIN = { m: 'm', gt: 'gt', digital: 'digital', simracing: 'simracing', lumen: 'lumen', pixel: 'pixel' };
+const LOOK_SKIN = { m: 'm', gt: 'gt', digital: 'digital', simracing: 'simracing', lumen: 'lumen', pixel: 'pixel', vector: 'vector' };
 
 /** Other apps' layers on the panel or the HUD in a status text (same lines as cluster_logo.js reads). */
 function panelLayers(text, ownApp) {
@@ -239,7 +245,7 @@ class ClusterSkin {
     lookId() {
         const s = this.st || {};
         if (s.mode === 'align') return 'align';      // the car's geometry: in its own units
-        const id = s.mode === 'stock' ? 'stock' : LOOK_SKIN[s.look] || 'm';          // M Style: the default look (0.9.0)
+        const id = s.mode === 'stock' ? 'stock' : LOOK_SKIN[s.look] || (META.looks[s.look] && String(s.look).indexOf('-') > 0 ? s.look : LOOK_SKIN[String(s.look).split('-')[0]] || 'm');   // 0.14.0: a colour variant (look-tint) its own skin, an unknown one its look's          // M Style: the default look (0.9.0)
         // 0.13.7: km/h a look of its own, so a units change takes the look switch's way (drops first, settle, gate, memory check)
         return kmhOf(s) && META.looks[id].kmh ? id + KMH_SUFFIX : id;
     }
@@ -695,7 +701,7 @@ class ClusterSkin {
         if (this.noEffect) return { kind: 'none', text: 'Update Cluster renderer' };
         const why = silent ? 'stuck' : this.why || this._why();
         if (!why && this.visible) {
-            const n = this.cur ? this.cur.meta.name + (this.cur.meta.unit === 'kmh' ? ' (km/h)' : '') : '';
+            const n = this.cur ? this.cur.meta.name + tintName(this.cur.id) + (this.cur.meta.unit === 'kmh' ? ' (km/h)' : '') : '';
             return { kind: 'on', text: 'Shown - ' + n };
         }
         const TXT = { moving: 'Stock while driving', 'stale values': 'Stock - signal delayed', 'in gear': 'Stock while in gear',

@@ -10,8 +10,10 @@ const L = require('./lib');
 
 const { withAlpha, clamp, isNum } = L;
 const SEG = 'gs_d_seg', TXT = 'gs_d_txt';
-const VFD = '#41f2cf', AMB = '#ffa63a', RED = '#ff4130';
-const GHOST = withAlpha(VFD, 0.07), DIMV = withAlpha(VFD, 0.42);
+const TINTS = require('./tints');
+// the colours are the chosen variant's (tints.js): green (as before), purple, red
+let VFD = '#41f2cf', AMB = '#ffa63a', RED = '#ff4130', C = TINTS.VARIANTS.digital[0].c, TINT = 'green';
+let GHOST = withAlpha(VFD, 0.07), DIMV = withAlpha(VFD, 0.42);
 
 const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), {
     name: "Digital '84",
@@ -68,12 +70,22 @@ function dots(cv, S, cx, cy, step) {
 
 /** Oil / coolant (0.11.0): the value, and 20 bars in temperature zones (lib.js TEMP_ZONES): faint blue / green / red, lit to the value in the zone's colour. */
 const ZONES_D = { cold: '#3fb4ff', ok: '#4af28a', hot: RED };
+/** recolour the look in place for a variant (tints.js); the palette object stays the same one */
+function applyTint(v) {
+    if (!v || v.id === TINT) return;
+    TINT = v.id; C = v.c; VFD = C.lit; AMB = C.amb; RED = C.crit;
+    GHOST = withAlpha(VFD, C.ghost); DIMV = withAlpha(VFD, 0.42);
+    ZONES_D.hot = C.hot;
+    Object.assign(palette, { bg: C.bg, panelTop: C.panelTop, panelBottom: C.panelBottom, panelEdge: C.edge,
+        track: C.track, tick: C.tick, text: VFD, dim: DIMV, accent: VFD, accent2: AMB, ok: VFD, warn: AMB, crit: RED,
+        stripes: [VFD], sel: VFD, selText: C.bg, marker: AMB });
+}
 function fluid(cv, x, y, w, label, v) {
-    const n = 20, gap = 4, bw = (w - gap * (n - 1)) / n, zg = L.tempGauge(v, ZONES_D, '#0b1513', 0.3);
+    const n = 20, gap = 4, bw = (w - gap * (n - 1)) / n, zg = L.tempGauge(v, ZONES_D, C.fluidTrack, 0.3);
     cv.text(label, x, y - 16, 20, DIMV, { font: TXT, literal: true });
     seg(cv, isNum(v.f) ? pad(String(L.tempNum(v)), 3) : '!--', x + w, y - 12, 38, zg.on || DIMV);
     for (let i = 0; i < n; i++) cv.fillRect(x + i * (bw + gap), y, bw, 18, zg.seg((i + 0.5) / n));
-    if (zg.zone) cv.fillRect(x + zg.pos * w - 1.5, y - 4, 3, 26, '#e8fff8');
+    if (zg.zone) cv.fillRect(x + zg.pos * w - 1.5, y - 4, 3, 26, C.marker);
 }
 
 module.exports = {
@@ -81,16 +93,18 @@ module.exports = {
     name: "Digital '84",
     blurb: 'Eighties VFD: segment numerals, bar-graph tach, dot-matrix g',
     palette,
+    tints: TINTS.VARIANTS.digital,
+    applyTint,
     ui: { txt: TXT, lbl: 'gs_gt_txt', num: SEG, size: 18, spacing: 0, upper: true, radius: 0, nameFont: TXT, nameSize: 22 },
 
     background(cv, t, reach) {
-        cv.gradientRect(0, 0, 1600, reach, [[0, '#030807'], [0.5, '#010303'], [1, '#020404']]);
+        cv.gradientRect(0, 0, 1600, reach, [[0, C.bg0], [0.5, C.bg], [1, C.bg2]]);
     },
     card(cv, t, x, y, w, h) {
-        cv.fillRect(x, y, w, h, '#041010');
+        cv.fillRect(x, y, w, h, C.card);
         cv.strokeRoundRect(x, y, w, h, 0, 1.5, withAlpha(VFD, 0.18));
     },
-    cardBg(cv, t, x, y, w, h) { cv.fillRect(x, y, w, h, '#010303'); },
+    cardBg(cv, t, x, y, w, h) { cv.fillRect(x, y, w, h, C.bg); },
 
     swatch(cv, t, x, y, w, h) {
         // the segmented rev bar alone (no digits), a little wider and taller, centred in the picture

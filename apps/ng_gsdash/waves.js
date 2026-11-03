@@ -19,6 +19,18 @@ const PAL = {
     lumen:     { c0: [4, 6, 18],   c1: [18, 34, 84],  c2: [36, 64, 140],  hi: [140, 224, 255], crest: 0.10, amt: 0.30, N: 2.4 },
     pixel:     { c0: [12, 10, 36], c1: [44, 30, 104], c2: [84, 50, 160],  hi: [255, 110, 200], crest: 0.08, amt: 0.45, N: 2.8, px: 8, levels: 5 },
 };
+/* the colour variants' pictures (tints.js): id look-tint, from the variant's colours (the base look's shape) */
+(function () {
+    const TV = require('./tints').VARIANTS, rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const mixc = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+    Object.keys(TV).forEach((look) => TV[look].forEach((v, i) => {
+        const c = v.c, id = i ? look + '-' + v.id : look;
+        if (i === 0 && PAL[id]) return;
+        const bg = rgb(c.bg0), lit = rgb(c.lit);
+        PAL[id] = look === 'digital' ? { c0: bg, c1: mixc(bg, lit, 0.09), c2: mixc(bg, lit, 0.17), hi: lit, crest: 0.012, amt: 0.85, N: 5.0 }
+            : { c0: bg, c1: mixc(bg, rgb(c.lit2), 0.16), c2: mixc(bg, rgb(c.lit2), 0.30), hi: lit, crest: 0.02, amt: 0.55, N: 3.4 };
+    }));
+}());
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const hex = (c) => '#' + c.map((v) => (v < 16 ? '0' : '') + v.toString(16)).join('');
@@ -63,7 +75,7 @@ class Waves {
     step(id, H, budget) {
         H = Math.max(8, Math.min(1024, Math.round(H)));
         const key = id + '|' + H;
-        if (key !== this.key) { this.key = key; this.P = PAL[id] || PAL.m; this.H = H; this.d = new Uint8Array(W * H * 4); this.y = 0; this.ready = false; }
+        if (key !== this.key) { this.key = key; this.P = PAL[id] || PAL[String(id).split('-')[0]] || PAL.m; this.H = H; this.d = new Uint8Array(W * H * 4); this.y = 0; this.ready = false; }
         if (this.ready) return true;
         const t0 = Date.now(), b = budget == null ? 30 : budget;
         while (this.y < this.H) { row(this.P, this.d, this.y++, this.H); if (b > 0 && Date.now() - t0 >= b) break; }
@@ -81,6 +93,6 @@ class Waves {
 }
 
 /** A look's flat colour while its picture is being drawn (its darkest). */
-const base = (id) => hex((PAL[id] || PAL.m).c0);
+const base = (id) => hex((PAL[id] || PAL[String(id).split('-')[0]] || PAL.m).c0);
 
 module.exports = { Waves, PAL, W, field, base };

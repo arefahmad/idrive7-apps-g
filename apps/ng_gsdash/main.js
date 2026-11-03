@@ -1,6 +1,6 @@
 'use strict';
 /**
- * G's Dash - a driver display and car hub for the iDrive 7 (MGU) head unit, in six looks.
+ * G's Dash - a driver display and car hub for the iDrive 7 (MGU) head unit, in seven looks.
  *
  *   - five screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
  *     Showcase (the car, Spotify or a 12-hour clock, the logo) · Drive (the look's dash, below;
@@ -112,9 +112,10 @@ const P = require('./px');
 const PREFS = require('./prefs');
 const CLOCK = require('./clock');
 const UNITS = require('./units');
+const TINTS = require('./tints');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
-    require('./look_lumen'), require('./look_pixel')];
+    require('./look_lumen'), require('./look_pixel'), require('./look_vector')];
 // M Style is the default look, and where any other id lands (0.9.0: Simple, Heritage and Flight went)
 const DEFAULT_LOOK = 'm';
 const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id === DEFAULT_LOOK);
@@ -168,13 +169,15 @@ mgu.run({
         const { ui, settings, log } = ctx;
         // car data only: no demo feed (opts.demo false), a value not sent shows '--'
         const car = new Car(ctx, ['rpm', 'speed', 'temps', 'accel', 'gear', 'drivemode', 'tpms', 'units'], { demo: false });
-        L.loadFonts(log);
         // 0.9.0: a saved look that is gone (simple, heritage, flight) or unknown becomes M Style
         const savedLook = settings.get('look');
         if (!LOOKS.some((l) => l.id === savedLook)) {
             log.info('look ' + savedLook + ' is gone: M Style');
             settings.set('look', DEFAULT_LOOK);
         }
+        // 0.14.0: colour variants (tints.js) - a saved value read as this version knows it (none: every look's default)
+        const savedTints = settings.get(TINTS.KEY), tintsNow = TINTS.clean(savedTints);
+        if ((savedTints || '') !== tintsNow) { log.info('look colours: "' + (savedTints || '') + '" -> "' + tintsNow + '"'); settings.set(TINTS.KEY, tintsNow); }
         // 0.10.0: 0.9.0's "clusterSkin" / "hudShift" become "displays" (Cluster dials / HUD / Neither), once.
         // They are not app.json retiredSettings (the kit would delete them before this could read them).
         const dm = PREFS.migrateDisplays(settings.values);
@@ -187,15 +190,19 @@ mgu.run({
         const favs = () => PREFS.parseFavs(settings.get(PREFS.FAV_KEY), LOOKS.map((l) => l.id));
         const clock = new CLOCK.Clock();
 
-        const look = () => lookOf(settings.get('look'));
+        // a look with colour variants is recoloured to its chosen one (tints.js) before it draws
+        const tintOf = (l) => TINTS.of(l.id, settings.get(TINTS.KEY));
+        const tinted = (l) => { if (l) L.lookFonts(l.id, log); if (l && l.applyTint) l.applyTint(tintOf(l)); if (l) l.tintKey = TINTS.key(l.id, settings.get(TINTS.KEY)); return l; };
+        const look = () => tinted(lookOf(settings.get('look')));
+        const skinKey = () => TINTS.key(look().id, settings.get(TINTS.KEY));
         const palette = () => { const l = look(); return typeof l.palette === 'function' ? l.palette(settings) : l.palette; };
         // the kit's own parts (header, the controller's marks) in the look's colours
         if (ctx.setTheme) ctx.setTheme(palette);
-        settings.onChange((k) => { if (k === 'look' && ctx.setTheme) ctx.setTheme(palette); });
+        settings.onChange((k) => { if ((k === 'look' || k === TINTS.KEY) && ctx.setTheme) ctx.setTheme(palette); });
         // 0.13.7: the Settings list's temperatures (kept in °F) shown in Options > Units' temperature unit
         settings.format = (it, v) => (it && it.unit === '\u00b0F' ? UNITS.tempSetting(v, UNITS.pick(settings).temp) : null);
         // 0.13.4: every look switch one line (the remote logs' ring keeps it with the cluster / HUD lines around it)
-        settings.onChange((k, v) => { if (k === 'look') log.info('look: ' + lookOf(v).id); });
+        settings.onChange((k, v) => { if (k === 'look') log.info('look: ' + lookOf(v).id); else if (k === TINTS.KEY) log.info('look colour: ' + (v || 'defaults') + ' (' + skinKey() + ')'); });
 
         let peak = null, since = Date.now(), env = [], hist = [], gSeen = false, sessionAt = 0;
         const SESSION_FLASH_MS = 450;
@@ -304,7 +311,7 @@ mgu.run({
         const clogoUpdate = (open) => {
             const d = car.data(), src = srcPick(), on = gsdOn();
             clogo.update({ on: on && CSRC.logoWanted(src, open, settings.get('clusterLogo')), enabled: on && (src === 'auto' ? logoOn() : (src === 'logo' || src === 'music')),
-                pixel: look().id === 'pixel', look: look().id, parked: L.isNum(d.speed) && d.speed < 1,
+                pixel: look().id === 'pixel', look: skinKey(), parked: L.isNum(d.speed) && d.speed < 1,
                 idleText: !on ? 'Off - G\'s Dash is off on the cluster' : src === 'auto' ? 'On - while G\'s Dash is open' : 'Off - ' + CSRC.NAMES[src] + ' picked' });
             centreTrack();
         };
@@ -323,11 +330,11 @@ mgu.run({
             const on = gsdOn();
             if (!on) { fcTest = false; skinMode = 'skin'; }
             const skinWant = on && (skinOn() || skinMode !== 'skin');
-            cskin.update({ on: !!open && !fcTest && skinWant, enabled: skinWant, look: look().id, mode: skinMode, data: d,
+            cskin.update({ on: !!open && !fcTest && skinWant, enabled: skinWant, look: skinKey(), mode: skinMode, data: d,
                 speedAvail, gear: L.gearText(d.gear, d.stage), at: car.at || null, speedUnit: UNITS.pick(settings).speed,
                 keep: !open && !fcTest && skinWant });
             const redline = num('redline', 6500);
-            hud.update({ on: on && !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: on && hudOn(), look: look().id, data: d, gear: L.gearText(d.gear, d.stage),
+            hud.update({ on: on && !!open && !fcTest && hudOn() && skinMode === 'skin', enabled: on && hudOn(), look: skinKey(), data: d, gear: L.gearText(d.gear, d.stage),
                 at: car.at || null, redline, shift: redline - (Number(settings.get('shiftBefore')) || 0),
                 keep: on && !open && !fcTest && hudOn() && skinMode === 'skin', after: fcTest ? null : fcSwitchAt });
             // any gear, any speed; night: G's Dash has no day / night signal from the car (no look switches), so day
@@ -351,7 +358,7 @@ mgu.run({
         settings.onChange((k) => {
             if (k === 'clusterControl') log.info('cluster control: G\'s Dash ' + (gsdOn() ? 'on the cluster & HUD again' : 'off - the cluster and HUD left to the car (everything of ours let go)'));
             if (k === 'clusterSource' || k === 'clusterControl') publishSource('change');
-            if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'displays' || k === 'look' || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
+            if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'displays' || k === 'look' || k === TINTS.KEY || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
         });
         process.once('exit', () => { ending = true; clearInterval(bgLogo); clogo.close(); cskin.close(); hud.close(); fcl.close(); });
         // route guidance (0.7.4, 0.7.5): the logo steps aside while it runs, and only then (or for G's TV). The stock navigation's guidingState
@@ -741,7 +748,8 @@ mgu.run({
             const tx = hx + 14 + TILE_W + 32, mw = hx + hw - 60 - tx, tf = { font: u.txt, spacing: u.upper ? u.spacing * 0.6 : 0, literal: true };
             lbl('Theme', tx, hy + 48, Math.round(u.size * 0.8), t.dim);
             cv.text(fitText(cv, valueText(u, lk.name), u.size + 16, mw, tf), tx, hy + 98, u.size + 16, t.text, tf);
-            cv.text(fitText(cv, 'Right panel: ' + (panelOn() ? 'Spotify' : 'G-meter'), 20, mw), tx, hy + 138, 20, t.dim, { literal: true });
+            if (lk.tints) tintRow(cv, S, lk, tx, hy + 110, 'opt');
+            else cv.text(fitText(cv, 'Right panel: ' + (panelOn() ? 'Spotify' : 'G-meter'), 20, mw), tx, hy + 138, 20, t.dim, { literal: true });
             cv.roundRect(tx, hy + hh - 62, 260, 44, u.radius, L.withAlpha(acc, down ? 0.34 : 0.18));
             lbl('Change look', tx + 18, hy + hh - 33, u.size, t.text);
             chevron(cv, tx + 236, hy + hh - 40, 8, t.text);
@@ -846,6 +854,28 @@ mgu.run({
         }
 
         /**
+         * Colour: the look's variants (tints.js) as round swatches, the chosen one ringed in the look's
+         * selection colour and ticked; each a 56 x 56 target (first target wins: drawn before the card's own).
+         * compact: on the chosen gallery card (a dark pill, no label).
+         */
+        function tintRow(cv, S, lk, x, y, tag, compact) {
+            // compact (a gallery card): a vertical pill down the card's left edge, clear of the star and the name
+            const t = S.t, cur = tintOf(lk), list = lk.tints, step = compact ? 32 : 64, r = compact ? 11 : 17;
+            if (compact) cv.roundRect(x, y, 34, list.length * step + 4, 17, L.withAlpha('#000000', 0.62));
+            else cv.text(cur.name, x + list.length * step + 8, y + 25, 20, t.dim, { literal: true });
+            list.forEach((v, i) => {
+                const cx = compact ? x + 17 : x + r + 2 + i * step, cy = compact ? y + 2 + step / 2 + i * step : y + 18, on = v.id === cur.id;
+                if (on) cv.arc(cx, cy, r + (compact ? 2 : 4), r + (compact ? 4 : 7), 0, 360, '#ffffff');
+                if (v.swatch2) v.swatch2.forEach((c, k, a) => cv.arc(cx, cy, 0, r, -90 + 360 * k / a.length, -90 + 360 * (k + 1) / a.length, c));
+                else cv.circle(cx, cy, r, v.swatch);
+                cv.arc(cx, cy, r - 1, r, 0, 360, L.withAlpha('#000000', 0.5));
+                if (on) { const k = compact ? 0.7 : 1; cv.line(cx - 6 * k, cy, cx - 2 * k, cy + 5 * k, 2.5 * k, '#000000'); cv.line(cx - 2 * k, cy + 5 * k, cx + 7 * k, cy - 6 * k, 2.5 * k, '#000000'); }
+                const tw = compact ? step : 56;
+                cv.target(cx - tw / 2, cy - tw / 2, tw, tw, () => { settings.set(TINTS.KEY, TINTS.set(settings.get(TINTS.KEY), lk.id, v.id)); }, tag + ':tint:' + v.id, tw / 2);
+            });
+        }
+
+        /**
          * Theme: the looks as a gallery of cards, each drawn in its own look (a tap switches at once, the
          * page itself redraws in it), and the right panel on Drive: the g-meter and peaks, or Spotify.
          * 0.10.0: a star on each card (its own 64 x 64 target, top right) makes it a favourite; the
@@ -854,7 +884,8 @@ mgu.run({
         function themePage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, cur = lk.id;
             header(cv, S, lk, lbl, card, 'Theme', 1);
-            const x0 = S.x, top = S.y + 34, cols = 3, g = 14;            // six looks: 3 x 2 (0.9.0)
+            const x0 = S.x, top = S.y + 34, cols = LOOKS.length > 6 ? 4 : 3, g = 14;     // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0)
+            const TILE_W = cols > 3 ? 170 : 208;
             const fl = favs(), ids = LOOKS.map((l) => l.id);
             lbl('Look', x0, S.y + 20, 18, t.dim);
             LOOKS.forEach((l, i) => {
@@ -872,6 +903,7 @@ mgu.run({
                     cv.line(kx - 2, ky + 6, kx + 7, ky - 6, 3, t.selText || '#ffffff');
                 } else cv.strokeRoundRect(cx, cy, TILE_W, TILE_H, 10, 1, L.withAlpha('#ffffff', 0.12));
                 // the favourite star: its target first (the first target that matches wins)
+                if (on && l.tints) tintRow(cv, S, l, cx + 8, cy + 10, 'th', true);
                 const fav = fl.indexOf(l.id) >= 0, sx = cx + TILE_W - 30, sy = cy + 30;
                 cv.circle(sx, sy, 22, L.withAlpha('#000000', 0.55));
                 if (!fav) cv.arc(sx, sy, 21, 22.5, 0, 360, L.withAlpha('#ffffff', 0.25));
@@ -883,7 +915,7 @@ mgu.run({
                 cv.target(cx, cy, TILE_W, TILE_H, () => { settings.set('look', l.id); }, 'look:' + l.id, 10);
             });
             // the right panel: two choices, the current one lit
-            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = 400, pw = S.x + S.w - px - fcw - 32, ph = 84;
+            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = cols > 3 ? 330 : 400, pw = S.x + S.w - px - fcw - 32, ph = 84;
             lbl('Right panel on Drive', px, S.y + 20, 18, t.dim);
             [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Spotify', 'What plays, with touch controls']].forEach((o, i) => {
                 const oy = top + i * (ph + g), on = (panelOn() ? 'spotify' : 'g') === o[0];
@@ -930,8 +962,8 @@ mgu.run({
             cv.text(valueText(u, 'Showcase background'), x, y + 12, 18, t.dim, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0, literal: true });
             const ry = y + 22, pvx = x + bw + 10, pvw = w - 2 * (bw + 10);
             // the preview: the same picture Showcase draws (drawn on here if it isn't there yet), the same darkening
-            const WH = S.y + S.h + 6, ready = SC.waves.step(lk.id, Math.round(WAVE_W * WH / 1600), 20);
-            if (ready) cv.image(IMG.wave, pvx, ry, pvw, h); else cv.fillRect(pvx, ry, pvw, h, waveBase(lk.id));
+            const WH = S.y + S.h + 6, ready = SC.waves.step(lk.tintKey || lk.id, Math.round(WAVE_W * WH / 1600), 20);
+            if (ready) cv.image(IMG.wave, pvx, ry, pvw, h); else cv.fillRect(pvx, ry, pvw, h, waveBase(lk.tintKey || lk.id));
             if (v < 100) cv.fillRect(pvx, ry, pvw, h, L.withAlpha('#000000', 1 - v / 100));
             cv.strokeRoundRect(pvx, ry, pvw, h, 6, 1, L.withAlpha('#ffffff', 0.18));
             // the level: a thin bar along the preview's foot, the percent in the middle
@@ -956,9 +988,10 @@ mgu.run({
          */
         const cards = {};
         function cardImage(l, i, cw, ch, sc) {
-            const key = [Math.round(cw), Math.round(ch), sc].join('|');
+            const key = [Math.round(cw), Math.round(ch), sc, TINTS.key(l.id, settings.get(TINTS.KEY))].join('|');
             const id = IMG.card + i;
             if (cards[l.id] === key) return id;
+            tinted(l);
             try {
                 const lt = typeof l.palette === 'function' ? l.palette(settings) : l.palette;
                 const r = new record.Recorder(Math.ceil(cw), Math.ceil(ch), { textScale: sc });

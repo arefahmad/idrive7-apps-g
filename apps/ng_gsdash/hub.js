@@ -356,18 +356,18 @@ function showcase(cv, st, S, music, lk, gr, sc, now) {
     // the waves: the whole page (under the kit's header in the window layout), the current look's picture,
     // a few rows a frame until it's there (its darkest colour meanwhile)
     const PW = 1600, wy = cv.own ? 0 : S.y - 6, WH = S.y + S.h + 6 - wy, scale = cv.textScale || 1, mode = cv.pictures || 'blend';
-    const ready = sc.waves.step(lk.id, Math.round(sc.waveW * WH / PW), 25);
+    const ready = sc.waves.step(lk.tintKey || lk.id, Math.round(sc.waveW * WH / PW), 25);
     // (marked, 0.13.6: under the back arrow column, left of the page, the picture's first column
     // stretched to the screen's edge - the same picture, nothing new kept)
     const dim = dimOf(sc.dim), EDGE = 96;
     G.background(cv, (c) => {
         if (ready) c.image(sc.ids.wave, 0, wy, PW, WH);
-        else c.fillRect(0, wy, PW, WH, sc.base(lk.id));
+        else c.fillRect(0, wy, PW, WH, sc.base(lk.tintKey || lk.id));
         // Showcase background (setting showcaseBg, 15..100 %): the waves darkened, nothing else
         if (dim < 1) c.fillRect(0, wy, PW, WH, withAlpha('#000000', 1 - dim));
     }, (c) => {
         if (ready) c.image(sc.ids.wave, -EDGE, wy, EDGE * sc.waveW, WH);
-        else c.fillRect(-EDGE, wy, EDGE, WH, sc.base(lk.id));
+        else c.fillRect(-EDGE, wy, EDGE, WH, sc.base(lk.tintKey || lk.id));
         if (dim < 1) c.fillRect(-EDGE, wy, EDGE, WH, withAlpha('#000000', 1 - dim));
     });
     const playing = !!(music && sc.music && music.hasTrack());
@@ -375,7 +375,7 @@ function showcase(cv, st, S, music, lk, gr, sc, now) {
     const show = (key, src, r, o) => {
         o = o || {};
         const dw = r.w * scale, dh = r.h * scale;
-        const at = (x, y) => (ready ? sc.waves.sample(r.x + (x + 0.5) * r.w / Math.round(dw), r.y - wy + (y + 0.5) * r.h / Math.round(dh), PW, WH) : hexRgb(sc.base(lk.id)));
+        const at = (x, y) => (ready ? sc.waves.sample(r.x + (x + 0.5) * r.w / Math.round(dw), r.y - wy + (y + 0.5) * r.h / Math.round(dh), PW, WH) : hexRgb(sc.base(lk.tintKey || lk.id)));
         const bg = (x, y) => at(x, y).map((v) => v * dim);
         const p = sc.pics.show(sc.ids[key], src, dw, dh, mode, Object.assign({ bg: bg, bgKey: (ready ? sc.waves.key : 'base:' + lk.id) + '|' + dim + '|' + [r.x, r.y].map(Math.round).join(',') }, o));
         cv.image(p.id, r.x, r.y, r.w, r.h);

@@ -13,19 +13,47 @@ const RAD = Math.PI / 180;
 
 /* ---------------- fonts: apps/ng_gsdash/fonts (fonts.pack in a build), tools/bake_gsdash_fonts.py ---------------- */
 const FAMILIES = ['gs_m_num', 'gs_m_gear', 'gs_m_txt', 'gs_m_lt', 'gs_gt_num', 'gs_gt_gear', 'gs_gt_txt',
-    'gs_h_txt', 'gs_d_seg', 'gs_d_txt', 'gs_s_gear', 'gs_s_num', 'gs_s_txt', 'gs_p_px'];
-let fontsLoaded = null;
-/** Registers the looks' fonts with the kit once; returns the families that loaded. */
+    'gs_h_txt', 'gs_d_seg', 'gs_d_txt', 'gs_s_gear', 'gs_s_num', 'gs_s_txt', 'gs_p_px',
+    'gs_v_num', 'gs_v_gear'];
+/*
+ * 0.14.0: each look's fonts (look_<id>.js: its own and its ui's), registered only when the look is in use
+ * (the chosen look, or its card on Theme) - not every look's at start. The kit keeps a font once it is
+ * drawn with (record.js atlases, the renderer's shared glyph texture), so they are never unregistered.
+ */
+const LOOK_FONTS = {
+    m: ['gs_m_num', 'gs_m_gear', 'gs_m_txt', 'gs_m_lt'],
+    gt: ['gs_gt_num', 'gs_gt_gear', 'gs_gt_txt'],
+    digital: ['gs_d_seg', 'gs_d_txt', 'gs_gt_txt'],
+    simracing: ['gs_s_gear', 'gs_s_num', 'gs_s_txt'],
+    lumen: ['gs_h_txt', 'gs_s_gear', 'gs_s_num'],
+    pixel: ['gs_p_px'],
+    vector: ['gs_v_num', 'gs_v_gear'],
+};
+const fontsLoaded = [];
+let fontSrc = null;
+function registerFamily(f, log) {
+    if (fontsLoaded.indexOf(f) >= 0) return true;
+    try {
+        if (!fontSrc) fontSrc = pack.open(path.join(__dirname, 'fonts'));
+        if (fonts.register(f, fontSrc.json(f + '.json'))) { fontsLoaded.push(f); return true; }
+        if (log) log.warn('font ' + f + ': not found');
+    } catch (e) { if (log) log.warn('font ' + f + ': ' + e); }
+    return false;
+}
+/** A look's fonts registered (once each); the look id may carry a variant (vector-amber). Returns the newly registered. */
+function lookFonts(lookId, log) {
+    const want = LOOK_FONTS[String(lookId).split('-')[0]] || [], added = [];
+    want.forEach((f) => { if (fontsLoaded.indexOf(f) < 0 && registerFamily(f, log)) added.push(f); });
+    if (log && added.length) log.info('look fonts: ' + String(lookId).split('-')[0] + ' +' + added.join(' +') + ' (' + fontsLoaded.length + '/' + FAMILIES.length + ' loaded)');
+    return added;
+}
+/** Every look's fonts at once (the bake tools; the app uses lookFonts). */
 function loadFonts(log) {
-    if (fontsLoaded) return fontsLoaded;
-    fontsLoaded = [];
-    const src = pack.open(path.join(__dirname, 'fonts'));
-    FAMILIES.forEach((f) => {
-        try { if (fonts.register(f, src.json(f + '.json'))) fontsLoaded.push(f); } catch (e) { if (log) log.warn('font ' + f + ': ' + e); }
-    });
+    FAMILIES.forEach((f) => registerFamily(f, log));
     if (log) log.info('look fonts: ' + fontsLoaded.length + '/' + FAMILIES.length);
     return fontsLoaded;
 }
+const fontsInUse = () => fontsLoaded.slice();
 
 /* ---------------- values ---------------- */
 /** The gear as shown: 1..9, R, N, P, D, or '-' (as kit gauges.gear). */
@@ -212,7 +240,7 @@ function tempGauge(v, cols, track, k) {
 module.exports = {
     TEMP_ZONES, ZONE_COLS, tempZone, tempPos, tempNum, tempUnit, tempText, zoneAt, zoneMarks, tempGauge,
     modeTone, sessionTap, inkCentred,
-    loadFonts, FAMILIES, gearText, num0, num1, num2, rpmText, clock, lights, LIGHTS, badge, badgeWidth,
+    loadFonts, lookFonts, fontsInUse, LOOK_FONTS, FAMILIES, gearText, num0, num1, num2, rpmText, clock, lights, LIGHTS, badge, badgeWidth,
     pt, tick, needle, slant, chamfer, chamferStroke, halfSquare, RAD, withAlpha, mix, clamp, isNum,
     LIGHT_BLUE, DARK_BLUE, RED, LETTER,
 };

@@ -10,6 +10,7 @@
  *   digital    the G as VFD segments (teal, the look's own), the unlit ones faint, a dot grid, a glow
  *   simracing  shift-light stripes, a white G with a purple "session best" bar, timing underline
  *   lumen      an ice-blue neon-tube G with a bloom over a deep-blue body, glowing stripes
+ *   digital-purple, digital-red (0.14.0)  Digital's in the variant's colours (tints.js)
  * Pixel keeps its pixel-art emblem (px.js, an image), any other look the regular logo (an image).
  * The same looks baked into pictures, logo_<look>.png (tools/bake_gsdash_logos.js, the CPU mirror
  * tools/gsdash_logo_emu.js), are the fallback for a renderer without effect layers or refusing the shader.
@@ -46,7 +47,14 @@ const LOOKS = {
     simracing: { stripes: ['#2fd27a', '#ffc21a', '#ff2a2a'], g: '#f4f6f9', best: '#b45cff', sector: '#2a7dff' },
     lumen: { stripes: ['#7fe3ff', '#2f8bff', '#1b3fd8'], bg0: '#0a1226', deep: '#1b3fd8', blue: '#2f8bff', ice: '#7fe3ff', core: '#e8fbff' },
 };
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen'];
+/* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
+(function () {
+    const TINTS = require('./tints');
+    TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
+}());
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+/** the shader body a look (or variant) is drawn with */
+const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
 /** what the logo is for a look: 'fx' (this shader), 'pixel' (px.js emblem), or 'regular' (lib.js badge) */
 const kindOf = (look) => (look === 'pixel' ? 'pixel' : has(look) ? 'fx' : 'regular');
@@ -147,11 +155,11 @@ function fragment(look) {
         'void main() {',
         '    vec2 p = v_uv * SZ, q = badge(p);',
         '    vec3 c = vec3(0.0);',
-    ], BODY[look](LOOKS[look]), [
+    ], BODY[baseOf(look)](LOOKS[look]), [
         '    gl_FragColor = vec4(c, 1.0);',
         '}',
     ]);
     return L.join('\n') + '\n';
 }
 
-module.exports = { LOGO_W, LOGO_H, H, K, SW, SG, GW, T, MID, G0, BW, BX, BY, OY, STRIPES, GPARTS, SEGS, SEG_CUT, LOOKS, ORDER, kindOf, fragment, PNG_OF, hex };
+module.exports = { LOGO_W, LOGO_H, H, K, SW, SG, GW, T, MID, G0, BW, BX, BY, OY, STRIPES, GPARTS, SEGS, SEG_CUT, LOOKS, ORDER, baseOf, kindOf, fragment, PNG_OF, hex };

@@ -43,7 +43,7 @@ const HOLD_MS = 1000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 
 // 0.13.8: after a release of ours, the next connection no sooner than this (quick release / re-acquire runs only)
 const REACQ_MS = [0, 1000, 2000, 5000, 10000], REACQ_QUICK_MS = 30000;
 const HANDOVER_MS = 3500;   // as fcluster.js: the panel and the HUD share one scene id
-const LOOKS = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel'], DEFAULT_LOOK = 'm';
+const LOOKS = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector'], DEFAULT_LOOK = 'm';
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 
 /** '' (may show) or why not, from main.js's state { on, enabled, look, data, gear, at, redline, shift } */
@@ -166,7 +166,7 @@ class HudShift {
         if (!this.cur || !this.cur.ok) return;
         if (this.now() - this.lastPush >= PUSH_MS) this._uniforms(false);
     }
-    lookId() { const s = this.st || {}; return LOOKS.indexOf(s.look) >= 0 ? s.look : DEFAULT_LOOK; }
+    lookId() { const s = this.st || {}, base = String(s.look).split('-')[0]; return LOOKS.indexOf(base) < 0 ? DEFAULT_LOOK : HC.LOOKS[s.look] ? s.look : base; }   // 0.14.0: a colour variant (look-tint) its own; an unknown one its look's
 
     _connect() {
         const now = this.now();

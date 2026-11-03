@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -61,10 +61,26 @@ const LOOKS = {
         dim: '#16292f', redDim: '#2e0f13', tick: '#4fa8c4', tickRed: '#ff4d5e', gear: '#7fe3ff', gear2: '#2f8bff', pre: '#7fe3ff', pre2: '#2f8bff', glow: [5, 0.9] },
     pixel: { n: 20, slant: 0, gap: 4, inset: 2, pq: 2, base: '#e8e6ff', zones: ['#3ee07a', '#ffd23a', '#ff3a4a'], flash: '#3a8bff',
         dim: '#1c1a34', redDim: '#3a0f18', tick: '#9a98c0', tickRed: '#ff3a4a', gear: '#ffd23a', gear2: '#a8162a', pre: '#78c8ff', pre2: '#a8162a', solid: true },
+    // Vector: many thin segments, little glow; colours from its default variant (tints.js)
+    vector: Object.assign({ n: 48, slant: 0, gap: 2, inset: 5, glow: [1, 0.18] }, require('./tints').VARIANTS.vector[0].c.hud),
 };
+/* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
+   an alpha mask, so the base look's picture serves every variant (no new asset) */
+(function () {
+    const TV = require('./tints').VARIANTS;
+    Object.keys(TV).forEach((look) => TV[look].slice(1).forEach((v) => {
+        const b = LOOKS[look], c = v.c;
+        if (!b || !c.hud) {
+            if (look !== 'digital') return;
+            LOOKS[look + '-' + v.id] = Object.assign({}, b, { base: c.lit, zones: [c.lit, c.amb, c.critHud], flash: c.critHud,
+                dim: c.hudDim, redDim: c.redDim, tick: c.dim, tickRed: c.critHud, gear: c.amb, pre: c.lit });
+        } else LOOKS[look + '-' + v.id] = Object.assign({}, b, c.hud);
+    }));
+}());
+const baseLook = (look) => String(look).split('-')[0];
 const lookOf = (look) => (LOOKS[look] ? look : 'm');
 /** The look's atlas (hud_gear.js meta: file, w, h, sampling, big, pre, num, label) or null */
-function atlasOf(look) { return (ATLAS.looks && LOOKS[look] && ATLAS.looks[look]) || null; }
+function atlasOf(look) { return (ATLAS.looks && LOOKS[look] && ATLAS.looks[baseLook(look)]) || null; }
 /** The tach's top in rpm for a redline: the next 1000 above redline + 500 (5000..10000) */
 function maxRpmOf(redline) {
     const r = Number(redline);
