@@ -156,7 +156,7 @@ module.exports = {
         };
 
         // dot-matrix g, peaks (or the Spotify panel there)
-        if (S.panel !== 'spotify') this.gPart(cv, S, x0, y0, ex, m);
+        if (!S.panel || S.panel === 'g') this.gPart(cv, S, x0, y0, ex, m);
         this.bottom(cv, S, x0, y0, ex);
     },
     gPart(cv, S, x0, y0, ex, m) {

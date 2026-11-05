@@ -210,7 +210,7 @@ module.exports = {
             speed: { x: sx0, y: gy, w: sw, h: unitY + 14 - gy },
             toast: { x: cx, y: unitY + 12 }, chip: { x: gx + gw - 26, y: gy + gh - 24 }, star: { x: cx + uw / 2 + 20, y: unitY - 7 },
         };
-        if (S.panel !== 'spotify') this.gPart(cv, S, t, g);
+        if (!S.panel || S.panel === 'g') this.gPart(cv, S, t, g);
     },
     gPart(cv, S, t, g) {
         const R = this.panelRect(S);

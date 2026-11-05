@@ -197,7 +197,7 @@ module.exports = {
             speed: { x: sx, y: sy + 28, w: swd, h: sh - 28 }, gear: { x: gx, y: sy + 28, w: gw, h: sh - 28 },
             toast: { x: sx + swd / 2, y: sy + sh - 40 }, chip: { x: gx + gw - 26, y: sy + 50 }, star: { x: sx + 140, y: sy + 16 },
         };
-        if (S.panel === 'spotify') return;
+        if (S.panel && S.panel !== 'g') return;
         // right: the reticle and a ruled table of peaks
         const px = g.rx + 10, pw = g.x1 - px, py = g.mid - 6, ph = g.bottom - py - 78;
         label(cv, '05', 'G-FORCE', px, sy + 16);

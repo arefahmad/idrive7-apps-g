@@ -15,12 +15,41 @@ and plays it on the widget. The parts are in the kit, so G's Music or G's TV can
 4. The car downloads it, makes it into frames, and shows it. Tap **Use this GIF** to put it on the widget,
    or **Cancel**. The phone page shows what happened.
 
-On the same page, **Shows** switches between the G logo and your GIF, and **Remove GIF** (tap twice)
+On the same page, **Shows** switches between the G logo and your GIF, and **Remove** (tap twice)
 deletes it. That choice is the logo on the home screen and in the instrument cluster. A GIF keeps
 playing on the widget as before, and in the cluster too, including while the car is moving. The cluster
 gets the same kind of picture update as the Pixel look's animated emblem (at most 12 a second), scaled
 to fit that emblem's on-screen size (432 x 240). A tap on the widget still opens G's Dash. Leaving the
 page while a GIF is on its way cancels it.
+
+## A logo for each driving mode
+
+**Per driving mode** on the Logo page is off by default, and then nothing here changes: one Logo for
+every mode. Turn it on and Comfort, Sport and Sport+ each get a slot. Eco Pro, Eco Pro+, Comfort+,
+Adaptive and Individual appear once the car has reported that mode. Send a GIF into a slot the same
+way as the main Logo (pick the slot, then **Send**). An empty slot plays the main Logo, the G mark
+unless **My GIF** is chosen.
+
+The mode is the badge the Drive screen already shows. It is
+`statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience` on
+`de.bmw.infotainment.drivingexcitement.FES` (the enum `ActualValueModeDrivingExperience2`, by name or
+by number). `kit/runtime/car.js` (`decodeMode`) turns that into `car.data().driveMode`: `COMFORT`,
+`COMFORT+`, `ECO PRO`, `ECO PRO+`, `SPORT`, `SPORT+`, `ADAPTIVE` or `INDIVIDUAL`. No new signal was
+added. Both the home widget and the cluster follow a change: the cluster writes the new pixels into
+the same layer, and a GIF that was already decoded is not decoded again until memory needs the room
+(about two widget GIFs of decoded frames).
+
+**Stage example** (tap twice) puts an original animation on Comfort, Sport and Sport+: a small figure
+whose aura gets stronger, labelled Stage 1, 2 and 3. It is not anyone else's artwork. To do the same
+with your own pictures, send a GIF to each of those three slots yourself.
+
+Drive's right panel (Theme, **Right panel on Drive**) can be the G-meter, Spotify, or this Logo. The
+G-meter stays the default. Logo there is the same picture, contained in that panel, and it keeps
+moving while the car does.
+
+Worth a check on the car: the widget and the cluster both change when you switch Comfort, Sport and
+Sport+; an empty slot shows the main Logo; a GIF you switch away from and back to does not stall; and
+with the right panel set to Logo, the picture fits that column and keeps playing while driving.
 
 Limits: a GIF up to 8 MB and 2048 px on a side, at most 2000 frames. The car keeps at most 60 frames at
 the widget's size (384 x 256). Longer GIFs are thinned in time, so the loop keeps its length and pace

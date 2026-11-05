@@ -158,7 +158,7 @@ module.exports = {
         };
 
         // right: session clock, live g, peaks (or the Spotify panel there)
-        if (S.panel === 'spotify') return;
+        if (S.panel && S.panel !== 'g') return;
         const rx = cx[2], rw = cw[2];
         cell(cv, rx, top, rw, 128, 'SESSION');
         cv.text('TOP ' + (isNum(S.peak.speed) ? Math.round(S.peak.speed) : 0), rx + rw - 14, top + 26, 17, Y, { align: 'right', font: TXT, spacing: 1.5, literal: true });
