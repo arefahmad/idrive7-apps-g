@@ -72,8 +72,7 @@ Updates appear in the Store as well. To remove an app, uninstall it in the Store
 ## What's new
 
 Each release is a commit titled with the app and its version (e.g. "G's Dash 0.14.2: …"); see the
-[commit history](https://github.com/nickgcode/idrive7-apps/commits/main). The full notes are also in
-each app's `app.json` description.
+[commit history](https://github.com/nickgcode/idrive7-apps/commits/main).
 
 ## Repository layout
 
