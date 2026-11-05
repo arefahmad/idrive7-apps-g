@@ -321,6 +321,35 @@ test("the dials and G's Dash's HUD: never hidden for another app's panel / HUD l
     });
 });
 
+/* ----- the hub's Cluster & HUD quick screen ----- */
+test('the quick screen: one tap per pick, and the switch; only the switch while G\'s Dash is off', () => {
+    const HUB = req(DASH, 'hub.js'), REC = req(DASH, 'kit/record.js'), LK = req(DASH, 'look_m.js');
+    assert.strictEqual(HUB.SCREENS[0][0], 'quick'); assert.strictEqual(HUB.HOME, 'drive');
+    const got = [];
+    const model = (on) => ({
+        on, src: 'logo', disp: 'none',
+        srcTiles: CSRC.SOURCES.map((id) => ({ id, name: CSRC.NAMES[id], line: id, ok: true, why: id })),
+        dispTiles: CSRC.DISPLAYS.map((id) => ({ id, name: CSRC.DISPLAY_NAMES[id], line: id })),
+        now: { text: 'x', tone: 'ok' }, hud: { text: 'y', tone: 'off' },
+        down: () => false, tap: (k, fn) => { got.push(k); fn(); },
+        pickSrc: (v) => got.push('src=' + v), pickDisp: (v) => got.push('disp=' + v), toggle: () => got.push('toggle'),
+    });
+    const S = { t: LK.palette, own: true, x: 12, y: 40, w: 1576, h: 674, now: 0 };
+    const cv = new REC.Recorder(1600, 720);
+    HUB.quick(cv, HUB.style(LK, LK.palette), S, model(true));
+    // every pick but the two current ones (logo, none), and the switch
+    assert.deepStrictEqual(cv.targets.map((x) => x.key).sort(), ['qc', 'qd:hud', 'qd:music', 'qd:skin', 'qs:auto', 'qs:map', 'qs:music', 'qs:stock']);
+    cv.targets.forEach((x) => x.run());
+    assert.ok(got.indexOf('src=stock') >= 0 && got.indexOf('disp=music') >= 0 && got.indexOf('toggle') >= 0, got.join(' '));
+    const off = new REC.Recorder(1600, 720);
+    HUB.quick(off, HUB.style(LK, LK.palette), S, model(false));
+    assert.deepStrictEqual(off.targets.map((x) => x.key), ['qc']);
+    // not where the kit does not run the screen (no touch there)
+    const soft = new REC.Recorder(1600, 720);
+    HUB.quick(soft, HUB.style(LK, LK.palette), Object.assign({}, S, { own: false }), model(true));
+    assert.strictEqual(soft.targets.length, 0);
+});
+
 (async () => {
     for (const [name, fn] of tests) {
         n++;

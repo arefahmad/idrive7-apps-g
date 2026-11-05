@@ -2,8 +2,9 @@
 /**
  * G's Dash - a driver display and car hub for the iDrive 7 (MGU) head unit, in seven looks.
  *
- *   - five screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
- *     Showcase (the car, Spotify or a 12-hour clock, the logo) · Drive (the look's dash, below;
+ *   - six screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
+ *     Cluster & HUD (0.17.0: the cluster's centre and dials & HUD picks and the G's Dash on cluster & HUD
+ *     switch, one tap each) · Showcase (the car, Spotify or a 12-hour clock, the logo) · Drive (the look's dash, below;
  *     the screen the app opens on) · Warm-up (oil / coolant, the warm-up rev limit) · G-force (peak hold, hold a finger down to
  *     reset) · Tires (TPMS pressure / temperature). hub.js draws all but Drive. A cold start opens
  *     Warm-up and goes back to Drive by itself once warm (a swipe cancels that).
@@ -1799,6 +1800,33 @@ mgu.run({
                 if (a && cmap.view().can === a.cmd) cmap.request(a.cmd);
             }, 'cm:confirm', u.radius);
         }
+        /**
+         * 0.17.0: the hub's Cluster & HUD screen (hub.js quick()): the two picks of Options > Cluster & HUD and the
+         * G's Dash on cluster & HUD switch, one tap each, with the same words as that page (srcState(), centreNow()).
+         */
+        function quickModel() {
+            const on = gsdOn(), dcur = displays(), c = centreNow(), ms = musicState();
+            const toneOf = (kind) => (kind === 'on' ? 'ok' : kind === 'wait' || kind === 'pending' ? 'wait' : 'off');
+            const hudNow = !on ? { text: "The car's own", tone: 'off' }
+                : fcTest && (dcur === 'skin' || dcur === 'hud') ? { text: 'Paused (full-screen cluster test)', tone: 'wait' }
+                    : dcur === 'skin' ? (function (v) { return { text: v.text, tone: toneOf(v.kind) }; })(cskin.view())
+                        : dcur === 'hud' ? (function (v) { return { text: v.text, tone: toneOf(v.kind) }; })(hud.view())
+                            : dcur === 'music' ? { text: ms.error ? "Open G's Music once" : "G's Music's lyrics while a track plays", tone: ms.error ? 'wait' : 'ok' }
+                                : { text: "The car's own", tone: 'off' };
+            const ok = ['logo', 'music', 'tv', 'waze', 'directions'].indexOf(c.key) >= 0 || (c.key === 'stock' && srcPick() === 'stock');
+            return {
+                on, src: srcPick(), disp: dcur,
+                srcTiles: SRC_TILES.map((r) => { const ss = srcState(r[0]); return { id: r[0], name: CSRC.NAMES[r[0]], line: r[1], ok: ss.ok, why: ss.text }; }),
+                dispTiles: PREFS.DISPLAYS.map((o) => ({ id: o[0], name: o[1], line: o[2] })),
+                now: { text: c.text, tone: ok ? 'ok' : c.key === 'waiting' ? 'wait' : 'off' },
+                hud: hudNow,
+                down: (k) => isDown(k),
+                tap: (k, fn) => { gDown = Date.now(); downKey = k; fn(); },
+                pickSrc: (v) => { settings.set('clusterSource', v); log.info('cluster source: ' + v + ' (quick page)'); say('Cluster: ' + CSRC.NAMES[v]); },
+                pickDisp: (v) => { settings.set('displays', v); log.info('displays: ' + v + ' (quick page)'); say('Dials & HUD: ' + PREFS.displayName(v)); },
+                toggle: () => { const was = gsdOn(); settings.set('clusterControl', was ? 'off' : 'on'); say(was ? "G's Dash off: the car is stock" : "G's Dash on the cluster & HUD"); },
+            };
+        }
         /** The logo's state as a colour (null: none): shown green, waiting amber, an error red. */
         function logoTone(t, kind) {
             return kind === 'on' ? HUB.GREEN : kind === 'wait' ? '#ffb020' : kind === 'error' ? (t.crit || '#ff3b30') : null;
@@ -2171,6 +2199,7 @@ mgu.run({
                 else if (id === 'warmup') HUB.warmup(cv, st, Object.assign({}, S, { redline: WARM_REDLINE, maxRpm: Math.max(7000, S.maxRpm) }), warmModel(S));
                 else if (id === 'gforce') HUB.gforce(cv, st, S, gModel(S));
                 else if (id === 'tires') HUB.tires(cv, st, S, tireModel(S));
+                else if (id === 'quick') HUB.quick(cv, st, S, quickModel());
                 HUB.dots(cv, st, gr, scr, HUB.SCREENS.length, id === 'drive' && !!lk.dotsAbove && S.panel !== 'spotify');
                 if (toastMsg) {
                     const age = Date.now() - toastMsg.at;
