@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -63,7 +63,12 @@ const LOOKS = {
     pixel: Object.assign({ n: 20, slant: 0, gap: 4, inset: 2, pq: 2, solid: true }, require('./tints').VARIANTS.pixel[0].c.hud),
     // Vector: many thin segments, little glow; colours from its default variant (tints.js)
     vector: Object.assign({ n: 48, slant: 0, gap: 2, inset: 5, glow: [1, 0.18] }, require('./tints').VARIANTS.vector[0].c.hud),
+    // Space: round beads with a soft glow, cyan to the shift lights, violet flashes; Vector's glyphs (the same Saira)
+    space: { n: 30, shape: 'bead', beadR: 4.5, base: '#4fe3ff', zones: ['#9b6bff', '#ffb547', '#ff4d6a'], flash: '#ff4d6a', flash2: '#d65cff',
+        dim: '#151a3a', redDim: '#2e0f19', tick: '#5b6aa8', tickRed: '#ff4d6a', gear: '#eef3ff', gear2: '#9b6bff', pre: '#4fe3ff', pre2: '#5b8cff', glow: [4, 0.75] },
 };
+/* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
+const ATLAS_LOOK = { space: 'vector' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {
@@ -80,7 +85,7 @@ const LOOKS = {
 const baseLook = (look) => String(look).split('-')[0];
 const lookOf = (look) => (LOOKS[look] ? look : 'm');
 /** The look's atlas (hud_gear.js meta: file, w, h, sampling, big, pre, num, label) or null */
-function atlasOf(look) { return (ATLAS.looks && LOOKS[look] && ATLAS.looks[baseLook(look)]) || null; }
+function atlasOf(look) { const b = baseLook(look); return (ATLAS.looks && LOOKS[look] && ATLAS.looks[ATLAS_LOOK[b] || b]) || null; }
 /** The tach's top in rpm for a redline: the next 1000 above redline + 500 (5000..10000) */
 function maxRpmOf(redline) {
     const r = Number(redline);

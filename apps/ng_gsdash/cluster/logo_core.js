@@ -11,6 +11,8 @@
  *   simracing  shift-light stripes, a white G with a purple "session best" bar, timing underline
  *   lumen      an ice-blue neon-tube G with a bloom over a deep-blue body, glowing stripes
  *   digital-purple, digital-red (0.14.0)  Digital's in the variant's colours (tints.js)
+ *   space      a nebula-filled G with a glowing cyan rim and its own stars, blue-violet stripes, a tilted
+ *              orbit ring passing behind and in front of the badge with a small planet, a starfield
  * Pixel keeps its pixel-art emblem (px.js, an image), any other look the regular logo (an image).
  * The same looks baked into pictures, logo_<look>.png (tools/bake_gsdash_logos.js, the CPU mirror
  * tools/gsdash_logo_emu.js), are the fallback for a renderer without effect layers or refusing the shader.
@@ -46,13 +48,15 @@ const LOOKS = {
     digital: { lit: '#41f2cf', acc: '#ffa63a' },
     simracing: { stripes: ['#2fd27a', '#ffc21a', '#ff2a2a'], g: '#f4f6f9', best: '#b45cff', sector: '#2a7dff' },
     lumen: { stripes: ['#7fe3ff', '#2f8bff', '#1b3fd8'], bg0: '#0a1226', deep: '#1b3fd8', blue: '#2f8bff', ice: '#7fe3ff', core: '#e8fbff' },
+    space: { stripes: ['#4fe3ff', '#5b8cff', '#9b6bff'], sky0: '#020309', sky1: '#140a2e', neb0: '#1c0f4a', neb1: '#6a2bd0', neb2: '#d65cff',
+        rim: '#a8f2ff', glow: '#4fe3ff', ring: '#7fe9ff', planet: '#e8b86a' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -82,6 +86,12 @@ const COMMON = [
     'float cov(float d) { return clamp(0.5 - d, 0.0, 1.0); }',
     'float soft(float d, float s) { return 1.0 / (1.0 + exp(clamp(1.702 * d / s, -30.0, 30.0))); }',
     'vec3 paint(vec3 c, float a, vec3 k) { return mix(c, k, clamp(a, 0.0, 1.0)); }',
+    '/* a hash without sin (steady on mediump GPUs): 0..1 per cell */',
+    'float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
+    '/* a sky of still stars: one candidate per s px cell, kept with probability k, a soft dot b bright */',
+    'float stars(vec2 p, float s, float k) { vec2 cl = floor(p / s); float h = hash(cl + 7.0); if (h > k) return 0.0;',
+    '    vec2 at = (cl + 0.2 + 0.6 * vec2(hash(cl + 19.0), hash(cl + 41.0))) * s; float b = 0.35 + 0.65 * hash(cl + 3.0);',
+    '    return b * soft(length(p - at) - 0.45, 0.55); }',
 ];
 const gD = () => ['    float g = 100000.0;'].concat(GPARTS.map((b) => '    g = min(g, sdBox(q, ' + v4(b) + '));'));
 const stripes = (S) => STRIPES.map((b, i) => '    c = paint(c, cov(sdBox(q, ' + v4(b) + ')), ' + v3(S.stripes[i]) + ');');
@@ -144,6 +154,45 @@ const BODY = {
             '    c = min(c + ' + v3(S.blue) + ' * 0.9 * b10 + ' + v3(S.ice) + ' * 0.9 * b3, vec3(1.0));',
             '    c = paint(c, tube, ' + v3(S.core) + ');',
         ], L);
+    },
+    space(S) {
+        const cx = LOGO_W / 2, cy = LOGO_H / 2 + 6, rx = 206, ry = 40, tilt = -0.17, ca = Math.cos(tilt), sa = Math.sin(tilt);
+        // the orbit: an ellipse round the badge (distance by its gradient), its back half (y < 0 in its frame) behind the G
+        const ring = [
+            '    vec2 rl = p - vec2(' + f1(cx) + ', ' + f1(cy) + ');',
+            '    rl = vec2(rl.x * ' + f1(ca) + ' + rl.y * ' + f1(sa) + ', -rl.x * ' + f1(sa) + ' + rl.y * ' + f1(ca) + ');',
+            '    float re = length(rl / vec2(' + f1(rx) + ', ' + f1(ry) + '));',
+            '    float rd = (re - 1.0) / max(length(rl / vec2(' + f1(rx * rx) + ', ' + f1(ry * ry) + ')) / max(re, 1e-3), 1e-4);',
+            '    float rline = cov(abs(rd) - 0.9), rbloom = soft(abs(rd) - 0.9, 3.5);',
+            // the small planet on the orbit (front right)
+            '    vec2 pp = vec2(' + f1(cx + 0.72 * rx * ca - 0.69 * ry * sa) + ', ' + f1(cy + 0.72 * rx * sa + 0.69 * ry * ca) + ');',
+            '    float pl = length(p - pp) - 9.0;',
+        ];
+        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.5 * soft(s, 7.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + ' * (0.75 + 0.25 * clamp(1.0 - q.y / BH, 0.0, 1.0))); }');
+        return ring.concat(gD(), [
+            // the sky: a violet glow behind the badge, stars (not where the G is)
+            '    float r0 = length((p - vec2(' + f1(cx) + ', ' + f1(LOGO_H / 2) + ')) / vec2(240.0, 150.0));',
+            '    c = mix(' + v3(S.sky1) + ', ' + v3(S.sky0) + ', clamp(r0, 0.0, 1.0));',
+            '    c += vec3(0.85, 0.9, 1.0) * stars(p, 9.0, 0.22) * (1.0 - cov(g + 3.0));',
+            '    c += vec3(1.0) * stars(p + 3.7, 23.0, 0.35) * 1.4 * (1.0 - cov(g + 3.0));',
+            // the orbit's back half
+            '    float back = step(rl.y, 0.0);',
+            '    c = min(c + ' + v3(S.ring) + ' * (0.55 * rline + 0.25 * rbloom) * back * 0.7, vec3(1.0));',
+            // the G: a nebula inside, its own faint stars, a rim of light and a bloom round it
+            '    float gy = clamp(q.y / BH, 0.0, 1.0), gx = clamp((q.x - ' + f1(G0) + ') / ' + f1(GW) + ', 0.0, 1.0);',
+            '    vec3 neb = mix(' + v3(S.neb0) + ', ' + v3(S.neb1) + ', smoothstep(0.0, 0.8, gy)) + ' + v3(S.neb2) + ' * 0.35 * smoothstep(0.45, 1.0, gx * gy);',
+            '    neb += ' + v3(S.glow) + ' * 0.28 * (1.0 - smoothstep(0.0, 0.55, length(vec2(gx, gy * 1.3))));',
+            '    neb += vec3(1.0) * stars(q, 7.0, 0.30) * 0.9;',
+            '    c = min(c + ' + v3(S.glow) + ' * 0.55 * soft(g, 9.0), vec3(1.0));',
+            '    c = paint(c, cov(g), neb);',
+            '    float rim = clamp(cov(g) - cov(g + 2.2), 0.0, 1.0);',
+            '    c = paint(c, rim, ' + v3(S.rim) + ');',
+        ], SC, [
+            // the orbit's front half over the G, and its planet
+            '    c = min(c + ' + v3(S.ring) + ' * (0.75 * rline + 0.3 * rbloom) * (1.0 - back), vec3(1.0));',
+            '    c = min(c + ' + v3(S.planet) + ' * 0.35 * soft(pl, 6.0), vec3(1.0));',
+            '    c = paint(c, cov(pl), ' + v3(S.planet) + ' * (0.55 + 0.45 * clamp((pp.y - p.y + 6.0) / 14.0, 0.0, 1.0)));',
+        ]);
     },
 };
 
