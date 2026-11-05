@@ -20,6 +20,8 @@ A driver display and car hub for the centre screen.
 - **On the car's other displays** (optional): cluster dials and a HUD in your look, the G's Dash logo
   in the cluster, and a picker for what the cluster's centre map area shows. These need the Cluster
   renderer tool from the Store. A single switch in Options puts the cluster and HUD back to stock.
+  The cluster dials are built only for the instrument cluster's M layout. If your car doesn't use
+  it, you can code it with BimmerCode.
 - **CarPlay map in the cluster** (optional, off by default): needs the Waze on cluster tool from the
   Store and is untested on most firmware. To revert, turn it off and restart the head unit, or remove
   the tool.
