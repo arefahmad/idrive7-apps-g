@@ -139,6 +139,12 @@ function regularImage(Canvas, badge, badgeWidth) {
     for (let i = 3; i < d.length; i += 4) d[i] = 255;
     return { w: LOGO_W, h: LOGO_H, d };
 }
+/** A custom picture (the GIF) centred on the map, at its own size until it would pass 640 x 360. */
+function customPlacement(img) {
+    const maxW = 640, maxH = 360, s = Math.min(1, maxW / img.w, maxH / img.h);
+    const w = Math.max(1, Math.round(img.w * s)), h = Math.max(1, Math.round(img.h * s));
+    return { x: Math.round((MAP_W - w) / 2), y: Math.round((MAP_H - h) / 2), w: w, h: h };
+}
 /** Where an image goes on the map: the logo 1:1, the emblem CELL x, both centred. */
 function placement(kind, img) {
     const s = kind === 'pixel' ? CELL : 1, w = img.w * s, h = img.h * s;
@@ -180,6 +186,7 @@ class ClusterLogo {
         this.T = o.timers || { setInterval, clearInterval };
         this.images = o.images;
         this.want = false; this.pixel = false; this.look = ''; this.guideHides = true; this.exclusive = false;
+        this.picture = null; this._customStill = null; this.customFail = '';
         this.fxBad = {}; this.bakedBad = {};               // looks whose shader / baked picture failed (this run)
         this.gate = new MEM.FreeGate(this.now); this.asked = 0; this.answered = 0; this.lookAt = -1e15; this.wantKey = ''; this.parked = false; this.enabled = true;
         this._reset();
@@ -222,6 +229,11 @@ class ClusterLogo {
         this.look = (s && typeof s.look === 'string') ? s.look : '';
         this.pixel = !!(s && s.pixel) || this.look === 'pixel';
         this.parked = !!(s && s.parked);
+        // Logo > My GIF: the same frames as the home-screen widget. null: the look's own G
+        const pic = s && s.picture;
+        const picId = pic && pic.id || '';
+        if (picId !== (this.picture && this.picture.id || '')) { this._customStill = null; if (picId !== this.customFail) this.customFail = ''; }
+        this.picture = pic || null;
         if (!on) { if (this.want || this.cr) this._off(); this.want = false; return; }
         this.want = true;
         if (!this.cr) this._connect();
@@ -415,8 +427,22 @@ class ClusterLogo {
         this.ref = 0; this.key = ''; this.kind = ''; this.layerState = '';
         this._apply();
     }
-    /** 0.13.1: the layer the look wants: { kind 'fx' | 'baked' | 'regular' | 'pixel', look, key } */
+    /** 0.13.1: the layer the look wants: { kind 'fx' | 'baked' | 'regular' | 'pixel' | 'custom', look, key } */
     _wanted() {
+        if (this.picture && typeof this.picture.frame === 'function' && this.customFail !== (this.picture.id || '')) {
+            const id = 'custom:' + (this.picture.id || 'gif');
+            if (!(this._customStill && this._customStill.d && this.key === id)) {
+                let img = null;
+                try { img = this.picture.frame(true); } catch (e) { img = null; }
+                if (img && img.d && img.w && img.h) this._customStill = img;
+                else {
+                    this.customFail = this.picture.id || '';
+                    this._customStill = null;
+                    this.log.warn('cluster logo: the custom image could not be drawn - the G logo instead');
+                }
+            }
+            if (this._customStill && this.customFail !== (this.picture.id || '')) return { kind: 'custom', look: '', key: id };
+        }
         const look = this.look, k = this.pixel ? 'pixel' : CORE.kindOf(look);
         if (k === 'pixel') return { kind: 'pixel', look: 'pixel', key: 'pixel' };
         if (k === 'fx') {
@@ -469,7 +495,19 @@ class ClusterLogo {
         if (w.kind === 'fx') return this._makeFx(w, vis);
         const kind = w.kind;
         let img = null;
-        if (kind === 'baked') {
+        if (kind === 'custom') {
+            img = this._customStill;
+            if (!img || !img.d) {
+                try { img = this.picture && this.picture.frame(true); } catch (e) { img = null; }
+            }
+            if (!img || !img.d || !img.w || !img.h) {
+                this.customFail = (this.picture && this.picture.id) || '';
+                this._customStill = null;
+                this.log.warn('cluster logo: the custom image could not be drawn - the G logo instead');
+                return this._make(this._wanted(), vis);
+            }
+            this._customStill = img;
+        } else if (kind === 'baked') {
             try { img = this.images.baked(w.look); } catch (e) { img = null; }
             if (img && !img.d && img.data) img = { w: img.w, h: img.h, d: img.data };   // kit/png's decode: { w, h, data }
             if (!img || img.w !== LOGO_W || img.h !== LOGO_H || !img.d || img.d.length !== LOGO_W * LOGO_H * 4) {
@@ -478,14 +516,14 @@ class ClusterLogo {
                 return this._make({ kind: 'regular', look: '', key: 'regular' }, vis);
             }
         } else img = kind === 'pixel' ? this.images.pixel({}) : this.images.regular();
-        const at = placement(kind, img);
+        const at = kind === 'custom' ? customPlacement(img) : placement(kind, img);
         const ref = this.cr.image({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: this.exclusive, contend: true,
             visible: vis, x: at.x, y: at.y, w: at.w, h: at.h, iw: img.w, ih: img.h,
-            sampling: kind === 'pixel' ? 'nearest' : 'bilinear', fps: kind === 'pixel' ? FPS_ANIM : FPS_STILL });
+            sampling: kind === 'pixel' ? 'nearest' : 'bilinear', fps: (kind === 'pixel' || kind === 'custom') ? FPS_ANIM : FPS_STILL });
         if (!ref) { this.log.warn('cluster logo: image layer refused by the client'); return; }
         this._send(ref, img);
         const old = this.ref;
-        this.ref = ref; this.kind = kind; this.key = w.key; this.visible = vis; this.frameKey = 'still'; this.animAt = this.now(); this.madeAt = this.now();
+        this.ref = ref; this.kind = kind; this.key = w.key; this.visible = vis; this.frameKey = kind === 'custom' && img.stamp != null ? String(img.stamp) : 'still'; this.animAt = this.now(); this.madeAt = this.now();
         this.ownSeen = false; this.ownMissing = 0; this.contend = true;
         this.layerState = vis ? 'new' : 'hidden';
         this.stats.layers++;
@@ -514,9 +552,16 @@ class ClusterLogo {
         if (this.cr.pixels(ref, null, img.d) !== false) { this.stats.sends++; this.stats.bytes += img.d.length; }
     }
 
-    /** The Pixel emblem's slide-in and shine: only while parked and shown, else one still image. */
+    /**
+     * Motion only while parked and shown. Pixel: the emblem's slide-in and shine. Custom (My GIF): the GIF's
+     * frames, at most FPS_ANIM. While the car moves, the last frame stays (an image layer keeps its pixels);
+     * a full GIF frame is hundreds of KB, and the cluster logo is not animated while driving.
+     */
+    _motion() {
+        return this.visible && this.want && this.parked && (this.kind === 'pixel' || (this.kind === 'custom' && this.picture && this.picture.animate !== false));
+    }
     _animate() {
-        const run = this.kind === 'pixel' && this.parked && this.visible && this.want;
+        const run = this._motion();
         if (!run) {
             if (this.anim) { this.T.clearInterval(this.anim); this.anim = null; }
             if (this.ref && this.kind === 'pixel' && this.frameKey !== 'still') { this._send(this.ref, this.images.pixel({})); this.frameKey = 'still'; }
@@ -525,6 +570,18 @@ class ClusterLogo {
         if (!this.anim) { this.animAt = this.now(); this.anim = this.T.setInterval(() => this._frame(), ANIM_MS); }
     }
     _frame() {
+        if (this.kind === 'custom') {
+            if (!(this._motion() && this.cr && this.picture)) { this._animate(); return; }
+            let img = null;
+            try { img = this.picture.frame(false); } catch (e) { img = null; }
+            if (!img || !img.d) return;
+            const key = img.stamp != null ? String(img.stamp) : '';
+            if (!key || key === this.frameKey) return;
+            this.frameKey = key;
+            this._customStill = img;
+            this._send(this.ref, img);
+            return;
+        }
         if (!(this.kind === 'pixel' && this.parked && this.visible && this.want && this.cr)) { this._animate(); return; }
         const o = motion(this.now() - this.animAt, this.o.emblemW || 27);
         const key = o ? o.key : 'still';
@@ -573,7 +630,10 @@ class ClusterLogo {
         const T = this.target;
         if ((T.state === 'parked' || T.state === 'waiting') && T.holder === 'stock') return { kind: 'wait', text: 'Taking over the stock map' };
         if (T.state === 'parked' || T.state === 'waiting') return { kind: 'wait', text: 'Map area taken - waiting' };
-        if (T.state === 'shown') return { kind: 'on', text: this.routeKnown() ? 'Shown - not navigating' : 'Shown - route detection unavailable' };
+        if (T.state === 'shown') {
+            if (this.kind === 'custom') return { kind: 'on', text: this.parked ? 'Shown - your GIF' : 'Shown - your GIF, still while moving' };
+            return { kind: 'on', text: this.routeKnown() ? 'Shown - not navigating' : 'Shown - route detection unavailable' };
+        }
         if (T.state === 'unavailable') return { kind: 'error', text: 'Map area unavailable' };
         return { kind: 'wait', text: 'Asking for the map area' };
     }
@@ -598,5 +658,5 @@ function motion(t, ew) {
     return { key: 'h' + shine, opts: { shine } };
 }
 
-module.exports = { ClusterLogo, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, appName, pixelImage, regularImage, placement, motion, cellRaster,
+module.exports = { ClusterLogo, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, appName, pixelImage, regularImage, placement, customPlacement, motion, cellRaster,
     FX_BAD, rawText, TARGET, MAP_W, MAP_H, CELL, LOGO_W, LOGO_H, FPS_STILL, FPS_ANIM, POLL_MS, HOLD_MS, YIELD_MS, FRESH_MS, RECONNECT_MS, ERR_RETRY_MS, NAV_KLASS, NAV_Z, GUIDE_ON_MS, GUIDE_OFF_MS };

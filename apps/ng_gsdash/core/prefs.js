@@ -94,26 +94,22 @@ const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h
 const inRect = (r, x, y) => !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
 /*
- * Showcase background (0.11.0, setting "showcaseBg"): how bright the waves are, 15..100 % (100 the
- * default), darkening the waves only (the car, the clock, the card and the logo stay as they are).
- * Stepped with - / + on Options > Theme (BG_STEPS); anything else saved is clamped, not lost.
+ * Logo (setting "logo"): the G mark, or a GIF sent from the phone. The same choice is the home-screen
+ * widget and the cluster graphic. It was "widget" (Home widget shows). A saved "widget" is copied once
+ * (migrateLogo); the caller deletes the old key. "widget" is not a retiredSetting: the kit would drop it
+ * before this could read it.
  */
-const BG_KEY = 'showcaseBg', BG_MIN = 15, BG_MAX = 100, BG_DEFAULT = 100;
-const BG_STEPS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-function bgLevel(v) {
-    const n = typeof v === 'string' && v.trim() === '' ? NaN : Number(v);
-    if (v === null || v === undefined || !isFinite(n)) return BG_DEFAULT;
-    return Math.max(BG_MIN, Math.min(BG_MAX, Math.round(n)));
-}
-/** One step down (dir -1) or up (+1) from v along BG_STEPS (a value between steps goes to the next one that way); null at the end. */
-function bgStep(v, dir) {
-    const c = bgLevel(v);
-    const to = dir < 0 ? BG_STEPS.filter((s) => s < c).pop() : BG_STEPS.filter((s) => s > c)[0];
-    return to === undefined ? null : to;
+const LOGO_KEY = 'logo', LOGO_OLD = 'widget';
+function migrateLogo(values) {
+    const v = values || {};
+    const has = Object.prototype.hasOwnProperty.call(v, LOGO_OLD);
+    const old = v[LOGO_OLD];
+    const kept = (has && (old === 'gif' || old === 'logo')) ? old : (v[LOGO_KEY] === 'gif' ? 'gif' : 'logo');
+    return { value: kept, migrated: has };
 }
 
 module.exports = {
-    BG_KEY, BG_MIN, BG_MAX, BG_DEFAULT, BG_STEPS, bgLevel, bgStep,
+    LOGO_KEY, LOGO_OLD, migrateLogo,
     DISPLAYS, DISPLAY_IDS, DEFAULT_DISPLAY, OLD_KEYS, validDisplay, displayName, displayFrom, migrateDisplays,
     FAV_KEY, FAV_MIN, TOAST_MS, HINT, parseFavs, serializeFavs, toggleFav, nextFav, favToast,
     TAP_SLOP, stillTap, nearShift, overlaps, inRect,

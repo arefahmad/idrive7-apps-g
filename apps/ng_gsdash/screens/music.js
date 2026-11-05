@@ -1,7 +1,7 @@
 'use strict';
 /**
- * music.js - G's Dash's Spotify panel (Drive's right panel, setting "panel": Spotify, and the
- * Showcase screen's centre): what plays, album art, previous / play-pause / next and a progress bar
+ * music.js - G's Dash's Spotify panel (Drive's right panel, setting "panel": Spotify): what plays,
+ * album art, previous / play-pause / next and a progress bar
  * to tap or drag; and the Spotify page (sign-in with the phone's QR code, sign-out).
  *
  * Reuses G's Music's code as it is (app.json "share": spotify.js, signin.js, signin_config.js,
@@ -12,7 +12,7 @@
  * folder. The phone's relay page remembers the Client ID from the first sign-in, so the second is
  * a scan and an Accept. No Client ID in the code.
  *
- * Polls GET /v1/me/player only while the panel, the Showcase or the Spotify page is on screen, every
+ * Polls GET /v1/me/player only while the panel or the Spotify page is on screen, every
  * 3 s (as G's Music); after a 429 nothing is sent until Spotify's Retry-After has passed (spotify.js).
  * Not signed in, offline or nothing playing: says so, never a made-up track (no demo data).
  * Node 8: no ?., no ??, no object spread.
@@ -133,8 +133,6 @@ class Music {
     say(text, ms) { this.toast = { text: text, until: Date.now() + (ms || 3500) }; }
     every() { return POLL_MS; }
     connected() { return this.status === 'ok' || this.status === 'idle'; }
-    /** Something to show: a track (playing or paused) from a signed-in Spotify. */
-    hasTrack() { return !!this.pb && this.connected(); }
     signedIn() { return this.status === 'ok' || this.status === 'idle' || this.status === 'offline' || this.status === 'error'; }
     /** Sign out: forget G's Dash's own Spotify sign-in (its spotify-auth.json; G's Music keeps its own). */
     signOut() {
@@ -479,38 +477,6 @@ class Music {
     }
 
     /**
-     * The Showcase's now-playing card (0.11.0) in R: frosted, no hard border; the art, SPOTIFY and the
-     * state, title and artist, the seek bar, the controls. White text over any look's waves.
-     */
-    card(cv, S, lk, R) {
-        const t0 = S.t, u = lk.ui, px = lk.id === 'pixel', white = '#ffffff', acc = t0.accent2 || t0.accent;
-        const t = Object.assign({}, t0, { text: white, dim: withAlpha(white, 0.65) });
-        this.band = null; this.ctrl = null; this.seekRect = null;
-        const rad = px ? 0 : Math.max(14, u.radius);
-        if (px) { cv.fillRect(R.x, R.y, R.w, R.h, withAlpha('#05060c', 0.62)); cv.fillRect(R.x, R.y, R.w, 4, withAlpha(white, 0.25)); }
-        else { cv.roundRect(R.x, R.y, R.w, R.h, rad, withAlpha('#000000', 0.42)); cv.strokeRoundRect(R.x, R.y, R.w, R.h, rad, 1, withAlpha(white, 0.08)); }
-        const pb = this.pb, pad = 20, x = R.x + pad, w = R.w - 2 * pad, s = 128, ay = R.y + pad;
-        if (this.artReady) cv.image(ART_ID, x, ay, s, s);
-        else noteGlyph(cv, x + s / 2, ay + s / 2, s * 0.42, withAlpha(white, 0.3));
-        const tx = x + s + 18, tw = x + w - tx;
-        const lo = { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0, literal: true }, up = (q) => (u.upper ? q.toUpperCase() : q);
-        cv.text(up('Spotify'), tx, ay + 16, 15, acc, lo);
-        const stat = this._state(cv, lk, 15, tw - cv.textWidth(up('Spotify'), 15, lo) - 18);
-        if (stat) cv.text(up(stat), x + w, ay + 16, 15, withAlpha(white, 0.6), Object.assign({ align: 'right' }, lo));
-        cv.text(fit(cv, pb.ad ? 'Advertisement' : pb.title || 'Unknown track', 30, tw, { font: 'bold' }), tx, ay + 64, 30, white, { font: 'bold', literal: true });
-        if (pb.artist) cv.text(fit(cv, pb.artist, 21, tw), tx, ay + 96, 21, withAlpha(white, 0.8), { literal: true });
-        const sY = ay + s + 28;
-        this.seek(cv, t, lk, x, sY, w);
-        const cY = sY + 22, cH = Math.max(CTRL_MIN, R.y + R.h - 6 - cY);
-        if (this.toast && Date.now() < this.toast.until) {
-            const ty = ay + s - 34;
-            cv.roundRect(x, ty, w, 34, 17, '#000000e0');
-            cv.text(fit(cv, this.toast.text, 18, w - 28), x + w / 2, ty + 23, 18, white, { align: 'center', literal: true });
-        }
-        this.controls(cv, t, lk, { x: x, y: cY, w: w, h: cH }, { step: 140 });
-    }
-
-    /**
      * The Spotify page (full screen, from Options or the panel's Sign in): the QR code when it's
      * needed, what to do, the state, and the refresh rate. A = { x, y, w, h } below the page's header.
      */
@@ -570,7 +536,7 @@ class Music {
         } else if (st === 'ok' || st === 'idle') {
             say('', this.pb ? (this.pb.title || 'Unknown track') + (this.pb.artist ? ' - ' + this.pb.artist : '') : 'Nothing playing right now', t.text);
             say('', this.pb && this.pb.device ? 'Playing on ' + this.pb.device : 'Start Spotify on your phone or any device.', t.dim, 20);
-            say('', 'The Showcase screen shows it, and Drive with Options > Theme > Right panel: Spotify.', t.dim, 20);
+            say('', 'Drive shows it with Options > Theme > Right panel: Spotify.', t.dim, 20);
         } else if (st === 'offline') {
             say('', 'G\'s Dash talks to Spotify over the internet (mgu-uplink).', t.dim, 20);
             say('1', 'Turn on the phone\'s hotspot or the Wi-Fi uplink in the Store.', t.text, 22);

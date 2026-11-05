@@ -1,12 +1,13 @@
 # Animated home-screen widget
 
-G's Dash 0.15 can play an animated GIF as its home-screen widget. You send the GIF from your phone with a
-QR code; the car prepares it, shows it to you, and plays it on the widget. The parts are in the kit, so
-G's Music or G's TV can use them too (see [Other apps](#other-apps-gs-music-gs-tv)).
+G's Dash can play an animated GIF as its logo: the home-screen widget, and the same picture in the
+instrument cluster. You send the GIF from your phone with a QR code; the car prepares it, shows it to you,
+and plays it on the widget. The parts are in the kit, so G's Music or G's TV can use them too (see
+[Other apps](#other-apps-gs-music-gs-tv)).
 
 ## Using it
 
-1. In G's Dash, tap the **G**, then **Home widget**, then **Send a GIF from your phone**.
+1. In G's Dash, tap the **G**, then **Logo**, then **Send a GIF from your phone**.
 2. Scan the QR code with the phone's camera. Without a camera, open
    `nickgcode.github.io/idrive7-apps/widget` and type the 6-digit code from the car's screen.
 3. Pick an animated GIF and choose **Fill** (no borders, the edges are cut) or **Fit** (the whole GIF,
@@ -15,7 +16,10 @@ G's Music or G's TV can use them too (see [Other apps](#other-apps-gs-music-gs-t
    or **Cancel**. The phone page shows what happened.
 
 On the same page, **Shows** switches between the G logo and your GIF, and **Remove GIF** (tap twice)
-deletes it. A tap on the widget still opens G's Dash. Leaving the page while a GIF is on its way cancels it.
+deletes it. That choice is the logo on the home screen and in the instrument cluster. A GIF keeps
+playing on the widget as before. In the cluster it plays while the car is parked and holds the frame
+it is on while the car moves: a widget frame is about 384 KB, and the cluster logo is not animated
+while driving. A tap on the widget still opens G's Dash. Leaving the page while a GIF is on its way cancels it.
 
 Limits: a GIF up to 8 MB and 2048 px on a side, at most 2000 frames. The car keeps at most 60 frames at
 the widget's size (384 x 256). Longer GIFs are thinned in time, so the loop keeps its length and pace
@@ -34,7 +38,7 @@ page is static and talks to nothing else.
 |---|---|---|
 | Needs | nothing | a stream widget in the Store's renderer (below: not there yet), and G's Dash installed after it |
 | Frame rate | up to 12 fps | the GIF's own rate (the renderer draws at display rate) |
-| Vignette | the stock widget's dark edge and crop (see [The dark edge](#the-dark-edge)) | none |
+| Vignette | none on G's Dash's BasicWidget layout (see [The dark edge](#the-dark-edge)). A Drive Recorder layout still has the edge | none |
 | Cost per frame | one `setValue` of a resource handle made ahead | one small draw message; each frame goes to the GPU once |
 
 **HMI pictures**: every frame is written once as a PNG with its own resource handle. A frame change is one
@@ -44,12 +48,19 @@ HMI skips frames rather than falling behind, and the frame sent is always the on
 **Stream**: the renderer draws the frames into a surface that the HMI itself composites inside the widget.
 If the renderer goes away, playback falls back to HMI pictures until it is back.
 
-The Home widget page shows which way is in use and the measured frame rate.
+The Logo page shows which way is in use and the measured frame rate.
 
 ## The dark edge
 
-The dark edge (vignette) over the widget is drawn by `HmiMain3D` itself. G's Dash's widget uses BMW's Drive
-Recorder layout (`LT_Table_OnlineApps_DriveRecorderWidget`), which a car session (Nov 2026) took apart:
+The dark edge (vignette) over a widget is drawn by `HmiMain3D` itself, from the layout the widget uses.
+G's Dash uses BMW's `LT_Table_BasicWidget` (`common/widget/generated/Spec_MainMenuWidgets.pbw`). Its Big
+picture cell `BackgroundImage_Big` and its Small cell `BackgroundImage_Small` feed a child of type
+`LT_Label_WidgetBackground`: a full-widget picture, no mask, no `shadow_content` pass. The picture G's Dash
+draws (the G mark, or the GIF) is written into both cells. How that layout crops the 384 x 256 picture
+still has to be checked on the car, and the widget has to be removed and added again after installing.
+
+G's Dash used to use BMW's Drive Recorder layout (`LT_Table_OnlineApps_DriveRecorderWidget`). A car session
+(Nov 2026) took that one apart:
 
 - The layout picks `LT_Table_OnlineApps_DriveRecorderWidget_Big` or `_Small` (both in
   `common/widget/generated/Spec_Startmenu.pbw`).
@@ -59,12 +70,14 @@ Recorder layout (`LT_Table_OnlineApps_DriveRecorderWidget`), which a car session
   `background` cell (G's Dash 0.15.2's Backdrop off test) doesn't either.
 - `_Small` has no mask, and no picture either.
 
-Two ways to get rid of it, cheapest first:
+That is why the layout changed. Two ways were open, cheapest first, and G's Dash takes the first:
 
-1. **Another BMW layout** that shows a picture without a mask. Then G's Dash only changes its widget's layout
-   name: no Store change, no risk to the HMI. **G's Dash > Options > Diagnostics > Widgets** reads every widget
-   layout on the unit (`kit/runtime/hmi_widgets.js`, read-only) and lists the ones with a picture, green when
-   it is plain and amber when it is masked, with the cell to write. See [Reading the layouts](#reading-the-layouts).
+1. **Another BMW layout** that shows a picture without a mask. G's Dash's widget layout is
+   `LT_Table_BasicWidget` (above): no Store change, no risk to the HMI. **G's Dash > Options > Diagnostics >
+   Widgets** reads every widget layout on the unit (`kit/runtime/hmi_widgets.js`, read-only) and lists the
+   ones with a picture, green when it is plain and amber when it is masked, with the cell to write. If the
+   app is not allowed to read the HMI folders, the page says so and nothing else happens. See
+   [Reading the layouts](#reading-the-layouts).
 2. **A changed copy of the layout in mgu-render's overlay** (below): a `_Big` without the mask, or a mask type
    without `shadow_content` (that one changes every widget using it). Untested: whether `HmiMain3D` honours a
    second definition of a type that is already defined. The overlay covers `bmw/widget/` only.
@@ -102,7 +115,9 @@ says whether that child is a mask:
 
 - **In G's Dash:** Options > Diagnostics > Widgets > Read the widget layouts. It shows the layouts with a picture
   and saves the full list as `hmi_widgets.txt` in G's Dash's data folder. This works only if an app may read
-  those files; if not, the screen says so.
+  those files. On the car the app user cannot read `/mnt/dataro/dataro1/hmi` or `/mnt/dataro/data/hmi`
+  (`EACCES`). The page then says it can't read the HMI widget folders and stops; it does not crash, and it
+  does not try to change permissions.
 - **Over SSH:** `node hmi_widgets.js` prints the full list; `--template NAME` prints one layout's whole
   definition with its identifiers named; `--hmi FILE` and `--roots DIR,DIR` point it elsewhere.
 
@@ -119,8 +134,8 @@ This repository has the app side only. What the Widgets reading shows decides th
 2. **The marker.** With a new name, the renderer writes it to `/var/opt/mgu-render/current/hmi-templates.json`
    as `{"streamWidget": "<name>"}`. `kit/tools/build.py` (run on the unit when the Store installs an app) uses
    that name only for an app whose `app.json` `startWidget.stream.marker` points there (G's Dash's does);
-   otherwise the stock layout. If the marker later goes (the renderer was removed), the app says on its Home
-   widget page to install it again.
+   otherwise the stock layout. If the marker later goes (the renderer was removed), the app says on its Logo
+   page to install it again.
 3. **The protocol** (mgu-render/1; `kit/runtime/renderd.js` already speaks it, against a mock renderer):
    - **`X_READY`**: its second word lists the modes offered now (bit 0 layer, bit 1 embed). **Bit 2** would offer
      the widget surface. (Its third word, caps, is not the place: caps 32 there means "embed frames drawn
@@ -163,7 +178,7 @@ To add it to an app:
    `draw(inst, playing)` is the app's own picture (and its text cells) for when no animation plays.
    G's Music's album-art widget keeps working this way and only shows the GIF when one is set.
 3. A page that runs `GifDrop` and `ANIM.prepare` and then calls `aw.replace(prepared, { name })`. G's Dash's
-   `widgetPage` in `apps/ng_gsdash/main.js` does this with a preview and Use / Cancel.
+   `widgetPage` in `apps/ng_gsdash/main.js` (Options > Logo) does this with a preview and Use / Cancel.
 
 ## Publishing the phone page
 

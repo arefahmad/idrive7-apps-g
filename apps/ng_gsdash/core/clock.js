@@ -1,13 +1,12 @@
 'use strict';
 /**
- * clock.js - the time of day G's Dash shows (Showcase), always H:MM with a colon, 12-hour with AM / PM.
+ * clock.js - the time of day G's Dash shows, always H:MM with a colon, 12-hour with AM / PM.
  *
  * Where it comes from, the first that has it:
  *   1. the car: a time of day the car sent (feed(), with the UTC offset it is shown in). No car clock
- *      signal is wired in this build: the Diagnostics page lists the head unit's catalog fields named
- *      like a time or date, so one can be picked from what the car really offers.
+ *      signal is wired in this build.
  *   2. the head unit: its system clock (the car keeps it set) in the head unit's own time zone (TZ, else
- *      /etc/localtime: what Node's Date reads).
+ *      /etc/localtime: what Node's Date reads). The full-screen cluster test and Diagnostics use this.
  * A car time older than CAR_STALE_MS (or one that makes no sense) is not used: the head unit's again.
  * The stopwatch-style session clocks (lib.js clock(): m:ss.t) are not time of day and stay as they are.
  *

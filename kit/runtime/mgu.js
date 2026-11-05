@@ -398,6 +398,23 @@ class Widget {
         this._changed('ready');
     }
     _forget(spawnId) { const st = this._img[spawnId]; if (st) st.lastPx = null; }
+    /**
+     * The picture cell for one placed widget. app.json "image" is the big size (Drive Recorder:
+     * BackgroundImage1; BasicWidget: BackgroundImage_Big). "imageSmall" is the small size when that
+     * layout has a picture there (BasicWidget: BackgroundImage_Small). A stream template replaces the
+     * whole layout, so the small cell name would not exist and the big cell is used for every size.
+     */
+    _pictureCell(spawnId) {
+        const spec = this.spec || {}, built = spec.built || {};
+        let big = true;
+        const spawned = this.comp && this.comp.spawnedInstances;
+        if (spawned) {
+            const inst = spawned[spawnId] || spawned[String(spawnId)];
+            if (inst && inst.widgetSize === 1) big = false;
+        }
+        if (!big && spec.imageSmall && !built.stream) return spec.imageSmall;
+        return spec.image || 'BackgroundImage1';
+    }
     /** The layout's fixed cells (app.json startWidget.cells), written once per placed widget. */
     _static(spawnId) {
         const cells = this.spec.cells || {};
@@ -418,7 +435,7 @@ class Widget {
         // an animation frame still on its way (showAsset) lands first: this picture must not be covered by it
         if (st.assetBusy) return st.assetBusy.then(() => this.image(spawnId, img));
         if (st.busy) { st.next = img; return st.busy; }
-        const cell = this.spec.image || 'BackgroundImage1';
+        const cell = this._pictureCell(spawnId);
         const run = async (frame) => {
             if (!this.comp) return;
             const px = Buffer.from(frame.d.buffer, frame.d.byteOffset, frame.d.length);
@@ -478,7 +495,7 @@ class Widget {
         st.lastPx = null;                       // the cell no longer holds image()'s picture: push that one again
         st.assetNext = handle;
         if (st.assetBusy) return st.assetBusy;
-        const cell = this.spec.image || 'BackgroundImage1';
+        const cell = this._pictureCell(spawnId);
         const run = () => {
             const h = st.assetNext;
             st.assetNext = undefined;

@@ -2,11 +2,11 @@
 /**
  * G's Dash - a driver display and car hub for the iDrive 7 (MGU) head unit, in seven looks.
  *
- *   - five screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
- *     Showcase (the car, Spotify or a 12-hour clock, the logo) · Drive (the look's dash, below;
- *     the screen the app opens on) · Warm-up (oil / coolant, the warm-up rev limit) · G-force (peak hold, hold a finger down to
- *     reset) · Tires (TPMS pressure / temperature). hub.js draws all but Drive. A cold start opens
- *     Warm-up and goes back to Drive by itself once warm (a swipe cancels that).
+ *   - four screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
+ *     Drive (the look's dash, below; the screen the app opens on) · Warm-up (oil / coolant, the warm-up
+ *     rev limit) · G-force (peak hold, hold a finger down to reset) · Tires (TPMS pressure / temperature).
+ *     hub.js draws all but Drive. A cold start opens Warm-up and goes back to Drive by itself once warm
+ *     (a swipe cancels that).
  *   - the drive mode badge: FES.statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience
  *     (car.js), shown by every look (Eco Pro, Comfort, Comfort+, Sport, Sport+, Individual)
  *   - shift lights over the last 2000 rpm before your shift point, gear (from the gearbox, or learned
@@ -20,9 +20,8 @@
  *     build): what plays, art, previous / play-pause / next, a bar to tap or drag; its own QR sign-in
  *   - Options > Diagnostics (0.10.0: a plain entry, the 5-tap gesture went): Cluster - the tools'
  *     versions, the logo / skins / HUD state, the renderer's refusals, Waze on cluster's state, Refresh
- *     cluster, the alignment card and Stock redraw, the clock's source; Car data - the drive mode field's
- *     raw values as the car sends them, the TPMS raw values and the car's units, and what the head unit's
- *     catalog says (diag.js, also its time / date fields)
+ *     cluster, the alignment card and Stock redraw, the clock's source; Widgets - the HMI's widget
+ *     layouts (read-only; a permission denial is said on the page); Audio - what the unit offers for sound
  *   - full screen, touch, GPU renderer (app.json "fullscreen": true): the G button opens Options
  *     (0.10.0: Theme, Cluster & HUD, Driving, Spotify, Diagnostics; every Options page has a Dash button
  *     at the top right back to the dash, the sub pages also "< Options"); Theme has the looks as a
@@ -30,11 +29,11 @@
  *     renderer's shared glyph texture) and the right panel. Shift lights always in the Race colours
  *     (0.6.0 took that setting out). The Drive page's bottom bars are oil and coolant (0.9.0 took the
  *     fuel choice out: no reliable fuel signal for now). No demo data.
- *   - a home-screen widget (app.json startWidget): the G logo, large and centred (widget_logo.js), or (0.15.0,
- *     Options > Home widget, setting "widget") an animated GIF sent from the phone with a QR code (kit gif_drop.js,
- *     the phone page web/widget/), made into widget-sized frames on the car (kit anim.js) and played by kit
- *     widget_anim.js: drawn by the Store's renderer inside the widget where the unit has its stream widget
- *     template (docs/animated-widget.md), else through the widget's own picture at up to 12 fps.
+ *   - Logo (Options > Logo, setting "logo", was "widget"): the G mark by default, or a GIF sent from the
+ *     phone with a QR code (kit gif_drop.js, the phone page web/widget/). The same choice is the home-screen
+ *     widget (widget_logo.js, or the GIF played by kit widget_anim.js) and the cluster graphic (the look's
+ *     own G, or that GIF: it plays in the cluster while parked and holds a frame while the car moves).
+ *     The widget uses BMW's BasicWidget layout, whose picture has no mask (docs/animated-widget.md).
  *   - Options > Cluster source (0.8.3, cluster_source.js, setting "clusterSource", default Auto): what the
  *     cluster's centre map area shows - Auto (as before: the logo while G's Dash is open, G's Music over it
  *     while a track plays), Logo (also while G's Dash runs in the background), Music (G's Music's lyrics /
@@ -52,18 +51,11 @@
  *   - favourite looks (0.10.0, prefs.js; saved as "favLooks"): a star on each Theme card; with two or
  *     more, a tap on the gear (0.11.0: the gear only) on Drive switches to the next one (a toast says which). Not on a
  *     swipe or a moving finger, never while the shift lights build or flash. Looks that went drop out.
- *   - Showcase (0.11.0, hub.js): the look's own flowing waves (waves.js, drawn here, no picture files), the car
- *     on a soft floor shadow, a big clock and the date (or, setting "showcase": Spotify while it has a track,
- *     the frosted now-playing card under a smaller clock), the G mark and the logo straight on the waves.
- *     showcase_car.png / showcase_logo.png are shown as they are: pictures.js scales them smoothly, bleeds
- *     their edges (no fringes) and, where the renderer shows RGBA opaque (an upstream one), composites them
- *     over the waves itself (kit Recorder.pictures says which path).
  *   - Spotify's controls (0.11.0, music.js): no boxes; 96-120 px targets 24 px apart or more, a filled
  *     play / pause circle, a soft disc pressed (stepped on Pixel), quiet targets (no kit press flash, a
  *     round controller ring); a 6 px seek bar with its times.
- *   - every clock H:MM with a colon (0.10.0, clock.js): Showcase's 12-hour clock from the head unit's
- *     clock in its own zone (the car keeps it set); a car time once a signal for it is known (Diagnostics
- *     lists the catalog's time / date fields). The session clocks are stopwatches: m:ss.t.
+ *   - every clock H:MM with a colon (0.10.0, clock.js): the head unit's clock in its own zone (the car
+ *     keeps it set). The session clocks are stopwatches: m:ss.t. The full-screen cluster test uses the same clock.
  *   - Dials & HUD (0.10.0, setting "displays", Options > Cluster & HUD): Cluster dials, G's Dash HUD,
  *     0.17.0 G's Music lyrics (on the HUD) or Car's own (the default) - one owner at a time (they share one
  *     scene), shared with G's Music and G's TV (cluster_source.js), Waze's HUD map off while one of ours owns
@@ -101,13 +93,10 @@ const fs = require('fs');
 const path = require('path');
 const record = require('./kit/record');
 const PNG = require('./kit/png');
-const { Waves, W: WAVE_W, base: waveBase } = require('./waves');
-const { Pictures } = require('./pictures');
 const HUB = require('./hub');
 const LOGO = require('./widget_logo');
 const L = require('./lib');
 const Music = require('./music').Music;
-const DIAG = require('./diag');
 const ClusterMap = require('./cluster').ClusterMap;
 const CL = require('./cluster_logo');
 const CSRC = require('./cluster_source');
@@ -150,8 +139,8 @@ const VERSION = (() => {
 const COLD_RPM = 4000, COLD_F = 104, WARM_REDLINE = 6000, OIL_FULL_F = 180, AUTO_MS = 5000;
 const HIST_MS = 20000, HIST_N = 80, ENV_N = 48;                  // G-force: last 20 s, the peak envelope
 const SWIPE_START = 40, SWIPE_GO = 110, HOLD_MS = 700, HOLD_SLOP = 24;
-// record.setImage ids (cards: + look index; wave: Showcase; wprev: the Home widget page's preview)
-const IMG = { car: 0x6701, logo: 0x6702, card: 0x6710, wprev: 0x6720, wave: 0x6740 };
+// record.setImage ids (cards: + look index; wprev: the Logo page's preview)
+const IMG = { card: 0x6710, wprev: 0x6720 };
 const toF = (c) => (L.isNum(c) ? c * 9 / 5 + 32 : c);
 
 // content box: full screen from page y BOX_OWN to the page's bottom (G.pageBottom), else BOX_STD + BOX_H.
@@ -193,6 +182,16 @@ mgu.run({
         // 0.14.0: colour variants (tints.js) - a saved value read as this version knows it (none: every look's default)
         const savedTints = settings.get(TINTS.KEY), tintsNow = TINTS.clean(savedTints);
         if ((savedTints || '') !== tintsNow) { log.info('look colours: "' + (savedTints || '') + '" -> "' + tintsNow + '"'); settings.set(TINTS.KEY, tintsNow); }
+        // Logo was "widget" (Home widget). Copy a saved choice once, then drop the old key (not a retiredSetting:
+        // the kit would have deleted it before this could read it).
+        const lm = PREFS.migrateLogo(settings.values);
+        if (lm.migrated || Object.prototype.hasOwnProperty.call(settings.values, 'widgetBackdrop')) {
+            const from = settings.values.widget;
+            delete settings.values.widget;
+            delete settings.values.widgetBackdrop;
+            if (lm.migrated) log.info('logo: saved home widget "' + from + '" kept as Logo (' + lm.value + ')');
+            settings.set(PREFS.LOGO_KEY, lm.value);
+        }
         // 0.10.0: 0.9.0's "clusterSkin" / "hudShift" become "displays" (Cluster dials / HUD / Neither), once.
         // They are not app.json retiredSettings (the kit would delete them before this could read them).
         const dm = PREFS.migrateDisplays(settings.values);
@@ -324,12 +323,15 @@ mgu.run({
             else log.info('cluster source: ' + sharedPick() + ', dials & HUD ' + sharedDisplays() + ' shared (' + why + (gsdOn() ? '' : ', G\'s Dash off') + ')');
         };
         publishSource('start');
+        /** My GIF for the cluster, or null for the look's own G. Filled in once the widget animation exists. */
+        let logoPicture = function () { return null; };
         /** The logo per the pick: Auto as before (open and clusterLogo on), Logo / Music also in the background, Map / Stock none. */
         const clogoUpdate = (open) => {
             const d = car.data(), src = srcPick(), on = gsdOn();
             clogo.update({ on: on && CSRC.logoWanted(src, open, settings.get('clusterLogo')), enabled: on && (src === 'auto' ? logoOn() : (src === 'logo' || src === 'music')),
                 guideHides: CSRC.guideHides(src), exclusive: CSRC.logoExclusive(src),
                 pixel: look().id === 'pixel', look: skinKey(), parked: L.isNum(d.speed) && d.speed < 1,
+                picture: logoPicture(),
                 idleText: !on ? 'Off - G\'s Dash is off on the cluster' : src === 'auto' ? 'On - while G\'s Dash is open' : 'Off - ' + CSRC.NAMES[src] + ' picked' });
             centreTrack();
         };
@@ -376,7 +378,7 @@ mgu.run({
         settings.onChange((k) => {
             if (k === 'clusterControl') log.info('cluster control: G\'s Dash ' + (gsdOn() ? 'on the cluster & HUD again' : 'off - the cluster and HUD left to the car (everything of ours let go)'));
             if (k === 'clusterSource' || k === 'clusterControl' || k === 'displays') publishSource('change');
-            if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'displays' || k === 'look' || k === TINTS.KEY || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
+            if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'logo' || k === 'displays' || k === 'look' || k === TINTS.KEY || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
         });
         // 0.17.0: Waze on cluster's map switched as the picks say (waze_ctl.js): off on the cluster for Stock, on for
         // Waze, off on the HUD while one of ours owns it; what Waze had put back once nothing needs it, and with
@@ -442,13 +444,11 @@ mgu.run({
         let ask = null;
         const ASK_MS = 20000;
         const panelOn = () => settings.get('panel') === 'spotify';
-        // Showcase shows (0.11.0): Spotify while it has a track (else the clock), or the clock only
-        const showcaseMusic = () => settings.get('showcase') !== 'clock';
         let ownNow = false;
         const musicOnHub = () => {
             const id = HUB.SCREENS[scr][0];
             // G-force (0.11.1) always shows its g readouts on the right, never Spotify
-            return (id === 'showcase' && showcaseMusic()) || (panelOn() && id === 'drive' && !!look().panelRect);
+            return panelOn() && id === 'drive' && !!look().panelRect;
         };
         const music = new Music(ctx, {
             shown: () => visible() && ((page === 0 && musicOnHub()) || page === 2),
@@ -804,11 +804,11 @@ mgu.run({
             chevron(cv, hx + hw - 28, hy + hh / 2, 10, t.dim);
             cv.target(hx, hy, hw, hh, () => press(5, 'opt:theme'), 'opt:theme', u.radius);
             // Cluster & HUD: the source and your look on the car's displays (amber: something needs attention); beside it
-            // (0.15.0) Home widget: what the home-screen widget shows
+            // Logo: the home-screen widget and the cluster graphic
             const cy = hy + hh + 14, ch = bottom - 14 - cy, ew = Math.floor((hw - 14) / 2);
             entry(cv, S, lk, hx, cy, ew, ch, 'opt:cluster', 'cluster', 'Cluster & HUD', gsdOn() ? 'Source ' + CSRC.NAMES[srcPick()] + ' \u00b7 ' + displaysLine() : "G's Dash off: the car is stock", 4,
                 clusterTrouble() ? '#ffb020' : null);
-            entry(cv, S, lk, hx + ew + 14, cy, hw - ew - 14, ch, 'opt:widget', 'widget', 'Home widget', widgetLine(), 8);
+            entry(cv, S, lk, hx + ew + 14, cy, hw - ew - 14, ch, 'opt:widget', 'widget', 'Logo', widgetLine(), 8);
             // right: Driving, Music, Diagnostics
             const rx = x0 + lw + gap, rw = S.x + S.w - rx, eh = 100, eg = 16, dh = 56;
             lbl('Driving', rx, S.y + 20, 18, t.dim);
@@ -824,9 +824,9 @@ mgu.run({
             cv.strokeRoundRect(rx, dy, rw, dh, u.radius, 1, L.withAlpha('#ffffff', 0.10));
             entryIcon(cv, 'diag', rx + 32, dy + dh / 2, t.dim, t.dim);
             lbl('Diagnostics', rx + 62, dy + dh / 2 + 7, Math.round(u.size * 0.85), t.dim);
-            cv.text('Tools, cluster, car data', rx + rw - 48, dy + dh / 2 + 6, 16, L.withAlpha(t.dim, 0.8), { align: 'right', literal: true });
+            cv.text('Tools, cluster, widgets', rx + rw - 48, dy + dh / 2 + 6, 16, L.withAlpha(t.dim, 0.8), { align: 'right', literal: true });
             chevron(cv, rx + rw - 24, dy + dh / 2, 8, t.dim);
-            cv.target(rx, dy, rw, dh, () => { DIAG.reset(); press(3, 'opt:diag'); }, 'opt:diag', u.radius);
+            cv.target(rx, dy, rw, dh, () => { press(3, 'opt:diag'); }, 'opt:diag', u.radius);
         }
         const REFRESHED_MS = 2600;
         /** A plain row that opens a page (a label and a chevron). */
@@ -850,9 +850,9 @@ mgu.run({
          * peaks' reset: tap twice).
          */
         /**
-         * Units (0.13.6, Options > Units): speed, temperature, pressure - each a row of choices in the
-         * Showcase-shows style (the current one lit). Only what G's Dash shows changes: the zones and the
-         * Engine settings stay in °F, the car's values as they come.
+         * Units (0.13.6, Options > Units): speed, temperature, pressure - each a row of choices (the current
+         * one lit). Only what G's Dash shows changes: the zones and the Engine settings stay in °F, the car's
+         * values as they come.
          */
         function unitsPage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent;
@@ -978,17 +978,6 @@ mgu.run({
                 cv.text(fitText(cv, o[2], 17, pw - 112), px + 96, oy + 66, 17, t.dim, { literal: true });
                 cv.target(px, oy, pw, ph, () => settings.set('panel', o[0]), 'panel:' + o[0], u.radius);
             });
-            // Showcase shows (0.11.0): Spotify while it plays (else the clock), or the clock only
-            const ny = top + 2 * ph + g + 22, sh = 56, sw = (pw - g) / 2;
-            lbl('Showcase shows', px, ny + 6, 18, t.dim);
-            [['spotify', 'Spotify when playing', '(else the clock)'], ['clock', 'Clock only', '']].forEach((o, i) => {
-                const ox = px + i * (sw + g), oy = ny + 20, on = (showcaseMusic() ? 'spotify' : 'clock') === o[0];
-                if (on) { cv.roundRect(ox, oy, sw, sh, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, oy, sw, sh, u.radius, 3, acc); } else card(cv, t, ox, oy, sw, sh, false);
-                cv.text(fitText(cv, o[1], 20, sw - 24), ox + 14, oy + (o[2] ? sh / 2 - 2 : sh / 2 + 7), 20, on ? t.text : t.dim, { literal: true });
-                if (o[2]) cv.text(fitText(cv, o[2], 16, sw - 24), ox + 14, oy + sh / 2 + 18, 16, t.dim, { literal: true });
-                cv.target(ox, oy, sw, sh, () => settings.set('showcase', o[0]), 'showcase:' + o[0], u.radius);
-            });
-            showcaseBgRow(cv, S, lk, px, ny + 20 + sh + 14, pw, Math.min(76, S.y + S.h - (ny + 20 + sh + 14) - 26));
             // favourite looks: their own column, and Cluster & HUD at its foot
             const fx = px + pw + 32, fh = 2 * 112 + g, tf = { font: u.txt, spacing: u.upper ? u.spacing * 0.6 : 0, literal: true };
             lbl('Favourite looks', fx, S.y + 20, 18, t.dim);
@@ -1000,35 +989,6 @@ mgu.run({
                 if (l2 && top + 100 + k * 26 < top + fh - 8) cv.text(fitText(cv, l2, 18, fcw - 48), fx + 24, top + 100 + k * 26, 18, k < 2 ? t.text : t.dim, { literal: true });
             });
             linkMini(cv, S, lk, fx, S.y + S.h - 64, fcw, 64, 'th:cluster', 'Cluster & HUD', () => { ask = null; press(4, 'th:cluster'); });
-        }
-
-        /**
-         * Showcase background (0.11.0, prefs.js BG_*): the waves' brightness, 100 % down to 15 %, with - and +
-         * (each the row's height, 76 page px wide) and between them a live preview: the current look's
-         * waves as darkened on Showcase, the percent over them. Darkens the waves only.
-         */
-        function showcaseBgRow(cv, S, lk, x, y, w, h) {
-            const t = S.t, u = lk.ui, acc = t.sel || t.accent, v = PREFS.bgLevel(settings.get(PREFS.BG_KEY)), bw = 76;
-            cv.text(valueText(u, 'Showcase background'), x, y + 12, 18, t.dim, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0, literal: true });
-            const ry = y + 22, pvx = x + bw + 10, pvw = w - 2 * (bw + 10);
-            // the preview: the same picture Showcase draws (drawn on here if it isn't there yet), the same darkening
-            const WH = S.y + S.h + 6, ready = SC.waves.step(lk.tintKey || lk.id, Math.round(WAVE_W * WH / 1600), 20);
-            if (ready) cv.image(IMG.wave, pvx, ry, pvw, h); else cv.fillRect(pvx, ry, pvw, h, waveBase(lk.tintKey || lk.id));
-            if (v < 100) cv.fillRect(pvx, ry, pvw, h, L.withAlpha('#000000', 1 - v / 100));
-            cv.strokeRoundRect(pvx, ry, pvw, h, 6, 1, L.withAlpha('#ffffff', 0.18));
-            // the level: a thin bar along the preview's foot, the percent in the middle
-            cv.fillRect(pvx + 10, ry + h - 10, pvw - 20, 4, L.withAlpha('#ffffff', 0.18));
-            cv.fillRect(pvx + 10, ry + h - 10, Math.round((pvw - 20) * v / 100), 4, acc);
-            cv.text(v + ' %', pvx + pvw / 2, ry + h / 2 + 6, 22, '#ffffff', { align: 'center', font: u.num, literal: true });
-            [[-1, x], [1, x + w - bw]].forEach((b) => {
-                const to = PREFS.bgStep(v, b[0]), k2 = 'bg:' + (b[0] < 0 ? '-' : '+'), bx = b[1], cx = bx + bw / 2, cy = ry + h / 2;
-                const down = isDown(k2);
-                cardOf(lk)(cv, t, bx, ry, bw, h, down);
-                const c = to !== null ? t.text : L.withAlpha(t.dim, 0.4);
-                cv.line(cx - 12, cy, cx + 12, cy, 3, c);
-                if (b[0] > 0) cv.line(cx, cy - 12, cx, cy + 12, 3, c);
-                if (to !== null) cv.target(bx, ry, bw, h, () => { gDown = Date.now(); downKey = k2; settings.set(PREFS.BG_KEY, to); }, k2, u.radius);
-            });
         }
 
         /*
@@ -1122,7 +1082,7 @@ mgu.run({
             const d = new Date(at), n = new Date(), hm = clock.fmt ? clock.fmt(d) : (d.getHours() % 12 || 12) + ':' + ('0' + d.getMinutes()).slice(-2) + (d.getHours() < 12 ? ' AM' : ' PM');
             return d.toDateString() === n.toDateString() ? hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
         };
-        let diagView = 'cluster';           // Diagnostics: 'cluster', 'car', 'widgets' or 'audio'
+        let diagView = 'cluster';           // Diagnostics: 'cluster', 'widgets' or 'audio'
         /*
          * Diagnostics > Audio (0.16.2): what the unit offers an app for sound (kit/runtime/audio_probe.js, read-only:
          * files only), for G's TV's sound: the generic media players BMW's app manager names for apps, the
@@ -1148,35 +1108,41 @@ mgu.run({
         const hwRun = () => {
             if (hw.running) return;
             hw.running = true; hw.progress = 'Starting...'; hw.r = null;
-            HMIW.scan({ onProgress: (s2) => { hw.progress = s2; } }).then((r) => {
-                hw.running = false; hw.r = r;
-                try { fs.writeFileSync(path.join(ctx.dataDir, 'hmi_widgets.txt'), HMIW.text(r)); } catch (e) { log.warn('hmi widgets: report not saved (' + e.message + ')'); }
-                if (!r.ok) { log.warn('hmi widgets: ' + r.error); return; }
-                const plain = r.layouts.filter((l) => l.verdict === 'plain');
-                log.info('hmi widgets: ' + r.ids + ' identifiers, ' + r.files + ' files, ' + r.layouts.length + ' widget layouts in ' + r.ms + ' ms; a picture without a mask: ' +
-                    (plain.map((l) => l.name + ' (' + Object.keys(l.cells).join(', ') + ')').join('; ') || 'none'));
+            let p;
+            try { p = HMIW.scan({ onProgress: (s2) => { hw.progress = s2; } }); } catch (e) { p = Promise.reject(e); }
+            Promise.resolve(p).then((r) => {
+                hw.running = false;
+                hw.r = r && r.layouts ? r : { ok: false, error: (r && r.error) || 'No report.', layouts: [], denied: (r && r.denied) || [], files: 0, ms: (r && r.ms) || 0 };
+                try { fs.writeFileSync(path.join(ctx.dataDir, 'hmi_widgets.txt'), HMIW.text(hw.r)); } catch (e) { log.warn('hmi widgets: report not saved (' + e.message + ')'); }
+                if (!hw.r.ok) { log.warn('hmi widgets: ' + hw.r.error + (hw.r.denied && hw.r.denied.length ? ' [' + hw.r.denied.join('; ') + ']' : '')); return; }
+                const plain = hw.r.layouts.filter((l) => l.verdict === 'plain');
+                log.info('hmi widgets: ' + hw.r.ids + ' identifiers, ' + hw.r.files + ' files, ' + hw.r.layouts.length + ' widget layouts in ' + hw.r.ms + ' ms; a picture without a mask: ' +
+                    (plain.map((l) => l.name + ' (' + Object.keys(l.cells || {}).join(', ') + ')').join('; ') || 'none'));
+            }, (e) => {
+                hw.running = false;
+                hw.r = { ok: false, error: "Couldn't read the widget layouts (" + (e && e.message || e) + ').', layouts: [], denied: [], files: 0, ms: 0 };
+                log.warn('hmi widgets: ' + hw.r.error);
             });
         };
         /**
-         * Diagnostics (Options > Diagnostics). Two views, picked at the top. Cluster: the tools and their
-         * versions, what the logo / skins / HUD are doing and the renderer's whole refusals, Waze on cluster's
-         * state, Refresh cluster, the clock's source; parked, the alignment card and the Stock redraw. Car
-         * data: per drive mode field what the car last sent (raw), TPMS raw, and the head unit's catalog
-         * (diag.js). Car data only: no demo, no guesses; a field that sent nothing says so.
+         * Diagnostics (Options > Diagnostics). Cluster, Widgets or Audio, picked at the top. Cluster: the tools
+         * and their versions, what the logo / skins / HUD are doing and the renderer's whole refusals, Waze on
+         * cluster's state, Refresh cluster, the clock's source; parked, the alignment card and the Stock redraw.
          */
         function diagPage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), acc = t.sel || t.accent;
             header(cv, S, lk, lbl, cardOf(lk), 'Diagnostics', 1);
             // the view switch, in the header row after the title
             const sx0 = S.x + 210 + 32 + cv.textWidth(u.upper ? 'DIAGNOSTICS' : 'Diagnostics', 30, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0, literal: true }) + 40;
-            [['cluster', 'Cluster'], ['car', 'Car data'], ['widgets', 'Widgets'], ['audio', 'Audio']].forEach((v, i) => {
-                const bw = 146, bx = sx0 + i * (bw + 8), on = diagView === v[0];
+            if (diagView !== 'cluster' && diagView !== 'widgets' && diagView !== 'audio') diagView = 'cluster';
+            [['cluster', 'Cluster'], ['widgets', 'Widgets'], ['audio', 'Audio']].forEach((v, i) => {
+                const bw = 160, bx = sx0 + i * (bw + 8), on = diagView === v[0];
                 if (on) { cv.roundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, 2, acc); }
                 else cv.roundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, L.withAlpha('#ffffff', 0.06));
                 lbl(v[1], bx + bw / 2, HEAD_Y + HEAD_H / 2 + 8, u.size, on ? t.text : t.dim, { align: 'center' });
                 if (!on) cv.target(bx, HEAD_Y, bw, HEAD_H, () => { diagView = v[0]; }, 'dv:' + v[0], u.radius);
             });
-            if (diagView === 'car') carDiag(cv, S, lk); else if (diagView === 'widgets') widgetsDiag(cv, S, lk); else if (diagView === 'audio') audioDiag(cv, S, lk); else clusterDiag(cv, S, lk);
+            if (diagView === 'widgets') widgetsDiag(cv, S, lk); else if (diagView === 'audio') audioDiag(cv, S, lk); else clusterDiag(cv, S, lk);
         }
         /**
          * Diagnostics > Widgets: left, what this reads and the Read button; right, the widget layouts that show a
@@ -1228,9 +1194,10 @@ mgu.run({
                 'with the dark edge (a mask) or plain.'].forEach((l2) => { put(S.x + 16, y, lw - 32, l2, t.dim, 17); y += 25; });
             y += 8;
             if (hw.running) put(S.x + 16, y, lw - 32, hw.progress, t.accent2 || t.accent);
-            else if (r && !r.ok) wrapLines(cv, 'Could not read it: ' + r.error, 17, lw - 32, 4).forEach((l2) => { put(S.x + 16, y, lw - 32, l2, '#ffb020', 17); y += 24; });
+            else if (r && !r.ok) wrapLines(cv, r.error || 'Could not read the widget layouts.', 17, lw - 32, 6).forEach((l2) => { put(S.x + 16, y, lw - 32, l2, '#ffb020', 17); y += 24; });
             else if (r) {
                 put(S.x + 16, y, lw - 32, r.layouts.length + ' layouts, ' + r.files + ' files, ' + (r.ms / 1000).toFixed(1) + ' s', t.text, 18); y += 26;
+                if (r.denied && r.denied.length) { put(S.x + 16, y, lw - 32, 'Some folders could not be read', '#ffb020', 16); y += 24; }
                 put(S.x + 16, y, lw - 32, 'Full list: hmi_widgets.txt in the data folder', t.dim, 16);
             } else put(S.x + 16, y, lw - 32, 'Takes a few seconds. Parked is best.', t.dim, 17);
             const bh = 64, by = top + S.h - bh - 16;
@@ -1242,13 +1209,13 @@ mgu.run({
             diagBox(cv, rx, top, rw, S.h);
             y = top + 32;
             cv.text('Layouts with a picture', rx + 16, y, 21, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 32;
-            if (!r || !r.ok) { put(rx + 16, y, rw - 32, r ? 'Nothing read.' : 'Tap Read the widget layouts.', t.dim); return; }
-            const shown = r.layouts.filter((l) => l.verdict !== 'none'), rows = Math.floor((top + S.h - 16 - y) / LH);
+            if (!r || !r.ok) { put(rx + 16, y, rw - 32, r ? 'Nothing to list.' : 'Tap Read the widget layouts.', t.dim); return; }
+            const shown = (r.layouts || []).filter((l) => l.verdict !== 'none'), rows = Math.floor((top + S.h - 16 - y) / LH);
             if (!shown.length) { put(rx + 16, y, rw - 32, 'No widget layout shows a picture an app can write.', t.dim); return; }
             shown.slice(0, shown.length > rows ? rows - 1 : rows).forEach((l) => {
                 const plain = l.verdict === 'plain';
                 cv.circle(rx + 24, y - 7, 7, plain ? HUB.GREEN : '#ffb020');
-                const cells = Object.keys(l.cells).filter((c) => !plain || l.cells[c].some((e) => !e.mask)).join(', ');
+                const cells = Object.keys(l.cells || {}).filter((c) => !plain || (l.cells[c] || []).some((e) => !e.mask)).join(', ');
                 put(rx + 40, y, rw - 56, l.name.replace(/^LT_(Table|Label)_/, '') + '   ' + (plain ? 'plain' : 'mask') + ' \u00b7 cell ' + cells, t.text, 18);
                 y += LH;
             });
@@ -1291,8 +1258,7 @@ mgu.run({
             put(x + 14, y, w - 28, clogo.routeLine(), t.dim, 16); y += LH + 8;
             head('Clock', x + 14, y); y += 28;
             put(x + 14, y, w - 28, clock.line(), t.text); y += LH;
-            put(x + 14, y, w - 28, 'No car clock signal wired: the head unit\'s clock', t.dim, 16); y += 22;
-            put(x + 14, y, w - 28, 'Catalog time / date fields: Car data view', t.dim, 16);
+            put(x + 14, y, w - 28, 'The head unit\'s clock (no car clock signal wired)', t.dim, 16);
             // 2. Waze on cluster, Refresh cluster
             x = S.x + colW + 16; y = top + 30;
             diagBox(cv, x, top, w, S.h);
@@ -1379,95 +1345,6 @@ mgu.run({
                 if (on || parked) cv.target(bx, by2, bw2, bh2, () => { skinMode = on ? 'skin' : b[0]; log.info('cluster skin mode: ' + skinMode); }, 'sk:' + b[0], u.radius);
             });
             if (skinMode !== 'skin') put(x + 14, by2 - 66, w - 28, 'Cluster: ' + cskin.view().text, t.dim, 15);
-        }
-        function carDiag(cv, S, lk) {
-            const t = S.t;
-            const dg = car.driveModeDiag(), cat = DIAG.catalog(log), now = Date.now();
-            const mono = { font: 'num', literal: true }, F = 20, LH = 27;
-            const colW = (S.w - 2 * 16) / 3, top = S.y;
-            const box = (x, w) => { cv.roundRect(x, top, w, S.h, 8, L.withAlpha('#000000', 0.55)); cv.strokeRoundRect(x, top, w, S.h, 8, 1, L.withAlpha('#ffffff', 0.16)); };
-            const put = (x, y, w, s, c, size) => cv.text(fitText(cv, s, size || F, w), x, y, size || F, c || t.text, { literal: true });
-            const sub = dg.sub ? (dg.sub.error ? 'error: ' + dg.sub.error : dg.sub.available ? 'subscribed, available' : 'subscribed, not available') : 'not subscribed (yet)';
-            // two columns: the fields
-            Object.keys(dg.fields).forEach((f, i) => {
-                const x = S.x + i * (colW + 16), w = colW, d = dg.fields[f];
-                box(x, w);
-                let y = top + 30;
-                cv.text(f, x + 14, y, 19, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 26;
-                if (!d) {
-                    put(x + 14, y, w - 28, 'nothing received yet', t.dim); y += LH;
-                    put(x + 14, y, w - 28, 'FES ' + sub, t.dim);
-                    return;
-                }
-                const age = Math.round((now - d.at) / 1000);
-                put(x + 14, y, w - 28, 'decoded: ' + (d.mode || '(none)') + (d.from ? '  from .' + d.from : '') + (d.conflict ? '  (members disagree: not shown)' : ''), t.text, 19); y += LH + 4;
-                put(x + 14, y, w - 28, 'updates: ' + d.count + '   last: ' + age + ' s ago', t.dim); y += LH + 6;
-                cv.fillRect(x + 14, y - 12, w - 28, 1, L.withAlpha('#ffffff', 0.14));
-                const rows = Math.floor((top + S.h - 10 - y) / LH);
-                const mem = d.members || [];
-                mem.slice(0, mem.length > rows ? rows - 1 : rows).forEach((m) => {
-                    const val = typeof m[1] === 'string' ? '"' + m[1] + '"' : String(m[1]);
-                    cv.text(fitText(cv, m[0] + ' = ' + val, F, w - 28, mono), x + 14, y, F, t.text, mono); y += LH;
-                });
-                if (mem.length > rows) put(x + 14, y, w - 28, '+ ' + (mem.length - rows + 1) + ' more (in the log)', t.dim);
-            });
-            // second column: TPMS as received (raw), the car's units, and what Tires shows from them
-            {
-                const x = S.x + (colW + 16), w = colW, td = car.tyreDiag(), u2 = td.units || {};
-                box(x, w);
-                let y = top + 30;
-                cv.text('TPMS (raw)', x + 14, y, 19, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 26;
-                const tsub = td.sub ? (td.sub.error ? 'error: ' + td.sub.error : td.sub.available ? 'subscribed, available' : 'subscribed, not available') : 'not subscribed (yet)';
-                put(x + 14, y, w - 28, 'TPMS ' + tsub, t.dim); y += LH;
-                put(x + 14, y, w - 28, 'units: pressure ' + (u2.press || '?') + ', temp ' + (u2.temp || '?') + (u2.psiSeen ? ' (pressure unit guessed)' : ''), t.dim); y += LH;
-                put(x + 14, y, w - 28, td.at ? 'last: ' + Math.round((now - td.at) / 1000) + ' s ago (polled every 10 s)' : 'nothing received yet', t.dim); y += LH + 6;
-                cv.fillRect(x + 14, y - 12, w - 28, 1, L.withAlpha('#ffffff', 0.14));
-                const raw = td.raw || {};
-                Object.keys(raw).forEach((k) => {
-                    if (y > top + S.h - 14) return;
-                    const v = raw[k];
-                    cv.text(fitText(cv, k + ' = ' + (v === undefined ? '-' : JSON.stringify(v)), F, w - 28, mono), x + 14, y, F, t.text, mono); y += LH;
-                });
-                const ty = car.data().tyres;
-                if (ty && y <= top + S.h - 14) {
-                    const sh = ['FLH', 'FRH', 'RLH', 'RRH'].map((p2) => p2 + ' ' + (L.isNum(ty.p[p2]) ? ty.p[p2].toFixed(1) + ' psi' : '--') + ' / ' + (L.isNum(ty.t[p2]) ? Math.round(ty.t[p2]) + '°F' : '--')).join('  ');
-                    put(x + 14, y + 4, w - 28, 'shown: ' + sh, t.dim, 15);
-                }
-            }
-            // third column: overall, subscription, catalog
-            const x = S.x + 2 * (colW + 16), w = colW;
-            box(x, w);
-            let y = top + 30;
-            cv.text('Drive mode (overall)', x + 14, y, 19, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 26;
-            put(x + 14, y, w - 28, 'shown: ' + (dg.mode || '(none: no single mode read)'), t.text, 19); y += LH + 2;
-            put(x + 14, y, w - 28, 'FES: ' + sub, t.dim); y += LH + 2;
-            put(x + 14, y, w - 28, 'Car data only. No demo, no estimates.', t.dim); y += LH + 12;
-            cv.text('Catalog', x + 14, y, 19, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 24;
-            put(x + 14, y, w - 28, DIAG.CATALOG, t.dim, 15); y += LH;
-            if (cat.status === 'reading') put(x + 14, y, w - 28, 'reading...', t.dim);
-            else if (cat.status === 'error') { put(x + 14, y, w - 28, "couldn't read it: " + cat.error, t.warn || t.crit); }
-            else {
-                // long lines (an enum's values) wrap after a comma, indented
-                const out = cat.wrapped && cat.wrapW === w ? cat.wrapped : [];
-                if (out !== cat.wrapped) cat.lines.forEach((l) => {
-                    const o = l[0] === 'row' ? mono : { literal: true };
-                    let rest = l[1], first = true;
-                    while (rest) {
-                        let cut = rest.length;
-                        while (cut > 0 && cv.textWidth(rest.slice(0, cut), 17, o) > w - 28) { const c = rest.lastIndexOf(', ', cut - 1); cut = c > 0 ? c + 1 : 0; }
-                        if (cut <= 0) cut = rest.length;            // no comma to break at: cut short below
-                        out.push([l[0], (first ? '' : '      ') + rest.slice(0, cut).replace(/^ +/, first ? rest.match(/^ */)[0] : '')]);
-                        rest = rest.slice(cut).replace(/^ +/, ''); first = false;
-                    }
-                });
-                cat.wrapped = out; cat.wrapW = w;
-                const rows = Math.floor((top + S.h - 30 - y) / 22);
-                out.slice(0, rows).forEach((l) => {
-                    cv.text(fitText(cv, l[1], 17, w - 28, l[0] === 'row' ? mono : {}), x + 14, y, 17, l[0] === 'head' ? t.text : l[0] === 'warn' ? (t.warn || t.crit) : t.dim, l[0] === 'row' ? { font: 'num', literal: true } : { literal: true });
-                    y += 22;
-                });
-                if (out.length > rows) put(x + 14, y - 2, w - 28, '+ ' + (out.length - rows) + ' more lines', t.dim, 15);
-            }
         }
         // the Cluster & HUD page's five picks of the cluster's centre (0.8.3, cluster_source.js); 0.13.9: each
         // line says what the pick puts there, in plain words (srcState() swaps in why, when it cannot now)
@@ -1644,7 +1521,7 @@ mgu.run({
                 waze: v.kind !== 'none' && v.kind !== 'checking' ? { value: v.value, on: v.on, can: v.can, tone: vt } : null,
                 down: (k) => isDown(k),
                 ask: (cmd) => { ask = { cmd, at: Date.now() }; },
-                diag: () => { gDown = Date.now(); downKey = 'cs:diag'; DIAG.reset(); press(3, 'cs:diag'); },
+                diag: () => { gDown = Date.now(); downKey = 'cs:diag'; press(3, 'cs:diag'); },
             });
             if (!ask) return;
             // the confirmation, over the page: only its two buttons take taps
@@ -1713,17 +1590,6 @@ mgu.run({
             return s.slice(0, lo) + '...';
         }
 
-        // the Showcase pictures (app root PNGs, copied next to main.js by the build, never changed): decoded
-        // once; pictures.js prepares their pixels for the size and the renderer path they show on (0.11.0)
-        const src = { car: null, logo: null };
-        [['car', 'showcase_car.png'], ['logo', 'showcase_logo.png']].forEach((p) => {
-            try { src[p[0]] = PNG.decode(fs.readFileSync(path.join(__dirname, p[1]))); } catch (e) { log.warn('showcase picture ' + p[1] + ': ' + e.message); }
-        });
-        const SC = {
-            src, ids: IMG, waveW: WAVE_W, base: waveBase, music: true,
-            waves: new Waves((w, h, d) => { record.setImage(IMG.wave, w, h, d); }),
-            pics: new Pictures((id, w, h, d) => { record.setImage(id, w, h, d); }),
-        };
         let gRectNow = null;
         /**
          * Drive's favourite looks (0.10.0): the gear (the look's S.zones.gear) takes a tap (favTap), after the
@@ -1750,49 +1616,47 @@ mgu.run({
             cv.text(a, x + 34, y + h / 2 + 9, 24, '#ffffff', f);
             if (b) cv.text(b, x + 34 + aw + 24, y + h / 2 + 7, 17, '#c8ced8', { literal: true });
         }
-        log.info(clock.line() + ' (Showcase, 12-hour H:MM)');
+        log.info(clock.line() + ' (12-hour H:MM)');
 
-        /* ---------- home-screen widget (app.json startWidget) ----------
-         * The G logo, large and centred, or (0.15.0, setting "widget" My GIF) an animation sent from the phone, played
-         * by kit/runtime/widget_anim.js: drawn by the Store's renderer inside the widget where this build has the
-         * stream widget template (docs/animated-widget.md), else through the layout's own picture at up to 12 fps.
-         * The logo (widget_logo.js, drawn by tools/make_g_icon.py at the big widget's picture size, transparent so
-         * the HMI's own widget tile shows through) goes into the layout's image cell; with no animation (or the
-         * logo picked) it is pushed when a widget is placed, shown or resized and again only every few seconds
-         * (unchanged pixels are skipped). Every text line and the progress bar stay empty (startWidget.cells). The
-         * small widget does not show pictures on this firmware (upstream's eDrive finding: images pushed, nothing
-         * on screen), so the layout's title carries the name there; on the big one it is empty. */
+        /* ---------- Logo: the home-screen widget and the cluster graphic (app.json startWidget, setting "logo") ----------
+         * The G mark (widget_logo.js), or My GIF, on both. The widget layout is LT_Table_BasicWidget: the picture
+         * goes to BackgroundImage_Big and, on the small size, BackgroundImage_Small (no mask). Text cells stay empty.
+         * The GIF is played by kit/runtime/widget_anim.js. In the cluster the same GIF is an image layer: its frames
+         * advance while the car is parked, and the last frame is held while it moves. */
         const logo = new Canvas(LOGO.w, LOGO.h);
         logo.d.set(zlib.inflateSync(Buffer.from(LOGO.rgba, 'base64')));
-        const wtitle = {};
-        function renderWidget(inst) {
-            if (inst) {
-                const title = inst.big ? '' : "G's Dash";
-                if (wtitle[inst.spawnId] !== title) { wtitle[inst.spawnId] = title; ctx.widget.set(inst.spawnId, 'Title', title, 'Text'); }
-            }
-            return logo;
-        }
+        function renderWidget() { return logo; }
         const WSIZE = (ctx.spec.startWidget && ctx.spec.startWidget.size) || [384, 256];
-        const gifOn = () => settings.get('widget') === 'gif';
+        const gifOn = () => settings.get(PREFS.LOGO_KEY) === 'gif';
         const aw = new AnimatedWidget(ctx, { file: path.join(ctx.dataDir, 'widget_anim.bin'), draw: renderWidget, enabled: gifOn() });
-        if (ctx.widget) {
-            aw.start();
-            ctx.widget.onChange((why) => { if (why === 'resized' || why === 'placed' || why === 'shown') Object.keys(wtitle).forEach((k) => delete wtitle[k]); });
-        }
-        settings.onChange((k) => { if (k === 'widget') aw.enable(gifOn()); });
-        /*
-         * 0.15.2, a test: the Drive Recorder layout's 'background' cell (app.json startWidget.cells, always written true
-         * so far). Whether it is what draws the dark edge over the widget's picture is not known yet, so Home widget
-         * can switch it off to look ("widgetBackdrop", kept outside the settings list as the favourites are). Written
-         * to every placed widget at once, and again after the kit writes the layout's cells (placed, shown, resized).
-         */
-        const backdropOn = () => settings.get('widgetBackdrop') !== 'off';
-        const applyBackdrop = () => { if (ctx.widget) ctx.widget.instances().forEach((i) => ctx.widget.set(i.spawnId, 'background', backdropOn(), 'Bool')); };
-        if (ctx.widget) ctx.widget.onChange((why) => { if (why === 'placed' || why === 'shown' || why === 'resized' || why === 'ready') applyBackdrop(); });
-        settings.onChange((k) => { if (k === 'widgetBackdrop') { log.info('home widget: backdrop cell ' + (backdropOn() ? 'on' : 'off') + ' (test)'); applyBackdrop(); } });
+        if (ctx.widget) aw.start();
+        settings.onChange((k) => { if (k === PREFS.LOGO_KEY) aw.enable(gifOn()); });
+        let gifPic = null;
+        logoPicture = function () {
+            if (!gifOn() || !aw.has()) { gifPic = null; return null; }
+            const id = 'gif:' + aw.gen;
+            if (!gifPic || gifPic.id !== id) {
+                let last = null;
+                const frames = aw.status().frames;
+                gifPic = {
+                    id: id,
+                    animate: frames > 1,
+                    frame: function (still) {
+                        const f = aw.frame(still ? 0 : Date.now());
+                        if (!f || !f.rgba) return null;
+                        const stamp = f.gen + ':' + (still ? '0' : f.index);
+                        if (last && last.stamp === stamp) return last;
+                        const src = f.rgba;
+                        last = { w: f.w, h: f.h, d: Buffer.from(src.buffer, src.byteOffset, src.byteLength), stamp: stamp };
+                        return last;
+                    },
+                };
+            }
+            return gifPic;
+        };
 
         /*
-         * Options > Home widget > Send a GIF (0.15.0): a QR code and a 6-digit code (kit gif_drop.js) for the phone
+         * Options > Logo > Send a GIF (0.15.0): a QR code and a 6-digit code (kit gif_drop.js) for the phone
          * page (app.json config widgetRelay); the phone sends the GIF end-to-end encrypted through the mailbox, it is
          * made into the widget's frames here (kit anim.js, a few seconds, the screen keeps drawing) and shown on
          * this page; only Use this GIF keeps it (in the data folder) and puts it on the widget. The phone hears
@@ -1847,7 +1711,7 @@ mgu.run({
                 return;
             }
             drop.ack({ t: 'done', ok: true });
-            if (!gifOn()) settings.set('widget', 'gif');
+            if (!gifOn()) settings.set(PREFS.LOGO_KEY, 'gif');
             wgReset();
         };
         /** The Options entry's line. */
@@ -1904,13 +1768,13 @@ mgu.run({
             cv.target(x, y, w, h, () => { gDown = Date.now(); downKey = key; fn(); }, key, u.radius);
         }
         /**
-         * Home widget (Options, 0.15.0). Left: the widget as the home screen shows it (the QR code while the phone is
-         * awaited). Right: what it shows (the G logo or My GIF), how the GIF plays, and Send a GIF / Remove; or the
-         * steps of sending one, its preparation, and Use this GIF / Cancel.
+         * Logo (Options). Left: the widget as the home screen shows it (the QR code while the phone is
+         * awaited). Right: the G logo or My GIF, how the GIF plays, and Send a GIF / Remove; or the
+         * steps of sending one, its preparation, and Use this GIF / Cancel. The same choice is the cluster graphic.
          */
         function widgetPage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, now = Date.now();
-            header(cv, S, lk, lbl, card, 'Home widget', 1);
+            header(cv, S, lk, lbl, card, 'Logo', 1);
             wgTick();
             const top = S.y + 34, bottom = S.y + S.h, pw = 576, ph = Math.round(pw * WSIZE[1] / WSIZE[0]);
             const waiting = wg.mode === 'qr' && drop.active() && !!drop.s;
@@ -1940,7 +1804,7 @@ mgu.run({
                     if (on) { cv.roundRect(ox, top, half, 84, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, top, half, 84, u.radius, 3, acc); } else card(cv, t, ox, top, half, 84, isDown('wg:' + o[0]));
                     cv.text(o[1], ox + 20, top + 38, 24, on ? t.text : can ? t.dim : L.withAlpha(t.dim, 0.5), { literal: true });
                     cv.text(fitText(cv, o[2], 16, half - 40), ox + 20, top + 64, 16, t.dim, { literal: true });
-                    if (can && !on) cv.target(ox, top, half, 84, () => { gDown = Date.now(); downKey = 'wg:' + o[0]; settings.set('widget', o[0]); }, 'wg:' + o[0], u.radius);
+                    if (can && !on) cv.target(ox, top, half, 84, () => { gDown = Date.now(); downKey = 'wg:' + o[0]; settings.set(PREFS.LOGO_KEY, o[0]); }, 'wg:' + o[0], u.radius);
                 });
                 y = top + 84 + 44;
                 if (has) {
@@ -1953,17 +1817,7 @@ mgu.run({
                         y += 33;
                     }
                 }
-                // 0.15.2: the backdrop test (the layout's 'background' cell, widgetBackdrop above)
-                y += 2;
-                cv.text('Dark edge test', rx, y + 33, 19, t.text, { literal: true });
-                [['on', 'Backdrop on'], ['off', 'Backdrop off']].forEach((o, i) => {
-                    const bw2 = 190, ox = rx + 190 + i * (bw2 + 12), on = (backdropOn() ? 'on' : 'off') === o[0], k = 'wg:bd:' + o[0];
-                    if (on) { cv.roundRect(ox, y, bw2, 52, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, y, bw2, 52, u.radius, 2.5, acc); } else card(cv, t, ox, y, bw2, 52, isDown(k));
-                    cv.text(o[1], ox + bw2 / 2, y + 33, 19, on ? t.text : t.dim, { align: 'center', literal: true });
-                    if (!on) cv.target(ox, y, bw2, 52, () => { gDown = Date.now(); downKey = k; settings.set('widgetBackdrop', o[0]); }, k, u.radius);
-                });
-                y += 52 + 30;
-                line(backdropOn() ? 'Turn the backdrop off and look at the widget: if the dark edge goes, leave it off.' : 'Backdrop off. If the picture went with the dark edge, turn it back on.', 16, t.dim);
+                line('The same picture is the home-screen widget and the cluster logo. A GIF plays in the cluster while parked, and holds its frame while the car moves.', 16, t.dim);
                 if (st.templateGone) line('Install G\'s Dash again in the Store: the widget was made for the renderer\'s stream template, now gone.', 17, '#ffb020');
                 else if (st.template !== 'stream') line('Smooth playback at the GIF\'s own rate needs the Store renderer\'s widget support.', 16, t.dim);
                 if (!drop.configured()) line('Send a GIF is not set up (app.json config widgetRelay).', 17, '#ffb020');
@@ -1972,7 +1826,7 @@ mgu.run({
                 if (has) {
                     const armed = now - wg.removeAt < 5000;
                     wButton(cv, S, lk, 'wg:remove', rx + half + gap, by, half, bh, armed ? 'Tap again to remove' : 'Remove GIF', false, () => {
-                        if (Date.now() - wg.removeAt < 5000) { wg.removeAt = 0; aw.remove(); settings.set('widget', 'logo'); } else wg.removeAt = Date.now();
+                        if (Date.now() - wg.removeAt < 5000) { wg.removeAt = 0; aw.remove(); settings.set(PREFS.LOGO_KEY, 'logo'); } else wg.removeAt = Date.now();
                     });
                 }
             } else if (wg.mode === 'qr') {
@@ -2068,8 +1922,7 @@ mgu.run({
                     lk.draw(cv, S);
                     if (S.panel === 'spotify') music.panel(cv, S, lk, lk.panelRect(S), HUB.dotsBox(gr, HUB.SCREENS.length));
                     if (cv.own) favDrive(cv, S, lk);
-                } else if (id === 'showcase') { SC.music = showcaseMusic(); SC.dim = PREFS.bgLevel(settings.get(PREFS.BG_KEY)); HUB.showcase(cv, st, S, music, lk, gr, SC, clock.now(S.now)); }
-                else if (id === 'warmup') HUB.warmup(cv, st, Object.assign({}, S, { redline: WARM_REDLINE, maxRpm: Math.max(7000, S.maxRpm) }), warmModel(S));
+                } else if (id === 'warmup') HUB.warmup(cv, st, Object.assign({}, S, { redline: WARM_REDLINE, maxRpm: Math.max(7000, S.maxRpm) }), warmModel(S));
                 else if (id === 'gforce') HUB.gforce(cv, st, S, gModel(S));
                 else if (id === 'tires') HUB.tires(cv, st, S, tireModel(S));
                 HUB.dots(cv, st, gr, scr, HUB.SCREENS.length, id === 'drive' && !!lk.dotsAbove && S.panel !== 'spotify');

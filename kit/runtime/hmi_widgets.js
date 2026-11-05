@@ -216,6 +216,17 @@ function children(raw, nm) {
     });
 }
 
+/**
+ * Why a read found no widget files. Permission denied is said in one sentence (the app user cannot read
+ * the HMI folders on the car; nothing here changes that). denied entries look like "path (EACCES)".
+ */
+function readFailure(denied, roots) {
+    const list = denied || [];
+    const perm = list.filter((d) => /\(EACCES\)|\(EPERM\)|EACCES|EPERM/.test(d));
+    if (perm.length) return "G's Dash can't read the HMI widget folders (permission denied). Nothing was changed. The layouts can't be listed from the app.";
+    return 'no widget files readable under ' + (roots || []).join(' or ') + (list.length ? ' (' + list.slice(0, 3).join(', ') + ')' : '');
+}
+
 /** The *.pbw files under root (depth-limited), and the folders it could not read. */
 function pbwFiles(root, out, denied) {
     const walk = (d, depth) => {
@@ -269,6 +280,20 @@ async function scan(opts) {
     const say = (s) => { if (o.onProgress) { try { o.onProgress(s); } catch (e) { /* the caller's */ } } };
     const r = { ok: false, error: '', hmi: o.hmi, ids: 0, files: 0, denied: [], definitions: 0, layouts: [], ms: 0 };
     try {
+        // the car refuses these folders (EACCES) before any file is read: say so and stop, without opening
+        // HmiMain3D or walking further. A root that does not exist is the same stop, with the plain reason.
+        const readable = [];
+        (o.roots || []).forEach((root) => {
+            let code = '';
+            try { fs.readdirSync(root); } catch (e) { code = e.code || 'ERR'; }
+            if (code) r.denied.push(root + ' (' + code + ')'); else readable.push(root);
+        });
+        if (!readable.length) {
+            r.error = readFailure(r.denied, o.roots);
+            r.ms = Date.now() - t0;
+            return r;
+        }
+        o.roots = readable;
         say('Reading ' + o.hmi + '...');
         const ids = await identifiers(o.hmi, o.yieldMs), nm = new Namer(ids);
         r.ids = ids.size;
@@ -276,7 +301,7 @@ async function scan(opts) {
         const files = [];
         o.roots.forEach((root) => pbwFiles(root, files, r.denied));
         r.files = files.length;
-        if (!files.length) throw new Error('no widget files readable under ' + o.roots.join(' or ') + (r.denied.length ? ' (denied: ' + r.denied.slice(0, 3).join(', ') + ')' : ''));
+        if (!files.length) throw new Error(readFailure(r.denied, o.roots));
         const defs = new Map();
         let tick = Date.now();
         for (const file of files) {
@@ -298,7 +323,11 @@ async function scan(opts) {
         r.layouts.sort((a, b) => rank[a.verdict] - rank[b.verdict] || a.name.localeCompare(b.name));
         r.ok = true;
         r._defs = defs; r._nm = nm;
-    } catch (e) { r.error = e.message; }
+    } catch (e) {
+        const code = e && (e.code || '');
+        const perm = code === 'EACCES' || code === 'EPERM' || /EACCES|EPERM/.test(String(e && e.message || e));
+        r.error = perm ? readFailure(r.denied.concat([(e.where || e.message || 'HMI') + ' (' + (code || 'EACCES') + ')']), o.roots) : (e && e.message || String(e));
+    }
     r.ms = Date.now() - t0;
     return r;
 }
@@ -343,4 +372,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { scan, text, identifiers, fields, definitions, children, pictures, tree, Namer, DEFAULTS };
+module.exports = { scan, text, readFailure, identifiers, fields, definitions, children, pictures, tree, Namer, DEFAULTS };

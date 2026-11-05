@@ -556,6 +556,7 @@ def build(app_id, language='en'):
     if spec.get('startWidget'):
         # the template this build's widget uses (the app draws there only through the stream with "stream": true)
         layout, stream = start_widget_layout(spec['startWidget'])
+        # image / imageSmall stay on the spec: the cells mgu.js writes at run time (big, and small when the layout has one)
         rt_spec['startWidget'] = dict(spec['startWidget'], built={'layout': layout, 'stream': stream})
     json.dump(rt_spec, open(os.path.join(src, 'javascript', 'kit', 'app-spec.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
     locale = {'language': language, 'strings': load_locale(language)}
