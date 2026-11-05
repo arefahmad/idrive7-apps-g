@@ -66,15 +66,14 @@
  * Never throws into the player, never blocks. Node 8: no ?., ?? or object spread.
  */
 const fs = require('fs');
-const path = require('path');
+// the tool's client, found as G's Dash and G's Music find it (trusted, loadClient: also exported from here)
+const CR = require('./kit/cluster_render');
+const { SOCK, exists, trusted } = CR;
 
-const CLIENT = process.env.NG_CR_CLIENT || '/var/opt/cluster-render/current/cluster_render_client.js';
-const SOCK = process.env.NG_CR_SOCK || '/dev/shm/cluster-render/render.sock';
 // the tool's own settings for this unit (README "Configure"): read for hud_take_over_stock, never written
 const LOCAL_CONF = '/var/opt/cluster-render/cluster-render.local.conf';
 const ASK_MS = 3000;                      // while the HUD waits for the panel: the service's status at most this often
 const APP_NAMES = { ng_gsdash: "G's Dash cluster skins", ng_music: "G's Music", ng_tv: "G's TV" };
-const TESTING = !!(process.env.NG_CR_CLIENT || process.env.NG_CR_SOCK);
 
 const TARGET = 'map';                     // the cluster's map area (the default target)
 const MAP_W = 1088, MAP_H = 480;          // the map target's size
@@ -174,40 +173,15 @@ function fpsForBudget(cap, max) {
 
 /* ----- the client ----- */
 
-/** A root-owned file nobody else may write, in a directory with the same properties. */
-function trusted(file) {
-    try {
-        const real = fs.realpathSync(file);
-        const st = fs.statSync(real), dir = fs.statSync(path.dirname(real));
-        return st.isFile() && st.uid === 0 && !(st.mode & 0o022) && dir.uid === 0 && !(dir.mode & 0o022);
-    } catch (e) { return false; }
-}
+/** loadClient()'s reasons in G's TV's own words (its status line has the room) */
+const CLIENT_TEXTS = {
+    noclient: 'Cluster renderer client missing - update the Cluster renderer tool',
+    missing: 'Cluster renderer not installed - get "Cluster renderer" in the Store',
+    untrusted: 'Cluster renderer client not trusted (not owned by root)',
+};
 
-const exists = (p) => { try { fs.statSync(p); return true; } catch (e) { return false; } };
-
-/**
- * The tool's client, or { error, text } why not:
- *   missing: neither the client nor the socket (the tool isn't installed)
- *   noclient: the socket but no client file (an old or broken install)
- *   untrusted: not a root-owned file only root can write
- *   load: it threw or isn't the expected module
- */
-function loadClient(opts) {
-    const o = opts || {};
-    const file = o.client || CLIENT, sock = o.sock || SOCK, testing = o.testing !== undefined ? o.testing : TESTING;
-    if (!exists(file)) {
-        return exists(sock) ? { error: 'noclient', text: 'Cluster renderer client missing - update the Cluster renderer tool' }
-            : { error: 'missing', text: 'Cluster renderer not installed - get "Cluster renderer" in the Store' };
-    }
-    if (!testing && !trusted(file)) return { error: 'untrusted', text: 'Cluster renderer client not trusted (not owned by root)' };
-    try {
-        const m = require(file);
-        if (!m || typeof m.ClusterRender !== 'function') return { error: 'load', text: 'Cluster renderer client not recognised' };
-        return { ClusterRender: m.ClusterRender, sock: o.sock || process.env.NG_CR_SOCK || m.DEFAULT_PATH || SOCK };
-    } catch (e) {
-        return { error: 'load', text: 'Cluster renderer client failed to load', detail: e.message };
-    }
-}
+/** The tool's client, or { error, text } why not: missing, noclient, untrusted, load (kit/cluster_render.js). */
+function loadClient(opts) { return CR.loadClient(opts, CLIENT_TEXTS); }
 
 class ClusterOut {
     /** opts: log, app ('ng_tv'), client / sock / testing (tests), now() */

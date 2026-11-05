@@ -28,13 +28,9 @@
  *
  * Node 8: no optional chaining, no ??, no object spread.
  */
-const fs = require('fs');
-const path = require('path');
 const VIZ = require('./viz');
-
-const CLIENT = process.env.NG_CR_CLIENT || '/var/opt/cluster-render/current/cluster_render_client.js';
-const SOCK = process.env.NG_CR_SOCK || '/dev/shm/cluster-render/render.sock';
-const TESTING = !!(process.env.NG_CR_CLIENT || process.env.NG_CR_SOCK);
+// the tool's client and its status text, read as G's Dash and G's TV read them (also exported from here)
+const { loadClient, trusted, mapLayers, ownLayers, drawing, guideValue } = require('./kit/cluster_render');
 
 const TARGET = 'map', MAP_W = 1088, MAP_H = 480;
 const KLASS = 'content', Z_TEXT = 60, Z_BARS = 61;
@@ -53,97 +49,13 @@ const BARS_SHOW_W = Math.round(BARS_W * BARS_SC * SCALE), BARS_SHOW_H = Math.rou
 const BARS_X = Math.round((MAP_W - BARS_SHOW_W) / 2), BARS_Y = Math.round(MAP_H / 2 + (185 - MAP_H / 2) * SCALE);   // 233, 200
 const BARS_COLS = 13;                                // dirty-rect column groups (3 bars each; the client merges at 16)
 const BAND = 16;                                     // rows per dirty-rect band of the text image
-const POLL_MS = 1000, HOLD_MS = 3000, FRESH_MS = 2000, LOAD_RETRY_MS = 30000, RECONNECT_MS = 8000;
+const POLL_MS = 1000, HOLD_MS = 3000, LOAD_RETRY_MS = 30000, RECONNECT_MS = 8000;
 const GUIDE_ON_MS = 1000, GUIDE_OFF_MS = 3000;
 const ERR_RETRY_MS = 5000, ERR_RETRIES = 3;
 const FREE_MS = 150;                                 // 0.7.1: a layer remade no sooner after its drop (the renderer lets go at its next draw)
 const PAUSE_DROP_MS = 30000;
 const PROGRESS_MS = 3000;                            // the progress line is redrawn no more often
 const LEAD_MS = 250;                                 // a lyric line a moment early, as on the screen
-
-/* ----- the client (as G's Dash's cluster_logo.js) ----- */
-
-function trusted(file) {
-    try {
-        const real = fs.realpathSync(file);
-        const st = fs.statSync(real), dir = fs.statSync(path.dirname(real));
-        return st.isFile() && st.uid === 0 && !(st.mode & 0o022) && dir.uid === 0 && !(dir.mode & 0o022);
-    } catch (e) { return false; }
-}
-const exists = (p) => { try { fs.statSync(p); return true; } catch (e) { return false; } };
-
-function loadClient(opts) {
-    const o = opts || {};
-    const file = o.client || CLIENT, sock = o.sock || SOCK, testing = o.testing !== undefined ? o.testing : TESTING;
-    if (!exists(file)) {
-        return exists(sock) ? { error: 'noclient', text: 'Cluster renderer client missing - update the tool' }
-            : { error: 'missing', text: 'Cluster renderer not installed (Store)' };
-    }
-    if (!testing && !trusted(file)) return { error: 'untrusted', text: 'Cluster renderer client not trusted' };
-    try {
-        const m = require(file);
-        if (!m || typeof m.ClusterRender !== 'function') return { error: 'load', text: 'Cluster renderer client not recognised' };
-        return { ClusterRender: m.ClusterRender, sock: o.sock || process.env.NG_CR_SOCK || m.DEFAULT_PATH || SOCK };
-    } catch (e) {
-        return { error: 'load', text: 'Cluster renderer client failed to load', detail: e.message };
-    }
-}
-
-/* ----- the map's other layers, from the status text ----- */
-
-/** Other apps' layers on the map: [{ id, kind, app, klass, z, state, frames }]. */
-function mapLayers(text, ownApp) {
-    const out = [];
-    let last = null;
-    String(text || '').split('\n').forEach((line) => {
-        if (last && /^\s/.test(line)) {
-            const f = /^\s+(\d+) (sent|writes)\b/.exec(line);
-            if (f) last.frames = +f[1];
-            return;
-        }
-        last = null;
-        const m = /^layer (\d+) (\w+) of (\S+) on (\w+), (\w+) z (-?\d+): (\w+)/.exec(line);
-        if (!m || m[4] !== TARGET || m[3] === ownApp) return;
-        last = { id: +m[1], kind: m[2], app: m[3], klass: m[5], z: +m[6], state: m[7], frames: -1 };
-        out.push(last);
-    });
-    return out;
-}
-/** Our own layers on the map in the status text: [{ id, state }]. */
-function ownLayers(text, ownApp) {
-    const out = [];
-    String(text || '').split('\n').forEach((line) => {
-        const m = /^layer (\d+) \w+ of (\S+) on (\w+), \w+ z -?\d+: (\w+)/.exec(line);
-        if (m && m[3] === TARGET && m[2] === ownApp) out.push({ id: +m[1], state: m[4] });
-    });
-    return out;
-}
-/** Whether a listed layer is really drawing (shown, or waiting with frames still moving). */
-function drawing(l, seen, now) {
-    const key = l.app + '#' + l.id, was = seen[key];
-    let at = was ? was.at : -1e15;
-    if (l.frames > 0 && (!was || l.frames !== was.frames)) at = now;
-    seen[key] = { frames: l.frames, at };
-    if (l.state === 'shown') return !(l.kind === 'video' && l.frames === 0);
-    if (l.state === 'waiting' || l.state === 'suspended') return now - at < FRESH_MS;
-    return false;
-}
-/** A guidance signal's value: true (guiding), false, null (not understood). nav: guidingState 2 / ACTIVE. */
-function guideValue(src, v) {
-    if (v && typeof v === 'object') {
-        const k = Object.keys(v).find((x) => typeof v[x] === 'number' || typeof v[x] === 'boolean' || typeof v[x] === 'string');
-        return k === undefined ? null : guideValue(src, v[k]);
-    }
-    if (src === 'nav') {
-        if (typeof v === 'number') return v === 2;
-        if (typeof v === 'string') return /^(\d+|[A-Z_]+)$/i.test(v) ? (v === '2' || /^active$/i.test(v)) : null;
-        return null;
-    }
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'number') return v !== 0;
-    if (typeof v === 'string') return /^(true|1)$/i.test(v) ? true : /^(false|0)$/i.test(v) ? false : null;
-    return null;
-}
 
 /* ----- colours ----- */
 
