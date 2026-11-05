@@ -1750,27 +1750,30 @@ mgu.run({
             // your look on the car's displays: one of three
             const rx = x0 + LW + 32, rw = S.x + S.w - rx, dcur = displays();
             lbl('Dials & HUD', rx, S.y + 20, 18, t.dim);
-            const oh = 68, og = 8;                              // 0.17.0: four picks (G's Music's lyrics on the HUD)
+            // 0.17.1: four picks in whatever room the page has above Diagnostics (on the car's 520 px page: no descriptions)
+            const R = PREFS.displayRows(top, bottom - 64, PREFS.DISPLAYS.length), oh = R.oh, og = R.og;
             PREFS.DISPLAYS.forEach((o, i) => {
                 const oy = top + i * (oh + og), on = ctlOn && dcur === o[0];     // G's Dash off: no pick lit (kept for On)
                 if (on) { cv.roundRect(rx, oy, rw, oh, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(rx, oy, rw, oh, u.radius, 2.5, acc); }
                 else card(cv, t, rx, oy, rw, oh, isDown('disp:' + o[0]));
                 cv.arc(rx + 30, oy + oh / 2, 11, 13, 0, 360, on ? acc : t.dim);
                 if (on) cv.circle(rx + 30, oy + oh / 2, 6, acc);
-                cv.text(fitText(cv, valueText(u, o[1]), u.size + 2, rw - 70, tf), rx + 58, oy + 30, u.size + 2, on ? t.text : t.dim, tf);
-                cv.text(fitText(cv, ctlOn ? o[2] : "Off: G's Dash is off", 16, rw - 70), rx + 58, oy + 54, 16, ctlOn ? t.dim : '#ffb020', { literal: true });
+                if (R.roomy) {
+                    cv.text(fitText(cv, valueText(u, o[1]), u.size + 2, rw - 70, tf), rx + 58, oy + oh / 2 - 4, u.size + 2, on ? t.text : t.dim, tf);
+                    cv.text(fitText(cv, ctlOn ? o[2] : "Off: G's Dash is off", 16, rw - 70), rx + 58, oy + oh / 2 + 20, 16, ctlOn ? t.dim : '#ffb020', { literal: true });
+                } else cv.text(fitText(cv, valueText(u, o[1]), u.size + 2, rw - 70, tf), rx + 58, oy + oh / 2 + 8, u.size + 2, on ? t.text : ctlOn ? t.dim : L.withAlpha(t.dim, 0.6), tf);
                 if (!on && ctlOn) cv.target(rx, oy, rw, oh, () => { gDown = Date.now(); downKey = 'disp:' + o[0]; settings.set('displays', o[0]); log.info('displays: ' + o[0]); }, 'disp:' + o[0], u.radius);
             });
             const ms = musicState();
             const st = !ctlOn ? { kind: 'off', text: "The car's own dials and HUD" } : fcTest && (dcur === 'skin' || dcur === 'hud') ? { kind: 'pending', text: 'Paused (full-screen cluster test)' }
                 : dcur === 'skin' ? cskin.view() : dcur === 'hud' ? hud.view()
                     : dcur === 'music' ? (ms.error ? { kind: 'wait', text: "Open G's Music once" } : { kind: 'info', text: "G's Music: lyrics on the HUD while a track plays" }) : null;
-            const dy = top + PREFS.DISPLAYS.length * (oh + og) + 18;
+            const dy = R.dy;
             if (st) { cv.circle(rx + 7, dy - 6, 6, logoTone(t, st.kind) || t.dim); cv.text(fitText(cv, st.text, 17, rw - 22), rx + 22, dy, 17, t.text, { literal: true }); }
             else cv.text(fitText(cv, "Nothing of ours on the dials or HUD", 17, rw), rx, dy, 17, t.dim, { literal: true });
             // 0.17.0: one owner at a time; Waze's HUD map is switched off while one of ours owns them (waze_ctl.js)
             const wazeNote = CSRC.wazeHud(dcur) === 0 && ctlOn && wctl.state === 'ok' ? " Waze's HUD map stays off meanwhile." : '';
-            cv.text(fitText(cv, 'One owner at a time: they share one display.' + wazeNote, 15, rw), rx, dy + 26, 15, t.dim, { literal: true });
+            if (R.note) cv.text(fitText(cv, 'One owner at a time: they share one display.' + wazeNote, 15, rw), rx, dy + 26, 15, t.dim, { literal: true });
             linkMini(cv, S, lk, rx, bottom - 64, rw, 64, 'cs:diag', 'Diagnostics', () => { DIAG.reset(); press(3, 'cs:diag'); });
             if (!ask) return;
             // the confirmation, over the page: only its two buttons take taps

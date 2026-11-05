@@ -113,27 +113,39 @@ function quickTile(cv, st, x, y, w, h, o) {
     }
     const dim = !o.enabled;
     // the radio mark, then the name and what it does now (amber: why it cannot show now)
-    cv.arc(x + 30, y + 36, 11, 13, 0, 360, o.sel ? acc : withAlpha(t.dim, dim ? 0.5 : 1));
-    if (o.sel) cv.circle(x + 30, y + 36, 6, acc);
+    cv.arc(x + 28, y + 32, 10, 12, 0, 360, o.sel ? acc : withAlpha(t.dim, dim ? 0.5 : 1));
+    if (o.sel) cv.circle(x + 28, y + 32, 5.5, acc);
     const fit = (s, size, ww) => fitTxt(cv, st, s, size, ww);
-    st.txt(cv, fit(o.name, 26, w - 72), x + 56, y + 46, 26, dim ? withAlpha(t.dim, 0.6) : o.sel ? t.text : withAlpha(t.text, 0.85));
+    st.txt(cv, fit(o.name, 24, w - 64), x + 50, y + 41, 24, dim ? withAlpha(t.dim, 0.6) : o.sel ? t.text : withAlpha(t.text, 0.85));
     const line = o.ok === false ? o.why : o.line;
     if (line) {
-        // two lines at most, the second cut with an ellipsis
-        const words = String(line).split(' '), lines = [''];
+        // two lines at most (one when the tile is short), the last cut with '...'
+        const max = h >= 100 ? 2 : 1, words = String(line).split(' '), lines = [''];
         words.forEach((wd) => {
             const cur = lines[lines.length - 1], next = cur ? cur + ' ' + wd : wd;
-            if (st.txtW(cv, next, 16) <= w - 36 || !cur) lines[lines.length - 1] = next;
-            else if (lines.length < 2) lines.push(wd);
-            else lines[1] = lines[1] + ' ' + wd;
+            if (st.txtW(cv, next, 15) <= w - 32 || !cur) lines[lines.length - 1] = next;
+            else if (lines.length < max) lines.push(wd);
+            else lines[lines.length - 1] = cur + ' ' + wd;
         });
-        lines.forEach((l, i) => st.txt(cv, fit(l, 16, w - 36), x + 18, y + h - 44 + i * 22, 16, o.ok === false ? t.warn : withAlpha(t.dim, dim ? 0.6 : 1)));
+        lines.forEach((l, i) => st.txt(cv, fit(l, 15, w - 32), x + 16, y + h - 14 - (lines.length - 1 - i) * 21, 15, o.ok === false ? t.warn : withAlpha(t.dim, dim ? 0.6 : 1)));
     }
     if (dim) cv.roundRect(x, y, w, h, st.r, withAlpha('#000000', 0.45));     // G's Dash off: nothing to pick
 }
+/**
+ * The page's parts for its height (S.h: 466 on the car's usual 520 px page, more where the page reaches lower):
+ * the switch beside the title, the two rows sharing what is left, the "now" lines at the foot, clear of the G
+ * button and the page dots in the bottom right corner (QUICK_CORNER px wide).
+ */
+const QUICK_CORNER = 330;
+function quickLayout(S) {
+    const room = Math.max(0, S.h - 466);
+    const hA = Math.min(150, 124 + Math.round(room / 2)), hB = Math.min(130, 112 + Math.round(room / 2));
+    const yA = S.y + 96, yB = yA + hA + 38, yC = yB + hB + 12;
+    return { yA, hA, yB, hB, yC, hC: Math.min(78, S.y + S.h - yC), sw: { y: S.y, h: 58, w: 500 } };
+}
 function quick(cv, st, S, M) {
-    const t = st.t, acc = t.sel || t.accent, X = S.x + 8, W = S.w - 16, gap = 14;
-    title(cv, st, S, 'Cluster & HUD', M.on ? 'One tap: what the cluster and HUD show' : "G's Dash is off on the cluster & HUD");
+    const t = st.t, acc = t.sel || t.accent, X = S.x + 8, W = S.w - 16, gap = 14, Q = quickLayout(S);
+    title(cv, st, S, 'Cluster & HUD', M.on ? 'One tap for each' : "G's Dash is off here");
     const row = (label, y, h, tiles, cur, key, pick) => {
         st.txt(cv, label, X, y - 12, 18, t.dim);
         const n = tiles.length, w = (W - (n - 1) * gap) / n;
@@ -143,27 +155,27 @@ function quick(cv, st, S, M) {
             if (S.own && M.on && !sel) cv.target(x, y, w, h, () => M.tap(k, () => pick(tl.id)), k, st.r);
         });
     };
-    const yA = S.y + 92, hA = 150, yB = yA + hA + 54, hB = 130;
-    row("The cluster's centre", yA, hA, M.srcTiles, M.src, 'qs', M.pickSrc);
-    row('Dials & HUD', yB, hB, M.dispTiles, M.disp, 'qd', M.pickDisp);
-    // what shows now (as confirmed by the renderer and Waze), and the switch
-    const yC = yB + hB + 26, hC = 96, sw = 540, cw = W - sw - gap;
+    row("The cluster's centre", Q.yA, Q.hA, M.srcTiles, M.src, 'qs', M.pickSrc);
+    row('Dials & HUD', Q.yB, Q.hB, M.dispTiles, M.disp, 'qd', M.pickDisp);
+    // what shows now (as confirmed by the renderer and Waze), left of the G button's corner
     const tone = (k) => (k === 'ok' ? GREEN : k === 'wait' ? t.warn : withAlpha(t.dim, 0.9));
-    st.plate(cv, X, yC, cw, hC, null);
-    cv.circle(X + 24, yC + 30, 8, tone(M.now.tone));
-    st.txt(cv, fitTxt(cv, st, 'Centre: ' + M.now.text, 20, cw - 64), X + 44, yC + 37, 20, t.text);
-    cv.circle(X + 24, yC + 68, 8, tone(M.hud.tone));
-    st.txt(cv, fitTxt(cv, st, 'Dials & HUD: ' + M.hud.text, 18, cw - 64), X + 44, yC + 75, 18, withAlpha(t.text, 0.85));
-    const sx = X + cw + gap, kc = 'qc';
-    if (M.on) st.plate(cv, sx, yC, sw, hC, null);
-    else { cv.roundRect(sx, yC, sw, hC, st.r, withAlpha(t.warn, 0.14)); cv.strokeRoundRect(sx, yC, sw, hC, st.r, 2, t.warn); }
-    if (M.down(kc)) cv.roundRect(sx, yC, sw, hC, st.r, withAlpha(acc, 0.16));
-    const bw = 66, bh = 34, bx = sx + sw - 20 - bw, by = yC + (hC - bh) / 2, tw = bx - sx - 36;
-    st.txt(cv, fitTxt(cv, st, "G's Dash on cluster & HUD", 19, tw), sx + 20, yC + 40, 19, t.text);
-    st.txt(cv, fitTxt(cv, st, M.on ? 'On. Off: the car back to stock' : 'Off: the car is stock. Tap for On', 15, tw), sx + 20, yC + 70, 15, M.on ? t.dim : t.warn);
+    const cw = W - QUICK_CORNER, half = Q.hC / 2;
+    st.plate(cv, X, Q.yC, cw, Q.hC, null);
+    cv.circle(X + 22, Q.yC + half / 2 + 2, 7, tone(M.now.tone));
+    st.txt(cv, fitTxt(cv, st, 'Centre: ' + M.now.text, 18, cw - 56), X + 40, Q.yC + half / 2 + 9, 18, t.text);
+    cv.circle(X + 22, Q.yC + half * 1.5 - 2, 7, tone(M.hud.tone));
+    st.txt(cv, fitTxt(cv, st, 'Dials & HUD: ' + M.hud.text, 17, cw - 56), X + 40, Q.yC + half * 1.5 + 5, 17, withAlpha(t.text, 0.85));
+    // the switch: G's Dash on the cluster & HUD, beside the title
+    const sw = Q.sw.w, sh = Q.sw.h, sx = X + W - sw, sy = Q.sw.y, kc = 'qc';
+    if (M.on) st.plate(cv, sx, sy, sw, sh, null);
+    else { cv.roundRect(sx, sy, sw, sh, st.r, withAlpha(t.warn, 0.14)); cv.strokeRoundRect(sx, sy, sw, sh, st.r, 2, t.warn); }
+    if (M.down(kc)) cv.roundRect(sx, sy, sw, sh, st.r, withAlpha(acc, 0.16));
+    const bw = 62, bh = 32, bx = sx + sw - 16 - bw, by = sy + (sh - bh) / 2, tw = bx - sx - 32;
+    st.txt(cv, fitTxt(cv, st, "G's Dash on cluster & HUD", 17, tw), sx + 16, sy + 25, 17, t.text);
+    st.txt(cv, fitTxt(cv, st, M.on ? 'On. Off: the car back to stock' : 'Off: the car is stock. Tap for On', 14, tw), sx + 16, sy + 47, 14, M.on ? t.dim : t.warn);
     cv.roundRect(bx, by, bw, bh, bh / 2, M.on ? acc : withAlpha('#ffffff', 0.18));
     cv.circle(M.on ? bx + bw - bh / 2 : bx + bh / 2, by + bh / 2, bh / 2 - 4, '#ffffff');
-    if (S.own) cv.target(sx, yC, sw, hC, () => M.tap(kc, M.toggle), kc, st.r);
+    if (S.own) cv.target(sx, sy, sw, sh, () => M.tap(kc, M.toggle), kc, st.r);
 }
 
 /* ---------- warm-up ---------- */
@@ -495,4 +507,4 @@ function showcase(cv, st, S, music, lk, gr, sc, now) {
     return R;
 }
 
-module.exports = { SCREENS, HOME, GREEN, style, dots, dotsBox, toast, pill, quick, warmup, gforce, tires, showcase, clock12, CAR_BOX, dimOf };
+module.exports = { SCREENS, HOME, GREEN, style, dots, dotsBox, toast, pill, quick, quickLayout, QUICK_CORNER, warmup, gforce, tires, showcase, clock12, CAR_BOX, dimOf };

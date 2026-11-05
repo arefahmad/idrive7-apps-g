@@ -350,6 +350,26 @@ test('the quick screen: one tap per pick, and the switch; only the switch while 
     assert.strictEqual(soft.targets.length, 0);
 });
 
+test("the Cluster & HUD screens fit the car's page (520 px, more where it reaches lower)", () => {
+    const HUB = req(DASH, 'hub.js'), PREFS = req(DASH, 'prefs.js');
+    // reach: the page's bottom (G.pageBottom: 512 on the usual page); the hub's area as main.js's state() makes it
+    [512, 540, 560, 600, 720].forEach((reach) => {
+        const S = { x: 12, y: 40, w: 1576, h: reach - 40 - 6 }, Q = HUB.quickLayout(S), bottom = S.y + S.h;
+        const gTop = bottom - 76;                          // the G button (GB_H 76), bottom right, the page dots left of it
+        assert.ok(Q.yA > Q.sw.y + Q.sw.h + 14, reach + ': row A clear of the switch');
+        assert.ok(Q.yB >= Q.yA + Q.hA + 30, reach + ': rows apart');
+        assert.ok(Q.yC + Q.hC <= bottom, reach + ': the now lines inside the page (' + (Q.yC + Q.hC) + ' > ' + bottom + ')');
+        assert.ok(Q.yB + Q.hB <= gTop || 12 + 8 + 1560 - HUB.QUICK_CORNER < 1588 - 108 - 180, reach + ': rows clear of the G button');
+        assert.ok(Q.hC >= 60 && Q.hA >= 110 && Q.hB >= 100, reach + ': room for the text');
+        // Options > Cluster & HUD's column: rows and the status line above the Diagnostics link
+        const P = { y: 118, h: reach - 118 - 6 }, top = P.y + 34, linkTop = P.y + P.h - 64, R = PREFS.displayRows(top, linkTop, 4);
+        assert.ok(top + 4 * (R.oh + R.og) <= R.dy - 12, reach + ': status line under the rows');
+        assert.ok(R.dy <= linkTop - 6, reach + ': status line above Diagnostics (' + R.dy + ' > ' + (linkTop - 6) + ')');
+        assert.ok(!R.note || R.dy + 26 <= linkTop - 8, reach + ': the note too');
+        assert.ok(R.oh >= 44, reach + ': rows tall enough to tap (' + R.oh + ')');
+    });
+});
+
 (async () => {
     for (const [name, fn] of tests) {
         n++;
