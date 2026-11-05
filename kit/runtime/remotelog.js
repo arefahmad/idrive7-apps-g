@@ -197,7 +197,6 @@ function create(o) {
     const backoff = o.backoff || BACKOFF;
     const note = (lvl, m) => { try { o.log && o.log(lvl, 'remote logs: ' + m); } catch (e) {} };
     const request = o.request || makeRequester(o.dataDir);
-    const me = { id: o.id, version: o.version };
     let session = null, previous = null, crash = null, state = { lastSent: null, crashes: [], manualAt: 0 };
     let timers = [], uploading = false, failures = 0, retryTimer = null, blocked = false, lastReq = 0, busy = Promise.resolve();
     const contexts = [];

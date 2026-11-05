@@ -86,7 +86,6 @@ const TARGETS = {
     hud: { key: 'hud', name: 'hud', W: 800, H: 480, x: 0, y: 0, w: 800, h: 480, k: 2, exclusive: false, tag: 'hud', area: 'the HUD' },
 };
 const AREA = { x: 0, y: 0, w: MAP_W, h: MAP_H };  // the layer: the whole map area
-const FRAME_W = MAP_W / 2, FRAME_H = MAP_H / 2;   // 544x240, doubled on the cluster's GPU
 const FPS = 15;                           // at most, while the upload cap is at its ceiling
 const Z = 100;                            // above other "content" layers on the map whatever their age (the
                                           // service orders by class, then z, then newest; the CarPlay map of

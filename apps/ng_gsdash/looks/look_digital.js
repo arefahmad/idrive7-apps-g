@@ -5,7 +5,6 @@
  * visible, a bar-graph tachometer that sweeps up and to the right, a dot-matrix g plot, segment
  * bar graphs for oil and coolant. Aqua, with amber and red where it matters.
  */
-const G = require('./kit/gauges');
 const L = require('./lib');
 
 const { withAlpha, clamp, isNum } = L;
