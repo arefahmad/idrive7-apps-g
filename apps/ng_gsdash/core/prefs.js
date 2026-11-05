@@ -49,20 +49,6 @@ function migrateDisplays(values) {
     return { value: validDisplay(v.displays) ? v.displays : DEFAULT_DISPLAY, migrated: false };
 }
 
-/**
- * 0.17.1: the Cluster & HUD page's column of dials & HUD picks for the room it has: rows from top down to linkTop (the
- * Diagnostics link), the status line under them. The page is 520 px tall on the car's usual screen (more where it
- * reaches lower): there the rows are short, their descriptions left out (roomy false), and the second status line only
- * where it fits (note). { oh, og, roomy, dy (the status line's baseline), note }.
- */
-function displayRows(top, linkTop, n) {
-    const og = 8, status = 34;
-    const per = Math.floor((linkTop - 8 - status - top) / n);
-    const oh = Math.max(40, Math.min(68, per - og));
-    const dy = top + n * (oh + og) + 18;
-    return { oh, og, roomy: oh >= 62, dy, note: dy + 26 <= linkTop - 8 };
-}
-
 /* ---------- favourite looks ---------- */
 const FAV_KEY = 'favLooks';
 const FAV_MIN = 2;
@@ -128,7 +114,7 @@ function bgStep(v, dir) {
 
 module.exports = {
     BG_KEY, BG_MIN, BG_MAX, BG_DEFAULT, BG_STEPS, bgLevel, bgStep,
-    DISPLAYS, DISPLAY_IDS, DEFAULT_DISPLAY, OLD_KEYS, validDisplay, displayName, displayFrom, migrateDisplays, displayRows,
+    DISPLAYS, DISPLAY_IDS, DEFAULT_DISPLAY, OLD_KEYS, validDisplay, displayName, displayFrom, migrateDisplays,
     FAV_KEY, FAV_MIN, TOAST_MS, HINT, parseFavs, serializeFavs, toggleFav, nextFav, favToast,
     TAP_SLOP, stillTap, nearShift, overlaps, inRect,
 };

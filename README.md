@@ -11,14 +11,14 @@ A driver display and car hub for the centre screen.
 
 - **Eight looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector and Space (drifting
   stars that sway with the g-force), some with a choice of colours. Star your favourites and tap the gear on Drive to switch between them.
-- **Pages:** swipe between Cluster & HUD (one tap for what the cluster and HUD show, below), Showcase
-  (the car, what Spotify is playing, or a clock), Drive (shift lights, gear, rpm, speed, g-meter, drive
-  mode, oil and coolant temperatures), Warm-up, G-force and Tires (tire pressures and temperatures).
+- **Pages:** swipe between Showcase (the car, what Spotify is playing, or a clock), Drive (shift lights,
+  gear, rpm, speed, g-meter, drive mode, oil and coolant temperatures), Warm-up, G-force and Tires (tire
+  pressures and temperatures).
 - **Units:** mph or km/h, °F or °C, psi, bar or kPa.
 - **Spotify panel:** optional, with its own sign-in by QR code.
 - **Home-screen widget.**
-- **On the car's other displays** (optional), two picks on Options > Cluster & HUD, shared with G's
-  Music and G's TV:
+- **On the car's other displays** (optional), two picks on Options > Cluster & HUD, one tap each, shared
+  with G's Music and G's TV:
   - **The cluster's centre:** Auto, the G's Dash logo, G's Music, Waze's map or the car's own. Every
     pick but Auto always shows what it says, also during route guidance; Auto shows the directions
     during a route, then G's TV, G's Music or the logo.
