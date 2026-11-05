@@ -339,31 +339,44 @@ mgu.run({
         const mc = new MC.MusicCluster({ log, app: 'ng_spotify', Canvas });
         // 0.8.0: the synced lyrics in the HUD (the same class, target 'hud', its own connection)
         const mh = new MC.MusicCluster({ log, app: 'ng_spotify', Canvas, target: 'hud' });
-        const hudOn = () => settings.get('hud') === 'lyrics';
         // G's Dash's Cluster source pick (0.6.1): read every tick (only re-parsed when the file changed)
         const srcReader = new CSRC.SourceReader({ settings, log });
         const pick = () => srcReader.get().source;
-        const clusterOn = () => (settings.get('cluster') === 'lyrics' || settings.get('cluster') === 'visualizer') && CSRC.musicAllowed(pick());
-        // its own Cluster setting, for G's Dash's Cluster source page (its warning when Music is picked but this is Off)
+        // 0.9.0: G's Dash's dials & HUD pick (null: none known - G's Dash not there or older: the HUD setting here decides)
+        const hudPick = () => srcReader.get().displays;
+        const hudOn = () => { const d = CSRC.musicHud(hudPick()); return d === null ? settings.get('hud') === 'lyrics' : d; };
+        /** 0.9.0: who has the HUD instead, as the HUD row says it ('' while it may be ours) */
+        const hudNote = () => {
+            const d = hudPick();
+            return d === null || d === 'music' ? '' : "Set in G's Dash: Dials & HUD is " + (CSRC.DISPLAY_NAMES[d] || d);
+        };
+        // 0.9.0: the map area's setting as drawn (G's Dash's Music pick draws, whatever is set here: Off reads as Lyrics + visualizer)
+        const clusterSetting = () => CSRC.musicSetting(pick(), settings.get('cluster'));
+        const clusterOn = () => clusterSetting() !== 'off';
+        // its own Cluster and HUD settings, for G's Dash's Cluster & HUD page (and its one-time move of the HUD lyrics)
         const shareSetting = () => {
-            const v = settings.get('cluster'), r = CSRC.publishMusic(v === 'lyrics' || v === 'visualizer' ? v : 'off');
+            const v = settings.get('cluster'), h = settings.get('hud') === 'lyrics' ? 'lyrics' : 'off';
+            const r = CSRC.publishMusic(v === 'lyrics' || v === 'visualizer' ? v : 'off', { hud: h });
             if (r.error) log.warn('cluster source: ' + r.text);
         };
         shareSetting();
         const clusterTick = () => {
             const ok = status === 'ok' && !!pb;
             const t = ok && pb.title && !pb.ad ? { uri: pb.uri, title: pb.title, artist: pb.artist, kind: pb.kind, duration: pb.duration, ad: pb.ad } : null;
-            const want = clusterOn() && t && settings.get('cluster') === 'lyrics' && pb.kind !== 'episode';
+            const want = clusterOn() && t && clusterSetting() === 'lyrics' && pb.kind !== 'episode';
             const wantHud = hudOn() && t && pb.kind !== 'episode';
             const lyrics = want || wantHud ? lyr.get({ uri: pb.uri, title: pb.title, artist: pb.artist, artist1: pb.artist1, album: pb.album, duration: pb.duration }) : null;
             const size = settings.get('clusterSize'), playing = !!(pb && pb.playing), pos = position();
-            mc.update({ setting: settings.get('cluster'), source: pick(), ok, track: t, playing, pos, posFn: () => position(),
+            mc.update({ setting: clusterSetting(), source: pick(), guideHides: CSRC.guideHides(pick()), ok, track: t, playing, pos, posFn: () => position(),
                 lyrics: want ? lyrics : null, size, palette: artPal, vizPalette: stageColours(ctx.theme()) });
-            mh.update({ setting: settings.get('hud'), ok, track: t, playing, pos, posFn: () => position(), lyrics: wantHud ? lyrics : null, size, palette: artPal });
+            // 0.9.0: G's Dash's pick decides (its lyrics stay up through route guidance); no pick known: as 0.8
+            mh.update({ setting: hudOn() ? 'lyrics' : 'off', pickNote: hudNote(), guideHides: hudPick() === null, ok, track: t, playing, pos, posFn: () => position(),
+                lyrics: wantHud ? lyrics : null, size, palette: artPal });
         };
         setInterval(() => { try { clusterTick(); } catch (e) { log.warn('music cluster: ' + e.message); } }, 250);
         process.once('exit', () => { mc.close(); mh.close(); });
         settings.onChange((k) => {
+            if (k === 'hud') shareSetting();
             if (k === 'hud' || k === 'clusterSize') { nextPoll = 0; clusterTick(); return; }
             if (k !== 'cluster') return;
             if (CT.isOn(settings.get('cluster')) && settings.get(CT.LAST_KEY) !== settings.get('cluster')) settings.set(CT.LAST_KEY, settings.get('cluster'));
@@ -697,7 +710,8 @@ mgu.run({
          * G's Dash's pick keeps the cluster for something else. A tap: cluster_toggle.js.
          */
         function clusterButton(cv, t, vx, vy) {
-            const vk = 'cviz', cOn = CT.isOn(settings.get('cluster')), blocked = cOn && CT.blockedBy(pick());
+            // 0.9.0: lit too while G's Dash's Music pick draws whatever is set here
+            const vk = 'cviz', cOn = CT.isOn(settings.get('cluster')) || CSRC.musicForced(pick()), blocked = cOn && CT.blockedBy(pick());
             if (isDown(vk)) cv.circle(vx, vy, 46, G.withAlpha(M.RED, 0.25));
             if (cOn) { cv.circle(vx, vy, 38, G.withAlpha(M.RED, 0.20)); cv.arc(vx, vy, 36.5, 38.5, 0, 360, M.RED); }
             else cv.arc(vx, vy, 36.5, 38, 0, 360, G.withAlpha('#ffffff', 0.18));
@@ -975,8 +989,16 @@ mgu.run({
         const SET_ROWS = [
             ['theme', 'Colours', (v) => THEME_NAME[v] || v],
             ['stage', 'Show', (v) => ({ lyrics: 'Lyrics (else visualizer)', visualizer: 'Visualizer', off: 'Nothing' })[v] || v],
-            ['cluster', 'Cluster (map area)', (v) => ({ lyrics: 'Lyrics + visualizer', visualizer: 'Visualizer only', off: 'Off' })[v] || v, () => mc.view()],
-            ['hud', 'HUD', (v) => ({ lyrics: 'Lyrics', off: 'Off' })[v] || v, () => mh.view()],
+            // 0.9.0: what G's Dash's picks make of these, said in the value
+            ['cluster', 'Cluster (map area)', (v) => {
+                const n = { lyrics: 'Lyrics + visualizer', visualizer: 'Visualizer only', off: 'Off' };
+                return CSRC.musicForced(pick()) && v === 'off' ? n.lyrics + " (G's Dash: Music)" : n[v] || v;
+            }, () => mc.view()],
+            ['hud', 'HUD', (v) => {
+                const d = CSRC.musicHud(hudPick());
+                if (d === null) return ({ lyrics: 'Lyrics', off: 'Off' })[v] || v;
+                return d ? "Lyrics (G's Dash's pick)" : "Off (G's Dash's pick)";
+            }, () => mh.view()],
             ['clusterSize', 'Cluster & HUD size', (v) => ({ small: 'Small', medium: 'Medium', large: 'Large' })[v] || v],
         ];
         function drawSettings(cv, t, A) {

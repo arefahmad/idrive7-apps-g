@@ -53,15 +53,12 @@
  * 0.4.3: the cluster screens of 0.4.2 (Full / Left / Right on the "panel" target) are gone: the cluster
  * picture is the map area only, as proven on the car, and the HUD. Never "alert", never the panel.
  *
- * 0.4.5, the HUD says why it waits. Since cluster-render 0.2.0 a target the KOMBI parks behind the car's
- * own HUD content is reported "parked (stock)" and, with hud_take_over_stock = 0 (the shipped default),
- * stays there: the car's HUD content is in its slot whenever the HUD is on, so our layer never shows.
- * Only the tool's own setting changes that (hud_take_over_stock = 1 in its cluster-render.local.conf,
- * read here, never written); the status line names it. The HUD shares its scene id with the cluster
- * panel: while another app (G's Dash's cluster skins) has a layer there the service keeps the HUD
- * "waiting (scene id in use by another target)"; ours asks the service's status (at most every 3 s,
- * only while waiting) to name the app. G's Dash 0.8.5 hides its skins when it sees our HUD layer, and
- * the panel is let go 3 s later (its linger), so this is a short wait. Refusals read "Refused: reason".
+ * 0.4.5, the HUD says why it waits: parked behind the car's own HUD content (the renderer never takes the HUD
+ * from it - its hud_take_over_stock other than 0 leaves the HUD out since cluster-render 0.4.0 - and asks again
+ * once it goes), or "waiting (scene id in use by another target)" while another app holds the cluster panel,
+ * which shares the HUD's scene; ours asks the service's status (at most every 3 s, only while waiting) to name
+ * the app. 0.5.0: G's Dash's dials & HUD pick names the HUD's owner; main.js plays here only while it is the
+ * car's own. Refusals read "Refused: reason".
  *
  * Never throws into the player, never blocks. Node 8: no ?., ?? or object spread.
  */
@@ -461,14 +458,14 @@ class ClusterOut {
         if (/scene id/.test(t.reason)) {
             const o = (this.others || []).filter((x) => x.target === 'panel')[0] || (this.others || [])[0];
             const who = o ? (APP_NAMES[o.app] || o.app) : '';
-            if (o && o.app === 'ng_gsdash') return { level: 'warn', text: 'Waiting - G\'s Dash cluster skins hold the HUD (they share its scene; they give way in a few seconds)' + svc };
+            if (o && o.app === 'ng_gsdash') return { level: 'warn', text: 'Waiting - G\'s Dash\'s dials let go of the HUD\'s scene (a few seconds)' + svc };
             if (who) return { level: 'warn', text: 'Waiting - ' + who + ' holds the cluster panel, which shares the HUD\'s scene' + svc };
             return { level: 'warn', text: 'Waiting - another cluster panel layer holds the HUD\'s scene (let go a few seconds after it ends)' + svc };
         }
         if (t.state === 'parked' && t.holder === 'stock') {
-            if (this._takeOver()) return { level: 'warn', text: 'Waiting - taking the HUD over from the car\'s own HUD content' + svc };
-            if (!this.toldConf) { this.toldConf = true; this.log.warn(this.tag + ': parked behind the car\'s own HUD content; the Cluster renderer takes the HUD over only with hud_take_over_stock = 1 in ' + (this.opts.conf || LOCAL_CONF) + ' (then restart it)'); }
-            return { level: 'warn', text: 'Waiting - the car\'s own HUD content is in front (Cluster renderer hud_take_over_stock = 0: set it to 1 in its cluster-render.local.conf)' + svc };
+            // 0.5.0: the renderer never takes the HUD from the car's own content and asks again once it goes. 0.4 said to
+            // set its hud_take_over_stock = 1, which since cluster-render 0.4.0 leaves the HUD out altogether.
+            return { level: 'warn', text: 'Waiting - the car\'s own content is on the HUD (shown once it goes)' + svc };
         }
         if (t.state === 'parked' && t.holder === 'foreign') return { level: 'warn', text: 'Waiting - other content (a car message?) holds the HUD' + svc };
         if (t.state === 'parked') return { level: 'warn', text: 'Waiting - parked behind the HUD\'s other content' + (t.reason ? ' (' + t.reason + ')' : '') + svc };

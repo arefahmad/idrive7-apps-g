@@ -6,7 +6,7 @@
  * it). While G's Dash is open, the setting "displays" (0.10.0; 0.9.0: "clusterSkin") is Cluster dials and the cluster shows its M / Sport layout
  * (the one measured; 0.8.4: any drive mode, the car coded to that layout in all), parked and (0.8.1) driving: the needles, fills, digital
  * speed and gear follow the live values. Anything else (another layout, no speed signal, values older
- * than LIVE_MS while moving, an error, another app drawing on the panel or the HUD) and the stock dials
+ * than LIVE_MS while moving, an error; 0.17.0: never another app's layer, the dials & HUD pick decides) and the stock dials
  * are back within a second; stale values within LIVE_MS + one pump.
  *
  * Live (0.8.1): main.js hands every car sample over (sample(), from car.onSample) with the signals'
@@ -513,8 +513,9 @@ class ClusterSkin {
             this.staleAt = now; return 'stale values';
         }
         if (now - this.staleAt < RESHOW_MS) return 'stale values';
-        if (this.others.length) return 'panel in use';
-        if (now - this.busyAt < HOLD_MS) return 'panel in use';
+        // 0.17.0: no giving way to another app's panel / HUD layer: the dials & HUD pick names the owner
+        // (cluster_source.js), and G's Music and G's TV stay off the HUD while it is ours. 0.16 hid the dials for
+        // any such layer, even one only waiting, so G's Music's HUD lyrics flipped them track by track.
         if (this.layerErr || this.noEffect) return 'renderer error';
         if (this.cur && !this.cur.ok && this.cur.id === this.lookId()) return 'making';
         if (!this.cur && this.build.gaveUp) return 'stuck';   // 0.13.8: reported; Refresh cluster or a setting change tries again
@@ -733,6 +734,9 @@ class ClusterSkin {
         if (this.noEffect) return { kind: 'none', text: 'Update Cluster renderer' };
         const why = silent ? 'stuck' : this.why || this._why();
         if (!why && this.visible) {
+            // 0.17.0: another program still on the HUD (they share one scene): the dials wait for it to go
+            const hudBy = this.others.filter((l) => l.target === 'hud' && l.state === 'shown')[0];
+            if (hudBy) return { kind: 'wait', text: 'Waiting - ' + CL.appName(hudBy.app) + ' is on the HUD (one scene)' };
             const n = this.cur ? this.cur.meta.name + tintName(this.cur.id) + (this.cur.meta.unit === 'kmh' ? ' (km/h)' : '') : '';
             return { kind: 'on', text: 'Shown - ' + n };
         }

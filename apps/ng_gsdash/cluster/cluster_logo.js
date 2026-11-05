@@ -4,20 +4,18 @@
  * and no route guidance runs ("Logo in cluster when not navigating"), through the separately installed
  * "Cluster renderer" tool (cluster-render, robertnisipeanu/idrive-apps, from the Store).
  *
- * The rule (0.7.5): the logo shows unless route guidance is active or G's TV is drawing. It is one
- * "content" layer at z NAV_Z (50), contending: over a free-drive map (Waze on cluster's CarPlay map,
- * content z 0; it takes the slot over from the stock map, the service's own take-over: the HMI's map
- * parks behind it and is back when the logo goes); under G's TV (content z 100, exclusive: a video
- * played in the cluster on purpose always wins, and the logo is hidden while G's TV draws). Route
- * guidance (NavigationStatus.guidingState ACTIVE, CarPlay's or Android Auto's projectedGuidanceActive,
- * fed in by main.js through guidance()) active for GUIDE_ON_MS: hidden (visible 0: Waze's map under it
- * shows at once, the slot goes back to the stock map); off for GUIDE_OFF_MS: back. Another app's layer
- * being there (Waze's included, drawing or not) never hides it: the renderer cannot tell what is on the
- * glass (Waze on cluster sends CarPlay's empty picture while the phone shows no map, its layer "shown",
- * the area empty). With no guidance signal answering, the logo still shows ("Shown - route detection
- * unavailable"): during CarPlay route guidance it then covers Waze's turn-by-turn map, and the setting
- * turns it off. Which signal answers: guideLink() (main.js's watch results) and routeLine()
- * ("Route: nav n/a · CarPlay off · AA n/a"), on the Cluster logo page and in the log.
+ * The rule (0.17.0, cluster_source.js): what G's Dash's pick says. Auto: hidden while route guidance runs
+ * (NavigationStatus.guidingState ACTIVE, CarPlay's or Android Auto's projectedGuidanceActive, fed in by
+ * main.js through guidance(): active for GUIDE_ON_MS -> hidden, off for GUIDE_OFF_MS -> back), else shown;
+ * Logo and Music: always shown, route guidance or not, and exclusive (the whole map area ours: Waze's map
+ * below it suspended, not drawn around the logo). It is one "content" layer at z NAV_Z (50), contending: over
+ * a free-drive map (Waze on cluster's CarPlay map, content z 0; the service takes the slot over from the
+ * stock map, the HMI's map parked behind it and back when the logo goes); under G's Music's (z 60/61) and
+ * G's TV's (content z 100, exclusive, Auto only): never hidden for them - G's TV's exclusive layer suspends
+ * ours and ours is back in the flush G's TV's goes, so the slot is never let go in between. With no
+ * guidance signal answering, the logo still shows ("Shown - route detection unavailable"). Which signal
+ * answers: guideLink() (main.js's watch results) and routeLine() ("Route: nav n/a · CarPlay off · AA n/a"),
+ * on the Cluster & HUD page and in the log.
  *
  * Written for G's Dash from the tool's PROTOCOL.md and README, the way G's TV talks to it; it contains
  * none of the tool's code. The tool's own Node client is loaded at run time from where the tool
@@ -39,7 +37,7 @@
  * second while a sweep runs: about 4 KB/s); moving, it is one still image and nothing more is sent.
  *
  * Whether the map area is in use (the service's own reports, nothing guessed):
- *   - other clients' layers on the map (only G's TV's hides the logo, 0.7.5): the service's "status" text lists every client's layers
+ *   - other clients' layers on the map (for the page's lines only: none hides the logo, 0.17.0): the service's "status" text lists every client's layers
  *     ("layer N KIND of APP on TARGET, CLASS z Z: STATE[ - REASON]", then "  STATS": a video layer's
  *     "N sent, ...", an image layer's "N writes, ..."); asked for once a second over the local socket
  *     (nothing goes to the cluster). Only a layer that is actually drawing counts (drawing()):
@@ -52,8 +50,7 @@
  *     Waze on cluster makes its video layer as soon as it reaches the service and keeps it visible
  *     while CarPlay's cluster stream connection is up, frames or not: with CarPlay not streaming that
  *     layer is "stalled" (or "hidden"), registered but idle; drawing or not, it never hides the logo,
- *     which is over it. While G's TV's layer is drawing, ours is hidden (visible 0: it does not want
- *     the slot), and it comes back HOLD_MS after G's TV stopped.
+ *     which is over it. While G's TV's layer is drawing, ours stays visible, suspended under it.
  *   - the stock map (the HMI's own content in slot 0x100): our target's events say it ("parked" or
  *     "waiting", holder "stock"); the logo contends, so the service takes the slot over (the stock
  *     HMI's content only, at most every 3, then 10 s; the HMI's mapping parks behind ours and comes
@@ -63,8 +60,8 @@
  *     made again; our layer missing from the service's list (once it was listed) or in error is made
  *     again (the image sent again); the client itself re-makes it whole after a reconnect.
  *   - after our slot was lost (a door-open warning or a phone reconnecting locks the slot and the
- *     KOMBI unmaps everything; the first to ask afterwards is shown) the logo waits YIELD_MS before
- *     asking again, so the HMI's map goes first.
+ *     KOMBI unmaps everything): nothing here (0.17.0); the service asks again as soon as the slot is free
+ *     and takes it over from the stock map (cluster-render README "Arbitration").
  *   Not visible to a client: the stock map mapped AFTER the logo was shown (the user turns the cluster
  *   to Map view while G's Dash is open). The KOMBI never takes a slot from what it shows, so the stock
  *   map then waits behind the logo until G's Dash is closed or hidden (or the setting is turned off).
@@ -162,6 +159,8 @@ function appName(app) {
     const a = String(app || '');
     if (/waze/i.test(a)) return 'Waze';
     if (a === 'ng_tv') return 'G\'s TV';
+    if (a === 'ng_spotify') return 'G\'s Music';
+    if (a === 'ng_gsdash') return 'G\'s Dash';
     return a.length > 14 ? a.slice(0, 13) + '.' : a;
 }
 
@@ -180,7 +179,7 @@ class ClusterLogo {
         this.now = o.now || Date.now;
         this.T = o.timers || { setInterval, clearInterval };
         this.images = o.images;
-        this.want = false; this.pixel = false; this.look = '';
+        this.want = false; this.pixel = false; this.look = ''; this.guideHides = true; this.exclusive = false;
         this.fxBad = {}; this.bakedBad = {};               // looks whose shader / baked picture failed (this run)
         this.gate = new MEM.FreeGate(this.now); this.asked = 0; this.answered = 0; this.lookAt = -1e15; this.wantKey = ''; this.parked = false; this.enabled = true;
         this._reset();
@@ -211,6 +210,14 @@ class ClusterLogo {
     update(s) {
         const on = !!(s && s.on);
         this.enabled = !(s && s.enabled === false);
+        // 0.17.0: route guidance hides the logo only in Auto (guideHides); Logo / Music: exclusive, the whole map area ours
+        this.guideHides = !(s && s.guideHides === false);
+        const ex = !!(s && s.exclusive);
+        if (ex !== this.exclusive) {
+            this.exclusive = ex;
+            if (this.cr && this.ref) { try { this.cr.set(this.ref, { exclusive: ex }); } catch (e) { /* made again with it */ } }
+            if (this.ref) this.log.info('cluster logo: ' + (ex ? 'covering the map area (exclusive)' : 'over the map (not exclusive)'));
+        }
         this.idleText = (s && typeof s.idleText === 'string') ? s.idleText : '';   // the line while not wanted (0.8.3: the Cluster source pick)
         this.look = (s && typeof s.look === 'string') ? s.look : '';
         this.pixel = !!(s && s.pixel) || this.look === 'pixel';
@@ -262,12 +269,9 @@ class ClusterLogo {
             const was = this.target.state;
             this.target = { state: state || '', holder: holder || '', reason: reason || '', rendering };
             rendering = '';
-            // the slot lost under a shown logo, not to the stock map (a lock): let the HMI ask first
-            if (was === 'shown' && this.visible && !holder && (state === 'waiting' || state === 'unavailable' || state === 'acquiring')) {
-                this.yieldUntil = this.now() + YIELD_MS;
-                this.log.info('cluster logo: slot lost (' + state + ') - asking again in ' + (YIELD_MS / 1000) + ' s');
-                this._apply();
-            }
+            // 0.17.0: a slot lost under the shown logo (a lock: a door, a phone reconnecting) is the service's to
+            // win back - it asks as soon as the slot is free and takes it over from the stock map. 0.16 and before
+            // stepped aside YIELD_MS first, which let the stock map map first and made coming back a take-over race.
             if (state !== was) this.log.info('cluster logo: map ' + state + (holder ? ' behind ' + holder : '') + (reason ? ' (' + reason + ')' : ''));
         });
         cr.on('refused', (op, ref, reason) => {
@@ -427,8 +431,11 @@ class ClusterLogo {
     _apply() {
         if (!this.want || !this.cr || !this.ready || !this.polled) return;
         const now = this.now();
-        const guiding = this._guideTick(now);
-        const vis = !guiding && !this.others.length && now - this.busyAt >= HOLD_MS && now >= this.yieldUntil;
+        const guiding = this._guideTick(now) && this.guideHides;
+        // 0.17.0: G's TV no longer hides the logo: its exclusive layer suspends ours while it draws, and ours is
+        // back in the flush its layer goes, the map slot never let go. 0.16 hid it and showed it HOLD_MS after
+        // G's TV stopped: the slot went to the stock map meanwhile, and the logo had to take it over again.
+        const vis = !guiding;
         const w = this._wanted();
         const lk = this.pixel ? 'pixel' : this.look;      // the look picked (a fallback for the same look does not wait)
         if (lk !== this.wantKey) { this.wantKey = lk; this.lookAt = now; }
@@ -453,7 +460,7 @@ class ClusterLogo {
             this.visible = vis;
             this.cr.set(this.ref, { visible: vis });
             if (!vis) this.layerState = 'hidden';
-            this.log.info('cluster logo: ' + (vis ? 'shown again' : guiding ? 'hidden (route guidance)' : 'hidden (map in use)'));
+            this.log.info('cluster logo: ' + (vis ? 'shown again' : 'hidden (route guidance, Auto)'));
         }
         this._animate();
     }
@@ -472,7 +479,7 @@ class ClusterLogo {
             }
         } else img = kind === 'pixel' ? this.images.pixel({}) : this.images.regular();
         const at = placement(kind, img);
-        const ref = this.cr.image({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: false, contend: true,
+        const ref = this.cr.image({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: this.exclusive, contend: true,
             visible: vis, x: at.x, y: at.y, w: at.w, h: at.h, iw: img.w, ih: img.h,
             sampling: kind === 'pixel' ? 'nearest' : 'bilinear', fps: kind === 'pixel' ? FPS_ANIM : FPS_STILL });
         if (!ref) { this.log.warn('cluster logo: image layer refused by the client'); return; }
@@ -483,14 +490,14 @@ class ClusterLogo {
         this.layerState = vis ? 'new' : 'hidden';
         this.stats.layers++;
         if (old) { this.cr.drop(old); this.stats.drops++; }
-        this.log.info('cluster logo: ' + w.key + ' image ' + img.w + 'x' + img.h + ' (' + Math.round(img.d.length / 1024) + ' KB, once) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (vis ? '' : ', hidden'));
+        this.log.info('cluster logo: ' + w.key + ' image ' + img.w + 'x' + img.h + ' (' + Math.round(img.d.length / 1024) + ' KB, once) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (this.exclusive ? ', exclusive' : '') + (vis ? '' : ', hidden'));
     }
     /** 0.13.1: the look's G as one still effect layer: 0 bytes of pixel budget, nothing sent after */
     _makeFx(w, vis) {
         const at = { x: Math.round((MAP_W - LOGO_W) / 2), y: Math.round((MAP_H - LOGO_H) / 2), w: LOGO_W, h: LOGO_H };
         let ref = 0;
         try {
-            ref = this.cr.effect({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: false, contend: true,
+            ref = this.cr.effect({ target: TARGET, klass: NAV_KLASS, z: NAV_Z, exclusive: this.exclusive, contend: true,
                 visible: vis, x: at.x, y: at.y, w: at.w, h: at.h, fs: CORE.fragment(w.look) });
         } catch (e) { ref = 0; }
         if (!ref) { this.fxBad[w.look] = true; this.log.warn('cluster logo: ' + w.look + ' shader logo refused by the client - its picture instead'); return this._apply(); }
@@ -501,7 +508,7 @@ class ClusterLogo {
         this.layerState = vis ? 'new' : 'hidden';
         this.stats.layers++;
         if (old) { this.cr.drop(old); this.stats.drops++; }
-        this.log.info('cluster logo: ' + w.look + ' shader logo (effect, still, 0 KB) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (vis ? '' : ', hidden'));
+        this.log.info('cluster logo: ' + w.look + ' shader logo (effect, still, 0 KB) at ' + at.x + ',' + at.y + ' ' + at.w + 'x' + at.h + ', ' + NAV_KLASS + ' z ' + NAV_Z + ', contending' + (this.exclusive ? ', exclusive' : '') + (vis ? '' : ', hidden'));
     }
     _send(ref, img) {
         if (this.cr.pixels(ref, null, img.d) !== false) { this.stats.sends++; this.stats.bytes += img.d.length; }
@@ -556,18 +563,13 @@ class ClusterLogo {
         if (!this.want) return { kind: 'off', text: this.idleText || 'On - while G\'s Dash is open' };
         if (!this.cr || !this.ready || !this.polled) return { kind: 'wait', text: 'Connecting to renderer' };
         if (this.layerState === 'error') return { kind: 'error', text: 'Renderer refused the logo' };
-        if (this.guiding) {
-            return { kind: 'off', text: this.rawGuide ? 'Hidden - route guidance active' : 'Route ended - logo soon' };
+        if (this.guideHides && this.guiding) {
+            return { kind: 'off', text: this.rawGuide ? 'Hidden - route guidance (Auto)' : 'Route ended - logo soon' };
         }
-        if (this.rawGuide) return { kind: 'wait', text: 'Route guidance - hiding' };
-        if (this.others.length) {
-            const n = appName(this.others[0].app);
-            return { kind: 'wait', text: n === 'Waze' ? 'Waiting - Waze map is up' : 'Waiting - ' + n + ' is drawing' };
-        }
-        if (!this.visible) {
-            const stopped = this.lastBusy && this.now() - this.busyAt < HOLD_MS;
-            return { kind: 'wait', text: (stopped ? appName(this.lastBusy) + ' stopped - logo soon' : 'Logo in a moment') };
-        }
+        if (this.guideHides && this.rawGuide) return { kind: 'wait', text: 'Route guidance - hiding (Auto)' };
+        if (!this.visible) return { kind: 'wait', text: 'Logo in a moment' };
+        // 0.17.0: G's TV's picture over it (exclusive: ours suspended, back the moment it stops)
+        if (this.others.some((l) => l.app === 'ng_tv')) return { kind: 'wait', text: "Under G's TV - back when it stops" };
         const T = this.target;
         if ((T.state === 'parked' || T.state === 'waiting') && T.holder === 'stock') return { kind: 'wait', text: 'Taking over the stock map' };
         if (T.state === 'parked' || T.state === 'waiting') return { kind: 'wait', text: 'Map area taken - waiting' };

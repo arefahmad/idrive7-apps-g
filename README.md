@@ -11,20 +11,28 @@ A driver display and car hub for the centre screen.
 
 - **Eight looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector and Space (drifting
   stars that sway with the g-force), some with a choice of colours. Star your favourites and tap the gear on Drive to switch between them.
-- **Pages:** swipe between Showcase (the car, what Spotify is playing, or a clock), Drive (shift
-  lights, gear, rpm, speed, g-meter, drive mode, oil and coolant temperatures), Warm-up, G-force and
-  Tires (tire pressures and temperatures).
+- **Pages:** swipe between Cluster & HUD (one tap for what the cluster and HUD show, below), Showcase
+  (the car, what Spotify is playing, or a clock), Drive (shift lights, gear, rpm, speed, g-meter, drive
+  mode, oil and coolant temperatures), Warm-up, G-force and Tires (tire pressures and temperatures).
 - **Units:** mph or km/h, °F or °C, psi, bar or kPa.
 - **Spotify panel:** optional, with its own sign-in by QR code.
 - **Home-screen widget.**
-- **On the car's other displays** (optional): cluster dials and a HUD in your look, the G's Dash logo
-  in the cluster, and a picker for what the cluster's centre map area shows. These need the Cluster
-  renderer tool from the Store. A single switch in Options puts the cluster and HUD back to stock.
+- **On the car's other displays** (optional), two picks on Options > Cluster & HUD, shared with G's
+  Music and G's TV:
+  - **The cluster's centre:** Auto, the G's Dash logo, G's Music, Waze's map or the car's own. Every
+    pick but Auto always shows what it says, also during route guidance; Auto shows the directions
+    during a route, then G's TV, G's Music or the logo.
+  - **Dials & HUD:** your look on the cluster dials, G's Dash's HUD, G's Music's lyrics on the HUD, or
+    the car's own. They share one display, so one of them at a time.
+
+  These need the Cluster renderer tool from the Store. A single switch in Options puts the cluster and
+  HUD back to stock.
   The cluster dials are built only for the instrument cluster's M layout. If your car doesn't use
   it, you can code it with BimmerCode.
 - **CarPlay map in the cluster** (optional, off by default): needs the Waze on cluster tool from the
   Store and is untested on most firmware. To revert, turn it off and restart the head unit, or remove
-  the tool.
+  the tool. The Waze and Stock picks switch its map on and off in the cluster, and its HUD map stays
+  off while one of G's apps has the HUD (Waze on cluster 0.9.0 or later).
 
 ### G's Music (`ng_spotify`)
 
@@ -38,9 +46,9 @@ A full-screen Spotify player with synced lyrics or a visualizer.
 - Sign in by scanning a QR code with your phone.
 - A home-screen widget showing what's playing.
 - While music plays, lyrics (scrolling as in the app) or the visualizer in the instrument cluster, and
-  optionally the lyrics in the HUD (off by default), in a small, medium or large size. Both need the Cluster renderer tool; the
-  HUD also needs its HUD takeover setting turned on. G's Dash's cluster dials and HUD step aside while
-  lyrics show in the HUD.
+  the lyrics in the HUD when G's Dash's Dials & HUD pick is G's Music's lyrics (without G's Dash, its
+  own HUD setting, off by default), in a small, medium or large size. Both need the Cluster renderer
+  tool.
 
 Needs Spotify Premium. Setup guide: [docs/spotify.md](docs/spotify.md).
 
@@ -53,7 +61,8 @@ Video on the centre screen while parked.
 - Your own sources: direct links to MP4 (H.264) files, sent from your phone with a QR code or a
   6-digit code.
 - Picks up where you left off.
-- Optional playback in the HUD or the cluster, also only while parked.
+- Optional playback in the HUD or the cluster, also only while parked: in the cluster while G's Dash's
+  pick is Auto, in the HUD while its Dials & HUD pick is the car's own.
 
 The picture shows only in P, at a standstill. Video only, no sound yet.
 
