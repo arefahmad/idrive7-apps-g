@@ -1,5 +1,5 @@
 /*
- * Home widget: send an animated GIF from the phone to the car's home-screen widget. Static, no secrets. The
+ * Logo: send an animated GIF from the phone to G's Dash (the home-screen widget and the cluster). Static, no secrets. The
  * car's side is kit/runtime/gif_drop.js (it says the whole exchange); this page:
  *
  *   <this page>#v=1&s=<topic>.<key>&a=<app name>&w=<px>&h=<px>   from the car's QR code
@@ -224,7 +224,7 @@
   if (h.get('v') === '1') {
     var st = parseState(h.get('s'));
     if (!st) { failWith('This code is not complete. Scan the code on the car’s screen again.'); return; }
-    if (h.get('a')) { try { var app = cleanName(new TextDecoder().decode(fromB64u(h.get('a')))).slice(0, 40); if (app) { $('app').textContent = app + ' · home widget'; document.title = app + ': send a GIF'; } } catch (e) { /* plain title */ } }
+    if (h.get('a')) { try { var app = cleanName(new TextDecoder().decode(fromB64u(h.get('a')))).slice(0, 40); if (app) { $('app').textContent = app + ' · logo'; document.title = app + ': send a GIF'; } } catch (e) { /* plain title */ } }
     var w = Number(h.get('w')), hh = Number(h.get('h'));
     formPage(st, w > 0 && hh > 0 && w <= 4096 && hh <= 4096 ? { w: w, h: hh } : null);
   } else {

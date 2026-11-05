@@ -273,6 +273,29 @@ test('a lost slot (a door, a phone reconnecting): no stepping aside, the rendere
     assert.strictEqual(only(x.cr)[0].visible, true);
     assert.ok(!x.cr.calls.some((k) => k[0] === 'set' && k[2].visible === false));
 });
+test('Logo: My GIF replaces the look\'s G, and new frames go out only while parked', () => {
+    const c = clock();
+    let n = 0;
+    const picture = {
+        id: 'gif:1', animate: true,
+        frame: (still) => ({ w: 4, h: 2, d: Buffer.from([n, still ? 1 : 2, 0, 255]), stamp: still ? '0' : String(n) }),
+    };
+    const x = logo(c, { picture: picture, parked: true, look: 'm' });
+    const L = only(x.cr, 'image')[0];
+    assert.ok(L, 'an image layer, not the look\'s shader');
+    assert.strictEqual(L.iw, 4); assert.strictEqual(L.ih, 2); assert.strictEqual(L.w, 4); assert.strictEqual(L.h, 2);
+    assert.strictEqual(L.fps, CL.FPS_ANIM);
+    x.cr.emit('target', 'map', 'shown', '', '');
+    assert.ok(/your GIF/.test(x.lg.view().text), x.lg.view().text);
+    const before = x.lg.stats.sends;
+    n = 1; x.lg._frame();
+    assert.ok(x.lg.stats.sends > before, 'a later frame while parked');
+    const mid = x.lg.stats.sends;
+    x.lg.update({ on: true, look: 'm', parked: false, picture: picture });
+    n = 2; x.lg._frame();
+    assert.strictEqual(x.lg.stats.sends, mid, 'the frame is held while moving');
+    assert.ok(/still while moving/.test(x.lg.view().text));
+});
 
 /* ----- G's Music ----- */
 const MC = req(MUSIC, 'music_cluster.js');
@@ -325,7 +348,14 @@ test("the dials and G's Dash's HUD: never hidden for another app's panel / HUD l
 test("Options > Cluster & HUD: one tap per pick; none while G's Dash is off", () => {
     const HUB = req(DASH, 'hub.js'), REC = req(DASH, 'kit/record.js'), LK = req(DASH, 'look_m.js');
     assert.ok(!HUB.SCREENS.some((x) => x[0] === 'quick'), 'no separate dash screen');
+    assert.ok(!HUB.SCREENS.some((x) => x[0] === 'showcase'), 'Showcase is gone');
+    assert.strictEqual(HUB.SCREENS[0][0], 'drive');
     assert.strictEqual(HUB.SCREENS[HUB.SCREENS.findIndex((x) => x[0] === HUB.HOME)][0], 'drive');
+    const PREFS = req(DASH, 'prefs.js');
+    assert.deepStrictEqual(PREFS.migrateLogo({ widget: 'gif', logo: 'logo' }), { value: 'gif', migrated: true });
+    assert.deepStrictEqual(PREFS.migrateLogo({ widget: 'logo' }), { value: 'logo', migrated: true });
+    assert.deepStrictEqual(PREFS.migrateLogo({ logo: 'gif' }), { value: 'gif', migrated: false });
+    assert.deepStrictEqual(PREFS.migrateLogo({}), { value: 'logo', migrated: false });
     const got = [];
     const model = (on) => ({
         on, src: 'logo', disp: 'none',

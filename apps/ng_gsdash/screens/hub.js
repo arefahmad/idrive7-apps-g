@@ -1,6 +1,6 @@
 'use strict';
 /**
- * hub.js - G's Dash's screens besides Drive (the look's own dash, main.js): Showcase, Warm-up,
+ * hub.js - G's Dash's screens besides Drive (the look's own dash, main.js): Warm-up,
  * G-force and Tires, switched by a horizontal swipe (main.js), page dots beside the G button. Each
  * screen draws with the current look's palette, fonts and plates, so a look carries across.
  * Car data only: a value the car hasn't sent shows "--", never a made-up one.
@@ -8,13 +8,12 @@
  */
 const L = require('./lib');
 const G = require('./kit/gauges');
-const CLOCK = require('./clock');
 const U = require('./units');
 const { withAlpha, isNum } = L;
 
-// left to right as the swipe goes; the app opens on HOME (Drive), second: Showcase is a swipe right of it
+// left to right as the swipe goes; the app opens on HOME (Drive), the first screen
 // (0.17.0's Cluster & HUD screen became Options > Cluster & HUD itself, 0.17.1: pickRows())
-const SCREENS = [['showcase', 'Showcase'], ['drive', 'Drive'], ['warmup', 'Warm-up'], ['gforce', 'G-force'], ['tires', 'Tires']];
+const SCREENS = [['drive', 'Drive'], ['warmup', 'Warm-up'], ['gforce', 'G-force'], ['tires', 'Tires']];
 const HOME = 'drive';
 const GREEN = '#2fd27a';
 
@@ -445,90 +444,4 @@ function tires(cv, st, S, M) {
 }
 
 
-/* ---------- showcase ---------- */
-/** 12-hour clock text from a Date, in the zone the Date reads (the head unit's): H:MM with a colon (clock.js). */
-function clock12(d) {
-    return CLOCK.text({ h: d.getHours(), m: d.getMinutes(), dow: d.getDay(), mon: d.getMonth(), day: d.getDate() });
-}
-/**
- * Showcase (0.11.0): the look's flowing waves (waves.js) over the whole page; left the car (Nick's
- * showcase_car.png as it is) on a soft floor shadow; centre a big 12-hour clock (H:MM, clock.js) and
- * the date, or, while Spotify has a track and the setting says so, a smaller clock over the frosted
- * now-playing card (music.card); right the G mark, a thin divider and showcase_logo.png (as it is,
- * roundel included) straight on the waves: no plate. The pictures are prepared for the renderer path
- * (pictures.js: smooth scaling, no fringes, composited over the waves where RGBA shows opaque).
- * sc = { waves: Waves, pics: Pictures, ids: { wave, car, logo }, src: { car, logo } decoded RGBA,
- * music: true when Spotify may show }. Returns the card's rect, or null.
- */
-const CAR_BOX = { w: 470, h: 350 };
-/** The waves' brightness, 0.15..1, from the setting's percent (prefs.js bgLevel: anything else 100 %). */
-const dimOf = (pct) => { const n = Number(pct); return pct === undefined || pct === null || !isFinite(n) ? 1 : Math.max(0.15, Math.min(1, n / 100)); };
-const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16) || 0);
-function showcase(cv, st, S, music, lk, gr, sc, now) {
-    const px = lk.id === 'pixel', white = '#ffffff';
-    // the waves: the whole page (under the kit's header in the window layout), the current look's picture,
-    // a few rows a frame until it's there (its darkest colour meanwhile)
-    const PW = 1600, wy = cv.own ? 0 : S.y - 6, WH = S.y + S.h + 6 - wy, scale = cv.textScale || 1, mode = cv.pictures || 'blend';
-    const ready = sc.waves.step(lk.tintKey || lk.id, Math.round(sc.waveW * WH / PW), 25);
-    // (marked, 0.13.6: under the back arrow column, left of the page, the picture's first column
-    // stretched to the screen's edge - the same picture, nothing new kept)
-    const dim = dimOf(sc.dim), EDGE = 96;
-    G.background(cv, (c) => {
-        if (ready) c.image(sc.ids.wave, 0, wy, PW, WH);
-        else c.fillRect(0, wy, PW, WH, sc.base(lk.tintKey || lk.id));
-        // Showcase background (setting showcaseBg, 15..100 %): the waves darkened, nothing else
-        if (dim < 1) c.fillRect(0, wy, PW, WH, withAlpha('#000000', 1 - dim));
-    }, (c) => {
-        if (ready) c.image(sc.ids.wave, -EDGE, wy, EDGE * sc.waveW, WH);
-        else c.fillRect(-EDGE, wy, EDGE, WH, sc.base(lk.tintKey || lk.id));
-        if (dim < 1) c.fillRect(-EDGE, wy, EDGE, WH, withAlpha('#000000', 1 - dim));
-    });
-    const playing = !!(music && sc.music && music.hasTrack());
-    // a picture at page rect r: its pixels prepared at the device size; on the opaque path over the waves under it
-    const show = (key, src, r, o) => {
-        o = o || {};
-        const dw = r.w * scale, dh = r.h * scale;
-        const at = (x, y) => (ready ? sc.waves.sample(r.x + (x + 0.5) * r.w / Math.round(dw), r.y - wy + (y + 0.5) * r.h / Math.round(dh), PW, WH) : hexRgb(sc.base(lk.tintKey || lk.id)));
-        const bg = (x, y) => at(x, y).map((v) => v * dim);
-        const p = sc.pics.show(sc.ids[key], src, dw, dh, mode, Object.assign({ bg: bg, bgKey: (ready ? sc.waves.key : 'base:' + lk.id) + '|' + dim + '|' + [r.x, r.y].map(Math.round).join(',') }, o));
-        cv.image(p.id, r.x, r.y, r.w, r.h);
-    };
-    // left: the car on its floor shadow (in the same pixels)
-    if (sc.src.car) {
-        const c = sc.src.car, k = Math.min(CAR_BOX.w / c.w, CAR_BOX.h / c.h), w = Math.round(c.w * k), h = Math.round(c.h * k);
-        show('car', c, { x: S.x + 36, y: Math.round(S.y + (S.h - h) / 2 + 6), w: w, h: h }, { shadow: { y: 0.93, rx: 0.47, ry: 0.07, alpha: 0.6 } });
-    }
-    // right: the G mark | the logo, straight on the waves, clear of the dots and the G button below
-    const markY = S.y + (playing ? 0.40 : 0.44) * S.h, gh = 64, gw = L.badgeWidth(gh), gap = 30;
-    const right = Math.min(S.x + S.w - 30, PW - 40), room = right - 1050;
-    let lh = 0, lw = 0;
-    if (sc.src.logo) { const l = sc.src.logo; lh = Math.min(120, (room - gw - 2 * gap - 2) * l.h / l.w); lw = Math.round(lh * l.w / l.h); lh = Math.round(lh); }
-    const total = gw + (lw ? 2 * gap + 2 + lw : 0), mx = right - total;
-    L.badge(cv, mx, markY + gh / 2, gh, lk.badgeLetter);
-    if (lw) {
-        cv.fillRect(mx + gw + gap, markY - 34, 2, 68, withAlpha(white, 0.35));
-        show('logo', sc.src.logo, { x: Math.round(mx + gw + 2 * gap + 2), y: Math.round(markY - lh / 2), w: lw, h: lh });
-    }
-    // centre: the clock (big, white) and the date; with Spotify: smaller, over the card
-    const c = now && typeof now === 'object' && now.time ? now : clock12(new Date(now)), cx = 800;
-    const sized = (want, maxW) => { const w0 = st.numW(cv, c.time, want); return w0 > maxW ? Math.floor(want * maxW / w0) : want; };
-    if (!playing) {
-        if (music) music.band = null;
-        const size = sized(px || lk.id === 'digital' ? 150 : 172, 440), by = S.y + S.h / 2 + size * 0.34, tw = st.numW(cv, c.time, size);
-        st.num(cv, c.time, cx - tw / 2, by, size, white);
-        st.txt(cv, c.date, cx, by + 56, 24, withAlpha(white, 0.75), { align: 'center' });
-        if (music && sc.music) {
-            const s2 = music.status, note = s2 === 'noauth' || s2 === 'reauth' ? 'Spotify: not signed in (Options > Spotify)' : s2 === 'offline' ? 'Spotify: no internet' : '';
-            if (note) st.txt(cv, note, cx, S.y + S.h - 18, 15, withAlpha(white, 0.7), { align: 'center' });
-        }
-        return null;
-    }
-    const size = sized(px ? 90 : 100, 420), by = S.y + 14 + Math.round(size * 0.74), tw = st.numW(cv, c.time, size);
-    st.num(cv, c.time, cx - tw / 2, by, size, white);
-    const R = { x: 572, y: by + 30, w: 456, h: 0 };
-    R.h = S.y + S.h - 8 - R.y;
-    music.card(cv, S, lk, R);
-    return R;
-}
-
-module.exports = { SCREENS, HOME, GREEN, style, dots, dotsBox, toast, pill, quickTile, fitTxt, pickLayout, pickRows, pickFoot, warmup, gforce, tires, showcase, clock12, CAR_BOX, dimOf };
+module.exports = { SCREENS, HOME, GREEN, style, dots, dotsBox, toast, pill, quickTile, fitTxt, pickLayout, pickRows, pickFoot, warmup, gforce, tires };

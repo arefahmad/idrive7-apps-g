@@ -1,8 +1,8 @@
 {
   "id": "ng_gsdash",
   "title": "G's Dash",
-  "description": "Driver display and car hub in eight looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space). Swipe between Showcase, Drive (shift lights, gear, rpm, speed, g-meter, oil and coolant), Warm-up, G-force and Tires (TPMS), with an optional Spotify panel and a home-screen widget. With the Cluster renderer tool, one tap picks the cluster's centre (logo, G's Music, Waze, stock, Auto) and dials & HUD (your look, the HUD, G's Music's lyrics); CarPlay's map in the cluster needs the Waze on cluster tool (off by default). The Spotify panel needs Spotify Premium and internet through mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
-  "version": "0.17.1",
+  "description": "Driver display in eight looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space). Swipe between Drive (shift lights, gear, rpm, speed, g-meter, oil and coolant), Warm-up, G-force and Tires, with an optional Spotify panel. Logo is the G mark by default, or a GIF from your phone, on the home-screen widget and in the cluster. With the Cluster renderer tool, one tap picks the cluster's centre (logo, G's Music, Waze, stock, Auto) and dials & HUD (your look, the HUD, G's Music's lyrics). CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium and mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
+  "version": "0.18.0",
   "vendor": "ng",
   "loggingId": "OAN1",
   "iconGlyph": "gauge",
@@ -59,7 +59,7 @@
     }
   },
   "config": {
-    "comment": "Home widget > Send a GIF (kit/runtime/gif_drop.js): widgetRelay is the public phone page (https, holds no secrets; web/widget/ on the gh-pages branch), widgetMailbox the ntfy server the phone and the car meet on (everything on it AES-256-GCM sealed; the published page talks to https://ntfy.sh only).",
+    "comment": "Logo > Send a GIF (kit/runtime/gif_drop.js): widgetRelay is the public phone page (https, holds no secrets; web/widget/ on the gh-pages branch), widgetMailbox the ntfy server the phone and the car meet on (everything on it AES-256-GCM sealed; the published page talks to https://ntfy.sh only).",
     "widgetRelay": "https://nickgcode.github.io/idrive7-apps/widget/",
     "widgetMailbox": "https://ntfy.sh"
   },
@@ -77,23 +77,20 @@
     }
   ],
   "startWidget": {
-    "comment": "Home-screen widget: just the G logo, large and centred (widget_logo.js from tools/make_g_icon.py: the mark alone, transparent, at 'size' and inside 'safe'). Same layout and cells as upstream's apps/edrive widget (BMW's Drive Recorder widget on this firmware): the picture goes into BackgroundImage1; every text line and the progress bar are written empty here once per placed widget. The small widget shows no pictures on this firmware (upstream's finding), so main.js sets its Title to the app's name; the big one's Title stays empty. 'safe' = share of width / height kept clear on each side (the HMI crops the edges). 0.15.0: Home widget > My GIF plays an animation in this picture instead (kit/runtime/widget_anim.js); stream: the stream widget template the Store's renderer would mount into the HMI (the stock layout without its vignette, the renderer's stream surface over its picture; not in mgu-render yet), used by kit/tools/build.py only when the renderer's marker file names it (streamWidget), else the stock layout as before (docs/animated-widget.md).",
+    "comment": "Home-screen widget and the same picture as Logo. Layout is BMW's LT_Table_BasicWidget (common/widget/generated/Spec_MainMenuWidgets.pbw): BackgroundImage_Big and BackgroundImage_Small are LT_Label_WidgetBackground, a full-widget picture with no mask, so the Drive Recorder vignette is not drawn. The picture G's Dash draws is 'size' (the G mark in widget_logo.js, or My GIF); the HMI scales it into Big and Small. Text cells stay empty. 'safe' is the inset already baked into the G mark; how the new layout crops that picture still has to be checked on the car. My GIF plays in this picture (kit/runtime/widget_anim.js). stream: the stream widget template the Store's renderer would mount (docs/animated-widget.md), used by kit/tools/build.py only when the renderer's marker file names it, else this layout.",
     "name": "G's Dash",
-    "layout": "LT_Table_OnlineApps_DriveRecorderWidget",
+    "layout": "LT_Table_BasicWidget",
     "stream": {"marker": "/var/opt/mgu-render/current/hmi-templates.json"},
-    "image": "BackgroundImage1",
+    "image": "BackgroundImage_Big",
+    "imageSmall": "BackgroundImage_Small",
     "size": [384, 256],
     "safe": [0.09, 0.1],
     "cells": {
-      "ErrorInfo": [false, "Bool"],
-      "background": [true, "Bool"],
       "Title": ["", "Text"],
-      "ProgressbarVisible": [false, "Bool"],
-      "Progress": [0, "Float"],
-      "TextRecordings": ["", "Text"],
-      "TextCam": ["", "Text"],
-      "TimeElapsed": ["", "Text"],
-      "TimeRemaining": ["", "Text"]
+      "InfoText1strow": ["", "Text"],
+      "InfoText2ndtrow": ["", "Text"],
+      "InfoText3rdrow": ["", "Text"],
+      "background": [true, "Bool"]
     }
   },
   "settings": [
@@ -112,10 +109,6 @@
     {"key": "gScale", "label": "G-meter size", "type": "number", "unit": "g", "default": 1.5, "steps": [1.0, 1.5, 2.0]},
     {"key": "panel", "label": "Right panel", "type": "choice", "default": "g",
      "options": [["g", "G-meter and peaks"], ["spotify", "Spotify (touch controls)"]]},
-    {"key": "showcase", "label": "Showcase shows", "type": "choice", "default": "spotify",
-     "options": [["spotify", "Spotify when playing (else clock)"], ["clock", "Clock only"]]},
-    {"key": "showcaseBg", "label": "Showcase background", "type": "number", "unit": "%", "default": 100,
-     "steps": [15, 20, 30, 40, 50, 60, 70, 80, 90, 100]},
     {"key": "clusterControl", "label": "G's Dash on the cluster & HUD", "type": "choice", "default": "on",
      "options": [["on", "On"], ["off", "Off - the car stock"]]},
     {"key": "clusterSource", "label": "Cluster source (map area)", "type": "choice", "default": "auto",
@@ -127,7 +120,7 @@
     {"key": "unitSpeed", "label": "Speed unit", "type": "choice", "default": "mph", "options": [["mph", "mph"], ["kmh", "km/h"]]},
     {"key": "unitTemp", "label": "Temperature unit", "type": "choice", "default": "f", "options": [["f", "\u00b0F"], ["c", "\u00b0C"]]},
     {"key": "unitPress", "label": "Pressure unit", "type": "choice", "default": "psi", "options": [["psi", "psi"], ["bar", "bar"], ["kpa", "kPa"]]},
-    {"key": "widget", "label": "Home widget shows", "type": "choice", "default": "logo", "options": [["logo", "The G logo"], ["gif", "My GIF"]]}
+    {"key": "logo", "label": "Logo", "type": "choice", "default": "logo", "options": [["logo", "The G logo"], ["gif", "My GIF"]]}
   ],
-  "retiredSettings": ["demo", "layout", "renderer", "speedUnit", "spotifyPoll", "showBadge", "lights", "theme", "bars"]
+  "retiredSettings": ["demo", "layout", "renderer", "speedUnit", "spotifyPoll", "showBadge", "lights", "theme", "bars", "showcase", "showcaseBg"]
 }

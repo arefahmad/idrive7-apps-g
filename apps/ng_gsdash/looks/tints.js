@@ -9,7 +9,6 @@
  *   the cluster     skin id look + '-' + tint -> skin_<look>-<tint>.png (baked per variant, only the
  *                   active one decoded and uploaded); the logo's shader constants (no picture; Pixel's
  *                   emblem is the same in every variant)
- *   Showcase        waves.js PAL[look + '-' + tint]
  * Node 8.
  */
 const VARIANTS = {
@@ -62,7 +61,7 @@ const VARIANTS = {
     // fill), hp / hp2 / hpTop (the power bar), ghost (its peak trail), crit / crit2 / critTop / hot / heartHi /
     // redDim (red stays red in every one: past the shift point, too hot, the heart, the needles), flash / flashTop /
     // flash2 / flashInk (SHIFT! - the blocks and the word over them), cold (the cold zone), shade (the speedo
-    // fill's far end and the speed digits' shadow on the cluster), wave (Showcase: c1, c2, hi), hud (hud_core.js).
+    // fill's far end and the speed digits' shadow on the cluster), wave (c1, c2, hi), hud (hud_core.js).
     // The emblem (px.js) keeps the G's Dash colours in every one.
     pixel: [
         { id: 'night', name: 'Night', swatch: '#5b4fd6', c: {

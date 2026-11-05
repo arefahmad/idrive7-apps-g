@@ -10,7 +10,7 @@
  *       draw: (inst, playing) => canvas | null,             // the app's own picture while no animation plays
  *   });                                                     // (and its text cells, e.g. the small widget's title)
  *   aw.start();                                             // in place of ctx.widget.loop(...)
- *   aw.enable(settings.get('widget') === 'gif');            // the animation, or the app's own picture
+ *   aw.enable(on);                                          // the animation, or the app's own picture
  *   await aw.replace(await anim.prepare(gif, { w, h, fit }), { name });   // keep a new one and play it
  *   aw.remove(); aw.status(); aw.frame(Date.now());         // forget it; what plays and how; a preview frame
  *
@@ -26,9 +26,17 @@
  *           a frame change is a single setValue of that handle (Widget.showAsset), at most HMI_FPS a second
  *           with one call to the HMI in flight per widget, so a slow HMI drops frames instead of falling
  *           behind; the frame sent is always the one due at that moment, so the loop keeps its pace.
- * Only big widgets get pictures (the small one shows none on this firmware); a widget the HMI says is
+ * A layout with startWidget.imageSmall (G's Dash's BasicWidget) gets the picture on the small size too.
+ * Otherwise only big widgets do: the Drive Recorder small size shows no pictures on this firmware. A
+ * stream template replaces the layout, so the small cell is not used then. A widget the HMI says is
  * hidden gets one every few seconds, so none is left blank by a visibility event that went missing.
  */
+/** Placed widgets that receive a picture. sw is app.json startWidget (with built.stream when the build used it). */
+function pictureInstances(list, sw) {
+    sw = sw || {};
+    if (sw.imageSmall && !(sw.built && sw.built.stream)) return list || [];
+    return (list || []).filter((i) => i.big);
+}
 const fs = require('fs');
 const { RenderClient } = require('./renderd');
 const record = require('./record');
@@ -182,7 +190,7 @@ class AnimatedWidget {
         const cells = list.filter((i) => !(now - (this.drawn[i.spawnId] || 0) < DRAW_MS));
         cells.forEach((i) => { this.drawn[i.spawnId] = now; });
         return Promise.all(cells.map((i) => this._draw(i, true))).then(() => {
-            const pics = list.filter((i) => i.big);
+            const pics = pictureInstances(list, this.spec.startWidget);
             this._rate(now);
             if (this.gpu && this.gpu.ready) {
                 // the stream is up: the HMI's copies of the frames are not needed (made again if it goes)
@@ -313,4 +321,4 @@ class AnimatedWidget {
     }
 }
 
-module.exports = { AnimatedWidget, HMI_FPS, IMG_BASE };
+module.exports = { AnimatedWidget, pictureInstances, HMI_FPS, IMG_BASE };
