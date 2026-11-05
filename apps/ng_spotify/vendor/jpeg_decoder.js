@@ -1,7 +1,7 @@
 /*
  * Vendored for ng_spotify from jpeg-js 0.4.4 (https://github.com/jpeg-js/jpeg-js, lib/decoder.js),
  * BSD-3-Clause, Copyright (c) 2014 Eugene Ware; the decoder core is from pdf.js,
- * Copyright 2011 notmasteryet, Apache License 2.0 (header below). See LICENSE in this folder.
+ * Copyright 2011 notmasteryet, Apache License 2.0 (header below). See apps/ng_spotify/LICENSE.
  * Changes: object spread and a default parameter replaced with Object.assign / `||` for Node 8.
  */
 /* -*- tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- /

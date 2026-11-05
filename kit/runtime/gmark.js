@@ -9,7 +9,7 @@
  *   M.badge(cv, x, y, h);                    // bottom-left at (x, y), h tall; returns its width
  *   M.badgeWidth(h);
  *
- * (G's Dash keeps its own copy in apps/ng_gsdash/lib.js.)
+ * (G's Dash keeps its own copy in apps/ng_gsdash/looks/lib.js.)
  */
 const LIGHT_BLUE = '#2fa8e8', DARK_BLUE = '#1e4ca0', RED = '#e4212b', LETTER = '#f5f7fa';
 const K = 0.27;                       // italic shear (x shift per px of height)

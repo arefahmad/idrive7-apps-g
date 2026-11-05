@@ -153,7 +153,7 @@ To add it to an app:
 
 1. `app.json`: a `startWidget` (G's TV has none yet: copy G's Dash's), optionally its `"stream"` entry; a
    `config` with `widgetRelay` and `widgetMailbox`; and an HTTP client for `GifDrop`. G's TV has
-   `tv_net.js`; G's Music can share it with `"share": ["ng_tv/tv_net.js"]`, as G's Dash does.
+   `tv_net.js`; G's Music can share it with `"share": ["ng_tv/net/tv_net.js"]`, as G's Dash does.
 2. In `main.js`, in place of `ctx.widget.loop(fps, draw)`:
 
    ```js
