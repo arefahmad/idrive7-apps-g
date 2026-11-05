@@ -77,10 +77,10 @@
     }
   ],
   "startWidget": {
-    "comment": "Home-screen widget: just the G logo, large and centred (widget_logo.js from tools/make_g_icon.py: the mark alone, transparent, at 'size' and inside 'safe'). Same layout and cells as upstream's apps/edrive widget (BMW's Drive Recorder widget on this firmware): the picture goes into BackgroundImage1; every text line and the progress bar are written empty here once per placed widget. The small widget shows no pictures on this firmware (upstream's finding), so main.js sets its Title to the app's name; the big one's Title stays empty. 'safe' = share of width / height kept clear on each side (the HMI crops the edges). 0.15.0: Home widget > My GIF plays an animation in this picture instead (kit/runtime/widget_anim.js); stream: the stream widget template the Store's renderer mounts into the HMI (the stock layout without its vignette, the renderer's stream surface over its picture), used by kit/tools/build.py only when the marker file lists it (docs/animated-widget.md), else the stock layout as before.",
+    "comment": "Home-screen widget: just the G logo, large and centred (widget_logo.js from tools/make_g_icon.py: the mark alone, transparent, at 'size' and inside 'safe'). Same layout and cells as upstream's apps/edrive widget (BMW's Drive Recorder widget on this firmware): the picture goes into BackgroundImage1; every text line and the progress bar are written empty here once per placed widget. The small widget shows no pictures on this firmware (upstream's finding), so main.js sets its Title to the app's name; the big one's Title stays empty. 'safe' = share of width / height kept clear on each side (the HMI crops the edges). 0.15.0: Home widget > My GIF plays an animation in this picture instead (kit/runtime/widget_anim.js); stream: the stream widget template the Store's renderer would mount into the HMI (the stock layout without its vignette, the renderer's stream surface over its picture; not in mgu-render yet), used by kit/tools/build.py only when the renderer's marker file names it (streamWidget), else the stock layout as before (docs/animated-widget.md).",
     "name": "G's Dash",
     "layout": "LT_Table_OnlineApps_DriveRecorderWidget",
-    "stream": {"layout": "LT_Table_OnlineApps_MguStreamWidget", "marker": "/var/opt/mgu-render/current/hmi-templates.json"},
+    "stream": {"marker": "/var/opt/mgu-render/current/hmi-templates.json"},
     "image": "BackgroundImage1",
     "size": [384, 256],
     "safe": [0.09, 0.1],

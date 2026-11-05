@@ -1,6 +1,6 @@
 # Animated home-screen widget
 
-G's Dash 0.15.0 can play an animated GIF as its home-screen widget. You send the GIF from your phone with a
+G's Dash 0.15 can play an animated GIF as its home-screen widget. You send the GIF from your phone with a
 QR code; the car prepares it, shows it to you, and plays it on the widget. The parts are in the kit, so
 G's Music or G's TV can use them too (see [Other apps](#other-apps-gs-music-gs-tv)).
 
@@ -32,9 +32,9 @@ page is static and talks to nothing else.
 
 | | HMI pictures (every unit) | Stream (Option A) |
 |---|---|---|
-| Needs | nothing | the Store's renderer with the stream widget (below), and G's Dash installed after it |
+| Needs | nothing | a stream widget in the Store's renderer (below: not there yet), and G's Dash installed after it |
 | Frame rate | up to 12 fps | the GIF's own rate (the renderer draws at display rate) |
-| Vignette | the stock widget's dark edge and crop | none |
+| Vignette | the stock widget's dark edge and crop (see [The dark edge](#the-dark-edge)) | none |
 | Cost per frame | one `setValue` of a resource handle made ahead | one small draw message; each frame goes to the GPU once |
 
 **HMI pictures**: every frame is written once as a PNG with its own resource handle. A frame change is one
@@ -46,67 +46,96 @@ If the renderer goes away, playback falls back to HMI pictures until it is back.
 
 The Home widget page shows which way is in use and the measured frame rate.
 
-## Option A: what the Store's renderer needs to provide
+## The dark edge
 
-This repository has the app side only. The native side (`mgu-render` and `mgu-renderd-hmi.service`) lives in
-the Store, so until it ships the parts below, every unit plays through HMI pictures. Nothing here changes
-how a unit without them behaves. The app side is tested against a mock renderer that speaks this contract.
+The dark edge (vignette) over the widget is drawn by `HmiMain3D` itself, as part of BMW's Drive Recorder
+layout (`LT_Table_OnlineApps_DriveRecorderWidget`), which G's Dash's widget uses. An app only fills that
+layout's cells, so nothing the app draws can remove it. Three ways to get rid of it, cheapest first:
 
-### 1. The template
+1. **Dark edge test** (G's Dash 0.15.2, Options > Home widget). The layout has a Bool cell, `background`, that
+   G's Dash has always set to true. **Backdrop off** sets it to false on every placed widget. It is not known
+   yet what that cell switches. If the dark edge goes, leave it off. If your picture goes as well, turn it back
+   on.
+2. **A changed copy of the layout**, mounted by the Store's renderer (below). This needs the layout's
+   definition from the unit first. Run `kit/tools/hmi_widget_probe.js` on the unit and see
+   [Finding the vignette](#finding-the-vignette).
+3. **The stream widget (Option A)**: the same changed copy, plus the renderer's surface over the picture for
+   display-rate playback.
 
-`mgu-renderd-hmi.service` already runs before `HmiMain3D` and bind-mounts a modified copy of the HMI's widget
-assets for in-page drawing. Into that copy it adds a startWidget template named
-**`LT_Table_OnlineApps_MguStreamWidget`**: a clone of `LT_Table_OnlineApps_DriveRecorderWidget` (the layout
-G's Dash and G's Music use) with these changes:
+## How the HMI's widgets are built (from the Store's mgu-render)
 
-- the vignette overlay quad/material is removed (or its alpha set to 0);
-- the same cells as the stock layout (`Title`, `BackgroundImage1`, `TextRecordings`, `TextCam`, `Progress`, ...),
-  so an app fills it exactly as before, and `BackgroundImage1` is still drawn;
-- over `BackgroundImage1`'s quad, a quad textured by a RAMSES stream texture bound to the renderer's widget
-  stream source (the `ramses-ivi` surface id), with a fully transparent fallback texture. With no stream the
-  template looks like the stock one without the vignette, so the HMI-picture path still works in it.
+The Store's renderer (`robertnisipeanu/mgu-store`, `native/mgu-render`; its in-page drawing came from
+display-bridge and this kit's upstream renderer) already changes the HMI's widgets for in-page drawing. This
+is how:
 
-Every placed instance of the template shows the same stream.
+- `HmiMain3D` builds every page and widget from the `*.pbw` files (protobuf) in its widget folder,
+  `/mnt/dataro/data/hmi/bmw/widget`, and loads every `*.pbw` it finds there.
+- Every name in those files (templates, child widgets, parameters, values) is a number: an index into an
+  identifier table compiled into `HmiMain3D`, so the numbers belong to one HMI build. **A template can only
+  have a name that is already in that table.** mgu-render's `js/hmi_template.js` reads the table from the binary
+  and defines `LT_State_A4A_WelcomeApp`, a page template the binary names but no file defines. Its content is a
+  title bar plus an `eWidgetType_EmbeddedSurface` child that samples ivi surface `0x500` from the HMI's own
+  compositor (`wayland-1`).
+- The template is made at install (`mgu-render-hmi.sh --build`, at low priority, at most 120 s) for that
+  `HmiMain3D` build. Before each HMI start, `mgu-render-hmi.service` copies the widget folder to `/run`, adds the
+  template, and bind-mounts the copy over the original. Nothing on the unit's partitions is written.
+  `umount /mnt/dataro/data/hmi/bmw/widget` undoes it.
 
-### 2. The marker
+So the vignette lives in the Drive Recorder layout's `.pbw` definition, and taking it out means a changed copy
+of that definition in the same mounted folder.
 
-While the template is mounted on every boot, the tool lists it in
-`/var/opt/mgu-render/current/hmi-templates.json`:
+## Finding the vignette
 
-```json
-{ "startWidget": ["LT_Table_OnlineApps_MguStreamWidget"] }
+Nobody has looked inside the Drive Recorder layout's definition yet. `kit/tools/hmi_widget_probe.js` prints it.
+It is read-only (it writes, mounts and restarts nothing) and runs on the unit's Node 8 as root, because it
+reads `HmiMain3D` whole, as the template build does:
+
+```bash
+nice -n 19 node hmi_widget_probe.js > probe.txt
 ```
 
-`kit/tools/build.py` runs on the head unit when the Store installs an app. It builds an app's widget with the
-template only if the app asks for it (`app.json` `startWidget.stream`) and the marker lists it; otherwise it
-uses the stock layout as before. The template must stay as long as the marker does. If an app was built
-with the template and the marker later disappears (the tool was removed), the HMI no longer has that
-template. The app then says on its Home widget page to install it again, and a reinstall goes back to
-the stock layout.
+It prints:
 
-### 3. The protocol (mgu-render/1, `kit/runtime/renderd.js`)
+- the file that defines the layout;
+- its child widgets, each with its parameters, set to a value or bound to one of the layout's own parameters
+  (the cells an app writes, such as `BackgroundImage1` and `background`, are among those);
+- the lines that name a vignette, shadow, gradient, mask or background;
+- the whole definition, with identifiers named;
+- the widget-type names this `HmiMain3D` knows that no file defines, i.e. the names a new template could take.
 
-- **`X_READY` caps bit 32 (`widget`)**: set only when this boot's HMI has the template mounted and its stream
-  source bound.
-- **`MODE` 3** (`0x4d520001`, one u32), sent after `READY`: this connection draws into the widget's stream
-  surface. It is not a layer over the screen: no foreground gate, no touch claims, no controller grab.
-- **`PLACE`**: `w` and `h` are the size the app draws at (G's Dash: 384 x 256; `x`, `y`, `ox`, `oy` 0,
-  `scale` 1). The HMI's stream texture stretches the surface over the widget's picture quad.
-- **`SHOW` 1 / 0**: draw into the surface, or stop (the template's own picture shows). The app sends 0 while
-  no big widget is visible.
-- **Frames**: each GIF frame is sent once as a native picture (message 10, premultiplied RGBA); then a `FRAME`
-  (7) with one op 18 per frame change, at least once a second; `TICK` as usual.
-- When the connection closes, the renderer frees its pictures. The app reconnects to swap an animation.
-- A renderer that does not set bit 32 never gets `MODE` 3. The app closes that connection and plays
-  through HMI pictures, asking again after 5 minutes.
+`--template NAME` prints another layout. It was tested against a synthetic `HmiMain3D` and widget files
+written the way mgu-render writes its own, including mgu-render's real template, which it reads back. Its
+first run on a real unit is still to come.
 
-`MODE` 3 and caps bit 32 are the values this repository uses (`X_MODE_WIDGET` and `CAP_WIDGET` in
-`kit/runtime/renderd.js`). If mgu-render's `PROTOCOL.md` assigns them differently, change those two
-constants.
+## Option A: what the Store's renderer would need
 
-With the template mounted, `HmiMain3D` owns the quad. As the discovery describes, the animation then
-scrolls with the home-screen pages, sits under BMW popups, notifications and CarPlay, has no vignette,
-and the widget's tap and iDrive click still go to MainApp, which opens the app.
+This repository has the app side only. What the probe shows decides the details; this is the shape:
+
+1. **The layout.** Either change the stock Drive Recorder definition in mgu-render's mounted copy (drop the
+   vignette child, or bind its visibility to a parameter; this changes every widget using that layout,
+   G's Music's and BMW's own Drive Recorder too), or define a free widget-type name from the probe's list as
+   a copy without the vignette. For playback at display rate, add an `eWidgetType_EmbeddedSurface` child over the
+   picture, sampling a second ivi surface id the renderer feeds. With no frames on it, the surface shows
+   nothing, so the HMI-picture path still works in the same layout.
+2. **The marker.** With a new name, the renderer writes it to `/var/opt/mgu-render/current/hmi-templates.json`
+   as `{"streamWidget": "<name>"}`. `kit/tools/build.py` (run on the unit when the Store installs an app) uses
+   that name only for an app whose `app.json` `startWidget.stream.marker` points there (G's Dash's does);
+   otherwise the stock layout. If the marker later goes (the renderer was removed), the app says on its Home
+   widget page to install it again.
+3. **The protocol** (mgu-render/1; `kit/runtime/renderd.js` already speaks it, against a mock renderer):
+   - **`X_READY`**: its second word lists the modes offered now (bit 0 layer, bit 1 embed). **Bit 2** would offer
+     the widget surface. (Its third word, caps, is not the place: caps 32 there means "embed frames drawn
+     zero-copy".)
+   - **`X_MODE` 3**, sent after `READY`: this connection draws into the widget's surface, not a layer.
+   - **`PLACE`**: `w` and `h` are the size the app draws at (G's Dash: 384 x 256).
+   - **`SHOW` 1 / 0**: draw there or stop. The app sends 0 while no big widget is visible.
+   - **Frames**: each GIF frame is sent once as a native picture (message 10); then one op 18 per frame change,
+     at least once a second. When the connection closes, the renderer frees the pictures.
+   - A renderer that does not offer bit 2 never gets `X_MODE` 3. The app plays through HMI pictures and asks
+     again after 5 minutes. Today's mgu-render offers no bit 2, and that case is tested.
+
+With such a layout mounted, `HmiMain3D` owns the picture. The animation then scrolls with the home-screen
+pages, sits under BMW popups, notifications and CarPlay, has no vignette, and a tap still opens the app.
 
 ## Other apps (G's Music, G's TV)
 

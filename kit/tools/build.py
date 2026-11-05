@@ -332,25 +332,35 @@ WIDGET_COMPONENT_ID = 501
 STOCK_WIDGET_LAYOUT = 'LT_Table_OnlineApps_DriveRecorderWidget'
 
 
+STREAM_LAYOUT = re.compile(r'^LT_[A-Za-z0-9_]{1,120}$')
+
+
+def stream_widget_offered(marker):
+    """The stream widget template the unit's renderer mounts into the HMI (its marker file's "streamWidget"), or None.
+    MGU_HMI_TEMPLATES names another marker (tests)."""
+    try:
+        with open(os.environ.get('MGU_HMI_TEMPLATES') or marker, encoding='utf-8') as f:
+            name = json.load(f).get('streamWidget')
+    except (OSError, TypeError, ValueError, AttributeError):
+        return None
+    return name if isinstance(name, str) and STREAM_LAYOUT.match(name) else None
+
+
 def start_widget_layout(sw):
     """The HMI template a home-screen widget uses: (layout, stream).
 
-    app.json "startWidget": {"stream": {"layout": "<template>", "marker": "<file>"}} asks for the stream widget
-    template that the Store's renderer (mgu-renderd-hmi) mounts into the HMI: the stock layout without its
-    vignette, with the renderer's stream surface over its picture (docs/animated-widget.md). It is used only
-    when the marker file on this unit (the build runs on the head unit) lists that template under
-    "startWidget"; otherwise the stock layout, as before. MGU_HMI_TEMPLATES names another marker (tests)."""
+    app.json "startWidget": {"stream": {"marker": "<file>"}} asks for the stream widget template that the Store's
+    renderer would mount into the HMI: the stock layout without its vignette, with the renderer's stream surface
+    over its picture (docs/animated-widget.md). HmiMain3D only loads templates whose names are in its own
+    identifier table, so the renderer picks the name (one the binary knows and no widget file defines) and
+    writes it to the marker as "streamWidget"; the build (on the head unit) uses it only when the marker names
+    one, otherwise the stock layout, as before."""
     stock = sw.get('layout', STOCK_WIDGET_LAYOUT)
     st = sw.get('stream')
-    if not isinstance(st, dict) or not st.get('layout'):
+    if not isinstance(st, dict) or not st.get('marker'):
         return stock, False
-    marker = os.environ.get('MGU_HMI_TEMPLATES') or st.get('marker')
-    try:
-        with open(marker, encoding='utf-8') as f:
-            offered = json.load(f).get('startWidget') or []
-    except (OSError, TypeError, ValueError, AttributeError):
-        return stock, False
-    return (st['layout'], True) if isinstance(offered, list) and st['layout'] in offered else (stock, False)
+    name = stream_widget_offered(st['marker'])
+    return (name, True) if name else (stock, False)
 
 
 def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):

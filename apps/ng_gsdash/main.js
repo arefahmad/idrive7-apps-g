@@ -1725,6 +1725,16 @@ mgu.run({
             ctx.widget.onChange((why) => { if (why === 'resized' || why === 'placed' || why === 'shown') Object.keys(wtitle).forEach((k) => delete wtitle[k]); });
         }
         settings.onChange((k) => { if (k === 'widget') aw.enable(gifOn()); });
+        /*
+         * 0.15.2, a test: the Drive Recorder layout's 'background' cell (app.json startWidget.cells, always written true
+         * so far). Whether it is what draws the dark edge over the widget's picture is not known yet, so Home widget
+         * can switch it off to look ("widgetBackdrop", kept outside the settings list as the favourites are). Written
+         * to every placed widget at once, and again after the kit writes the layout's cells (placed, shown, resized).
+         */
+        const backdropOn = () => settings.get('widgetBackdrop') !== 'off';
+        const applyBackdrop = () => { if (ctx.widget) ctx.widget.instances().forEach((i) => ctx.widget.set(i.spawnId, 'background', backdropOn(), 'Bool')); };
+        if (ctx.widget) ctx.widget.onChange((why) => { if (why === 'placed' || why === 'shown' || why === 'resized' || why === 'ready') applyBackdrop(); });
+        settings.onChange((k) => { if (k === 'widgetBackdrop') { log.info('home widget: backdrop cell ' + (backdropOn() ? 'on' : 'off') + ' (test)'); applyBackdrop(); } });
 
         /*
          * Options > Home widget > Send a GIF (0.15.0): a QR code and a 6-digit code (kit gif_drop.js) for the phone
@@ -1888,11 +1898,19 @@ mgu.run({
                         y += 33;
                     }
                 }
+                // 0.15.2: the backdrop test (the layout's 'background' cell, widgetBackdrop above)
+                y += 2;
+                cv.text('Dark edge test', rx, y + 33, 19, t.text, { literal: true });
+                [['on', 'Backdrop on'], ['off', 'Backdrop off']].forEach((o, i) => {
+                    const bw2 = 190, ox = rx + 190 + i * (bw2 + 12), on = (backdropOn() ? 'on' : 'off') === o[0], k = 'wg:bd:' + o[0];
+                    if (on) { cv.roundRect(ox, y, bw2, 52, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, y, bw2, 52, u.radius, 2.5, acc); } else card(cv, t, ox, y, bw2, 52, isDown(k));
+                    cv.text(o[1], ox + bw2 / 2, y + 33, 19, on ? t.text : t.dim, { align: 'center', literal: true });
+                    if (!on) cv.target(ox, y, bw2, 52, () => { gDown = Date.now(); downKey = k; settings.set('widgetBackdrop', o[0]); }, k, u.radius);
+                });
+                y += 52 + 30;
+                line(backdropOn() ? 'Turn the backdrop off and look at the widget: if the dark edge goes, leave it off.' : 'Backdrop off. If the picture went with the dark edge, turn it back on.', 16, t.dim);
                 if (st.templateGone) line('Install G\'s Dash again in the Store: the widget was made for the renderer\'s stream template, now gone.', 17, '#ffb020');
-                else if (st.template !== 'stream') {
-                    line('Smooth playback at the GIF\'s own rate, without the dark edge, comes with the Store\'s', 16, t.dim);
-                    line('renderer and its stream widget; reinstall G\'s Dash after installing it.', 16, t.dim);
-                }
+                else if (st.template !== 'stream') line('Smooth playback at the GIF\'s own rate needs the Store renderer\'s widget support.', 16, t.dim);
                 if (!drop.configured()) line('Send a GIF is not set up (app.json config widgetRelay).', 17, '#ffb020');
                 if (wg.why) line(wg.why, 17, '#ffb020');
                 if (drop.configured()) wButton(cv, S, lk, 'wg:send', rx, by, has ? half : rw, bh, has ? 'Send another GIF' : 'Send a GIF from your phone', true, wgSend);
