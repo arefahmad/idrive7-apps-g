@@ -20,6 +20,8 @@ A driver display and car hub for the centre screen.
 - **On the car's other displays** (optional): cluster dials and a HUD in your look, the G's Dash logo
   in the cluster, and a picker for what the cluster's centre map area shows. These need the Cluster
   renderer tool from the Store. A single switch in Options puts the cluster and HUD back to stock.
+  The cluster dials are built only for the instrument cluster's M layout. If your car doesn't use
+  it, you can code it with BimmerCode.
 - **CarPlay map in the cluster** (optional, off by default): needs the Waze on cluster tool from the
   Store and is untested on most firmware. To revert, turn it off and restart the head unit, or remove
   the tool.
@@ -72,8 +74,7 @@ Updates appear in the Store as well. To remove an app, uninstall it in the Store
 ## What's new
 
 Each release is a commit titled with the app and its version (e.g. "G's Dash 0.14.2: …"); see the
-[commit history](https://github.com/nickgcode/idrive7-apps/commits/main). The full notes are also in
-each app's `app.json` description.
+[commit history](https://github.com/nickgcode/idrive7-apps/commits/main).
 
 ## Repository layout
 
