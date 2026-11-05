@@ -17,9 +17,10 @@ and plays it on the widget. The parts are in the kit, so G's Music or G's TV can
 
 On the same page, **Shows** switches between the G logo and your GIF, and **Remove GIF** (tap twice)
 deletes it. That choice is the logo on the home screen and in the instrument cluster. A GIF keeps
-playing on the widget as before. In the cluster it plays while the car is parked and holds the frame
-it is on while the car moves: a widget frame is about 384 KB, and the cluster logo is not animated
-while driving. A tap on the widget still opens G's Dash. Leaving the page while a GIF is on its way cancels it.
+playing on the widget as before, and in the cluster too, including while the car is moving. The cluster
+gets the same kind of picture update as the Pixel look's animated emblem (at most 12 a second), scaled
+to fit that emblem's on-screen size (432 x 240). A tap on the widget still opens G's Dash. Leaving the
+page while a GIF is on its way cancels it.
 
 Limits: a GIF up to 8 MB and 2048 px on a side, at most 2000 frames. The car keeps at most 60 frames at
 the widget's size (384 x 256). Longer GIFs are thinned in time, so the loop keeps its length and pace

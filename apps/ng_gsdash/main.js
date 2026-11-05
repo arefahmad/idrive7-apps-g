@@ -32,7 +32,7 @@
  *   - Logo (Options > Logo, setting "logo", was "widget"): the G mark by default, or a GIF sent from the
  *     phone with a QR code (kit gif_drop.js, the phone page web/widget/). The same choice is the home-screen
  *     widget (widget_logo.js, or the GIF played by kit widget_anim.js) and the cluster graphic (the look's
- *     own G, or that GIF: it plays in the cluster while parked and holds a frame while the car moves).
+ *     own G, or that GIF, which keeps playing in the cluster while the car moves).
  *     The widget uses BMW's BasicWidget layout, whose picture has no mask (docs/animated-widget.md).
  *   - Options > Cluster source (0.8.3, cluster_source.js, setting "clusterSource", default Auto): what the
  *     cluster's centre map area shows - Auto (as before: the logo while G's Dash is open, G's Music over it
@@ -1621,8 +1621,9 @@ mgu.run({
         /* ---------- Logo: the home-screen widget and the cluster graphic (app.json startWidget, setting "logo") ----------
          * The G mark (widget_logo.js), or My GIF, on both. The widget layout is LT_Table_BasicWidget: the picture
          * goes to BackgroundImage_Big and, on the small size, BackgroundImage_Small (no mask). Text cells stay empty.
-         * The GIF is played by kit/runtime/widget_anim.js. In the cluster the same GIF is an image layer: its frames
-         * advance while the car is parked, and the last frame is held while it moves. */
+         * The GIF is played by kit/runtime/widget_anim.js. In the cluster it is the same kind of image-layer
+         * update as the Pixel emblem (pixels(), at most 12 a second), fitted to that emblem's on-screen size,
+         * and it keeps playing while the car moves. */
         const logo = new Canvas(LOGO.w, LOGO.h);
         logo.d.set(zlib.inflateSync(Buffer.from(LOGO.rgba, 'base64')));
         function renderWidget() { return logo; }
@@ -1817,7 +1818,7 @@ mgu.run({
                         y += 33;
                     }
                 }
-                line('The same picture is the home-screen widget and the cluster logo. A GIF plays in the cluster while parked, and holds its frame while the car moves.', 16, t.dim);
+                line('The same GIF is the home-screen widget and the cluster logo, and it keeps playing in the cluster while the car moves.', 16, t.dim);
                 if (st.templateGone) line('Install G\'s Dash again in the Store: the widget was made for the renderer\'s stream template, now gone.', 17, '#ffb020');
                 else if (st.template !== 'stream') line('Smooth playback at the GIF\'s own rate needs the Store renderer\'s widget support.', 16, t.dim);
                 if (!drop.configured()) line('Send a GIF is not set up (app.json config widgetRelay).', 17, '#ffb020');
