@@ -9,13 +9,25 @@
  *   text  z 60  TEXT_W x TEXT_H (half the map's 1088 x 480), drawn over the whole map, bilinear:
  *               the black background, the words, the progress line. Written only when what it shows
  *               changes, and then only the changed bands (dirty rects); fps TEXT_FPS at most.
- *   bars  z 61  BARS_W x BARS_H shown at BARS_SHOW_W x BARS_SHOW_H (BARS_SC x SCALE), bilinear: the visualizer only,
+ *   bars  z 61  BARS_W x BARS_H shown at BARS_SC x the size's scale (at most SAFE's width), bilinear: the visualizer only,
  *               at BARS_FPS at most, and then only the bars' changed columns (dirty rects); on Pause
  *               the bars settle to rest (as on the screen, ~2 s) and then nothing is sent.
  * 0.7.5: the whole view drawn at SCALE (0.72) about the map's centre, every line inside SAFE (the part of the
  * map area clear of the cluster's dark rounded edge, with a margin): a line too wide shrinks down to its
  * minimum, a lyric line then wraps to two lines, and only then is the last cut with '...' (fitLines()).
  * The same textures (no more renderer memory): the text image's size unchanged, the bars' too, shown smaller.
+ * 0.8.0: the size (setting "clusterSize": Small / Medium / Large, SIZES) sets that scale (Medium: 0.7.5's
+ * 0.72), and SAFE is narrower (544 px wide, 0.7.5: 624): on the car the very ends of the widest lines were
+ * still cut off by the cluster's edge. At every size each line is fitted to SAFE's width (fitLines()), and the
+ * bars and the progress line are kept inside it too.
+ * 0.8.0, the HUD (setting "hud", opts.target 'hud', its own connection): the synced lyrics alone (the line
+ * playing, the next one dim; nothing for an episode or a track without synced lyrics) on the "hud" target
+ * (800 x 480), one image layer (HUD_TEXT_W x HUD_TEXT_H shown at 2x), class "content", z Z_HUD (70: under
+ * G's Dash's HUD at 80 and G's TV's at 100), contend, never exclusive, never "alert". Light on black: each
+ * pixel's brightest channel is its alpha (as G's Dash's HUD: black is see-through), every line inside
+ * HUD_SAFE at every size. Hidden while route guidance runs (the car's HUD shows the directions) and while
+ * G's TV draws on the HUD; G's Dash's dials and HUD give way to it (they share the HUD's scene). G's Dash's
+ * Cluster source pick is about the map area only: the HUD has its own setting.
  * z 60/61: over Waze's map (z 0) and G's Dash's logo (z 50), under G's TV (z 100). Like the logo,
  * the layers hide while G's TV draws on the map and while route guidance runs (debounced
  * GUIDE_ON_MS / GUIDE_OFF_MS), and come back HOLD_MS after G's TV stops.
@@ -39,18 +51,25 @@ const TESTING = !!(process.env.NG_CR_CLIENT || process.env.NG_CR_SOCK);
 const TARGET = 'map', MAP_W = 1088, MAP_H = 480;
 const KLASS = 'content', Z_TEXT = 60, Z_BARS = 61;
 const TEXT_W = 544, TEXT_H = 240, TEXT_FPS = 4;
-// 0.7.5: the whole view at this scale about the map's centre (0.7.4 and before: 1, and cut off by the cluster's edge);
-// 0.72: the visualizer's bars (0.7.4: 864 px) then just fit SAFE's width
-const SCALE = 0.72;
+// 0.7.5: the whole view at a scale about the map's centre (0.7.4 and before: 1, and cut off by the cluster's edge);
+// 0.8.0: the scale is the size setting's (clusterSize), Medium 0.7.5's 0.72
+const SIZES = ['small', 'medium', 'large'], DEFAULT_SIZE = 'medium';
+const SIZE_SCALE = { small: 0.6, medium: 0.72, large: 0.86 };
+const SCALE = SIZE_SCALE[DEFAULT_SIZE];
+const sizeOf = (v) => (SIZES.indexOf(v) >= 0 ? v : DEFAULT_SIZE);
 // where anything may be drawn, map px: the map area less the cluster's dark rounded edge (its clear part ends
-// about 128 px in from the sides, 40 from the top and bottom: tools/gsmusic_cluster_emu.js) with a margin of 104 / 32,
-// and clear of the speed and gear readouts the cluster draws at the sides of the map area
-const SAFE = { x: 232, y: 72, w: 624, h: 336 };
-const SAFE_TW = SAFE.w / 2;                          // the widest line in the text image (half the map's scale): 312
-// the bars: drawn at a third of 0.7.4's shown size (bilinear smooths them up), the head unit's stage shape; shown at SCALE
+// about 128 px in from the sides, 40 from the top and bottom: tools/gsmusic_cluster_emu.js), clear of the speed
+// and gear readouts the cluster draws at the sides of the map area; 0.8.0: 40 px more off each side than 0.7.5's
+// (x 232, w 624), whose widest lines lost their ends on the car
+const SAFE = { x: 272, y: 72, w: 544, h: 336 };
+const SAFE_TW = SAFE.w / 2;                          // the widest line in the text image (half the map's scale): 272
+// the bars: drawn at a third of 0.7.4's shown size (bilinear smooths them up), the head unit's stage shape; shown at
+// the size's scale, at most SAFE's width (layoutFor())
 const BARS_SC = 3, BARS_W = 288, BARS_H = 54, BARS_FPS = 12;
-const BARS_SHOW_W = Math.round(BARS_W * BARS_SC * SCALE), BARS_SHOW_H = Math.round(BARS_H * BARS_SC * SCALE);     // 622 x 117 (0.7.4: 864 x 162)
-const BARS_X = Math.round((MAP_W - BARS_SHOW_W) / 2), BARS_Y = Math.round(MAP_H / 2 + (185 - MAP_H / 2) * SCALE);   // 233, 200
+// the HUD (0.8.0): its target 800 x 480, the text image at half that, every line inside HUD_SAFE (HUD px)
+const HUD_W = 800, HUD_H = 480, HUD_TEXT_W = 400, HUD_TEXT_H = 240, Z_HUD = 70;
+const HUD_SAFE = { x: 100, y: 60, w: 600, h: 360 };
+const HUD_TW = HUD_SAFE.w / 2;                       // 300
 const BARS_COLS = 13;                                // dirty-rect column groups (3 bars each; the client merges at 16)
 const BAND = 16;                                     // rows per dirty-rect band of the text image
 const POLL_MS = 1000, HOLD_MS = 3000, FRESH_MS = 2000, LOAD_RETRY_MS = 30000, RECONNECT_MS = 8000;
@@ -91,8 +110,9 @@ function loadClient(opts) {
 
 /* ----- the map's other layers, from the status text ----- */
 
-/** Other apps' layers on the map: [{ id, kind, app, klass, z, state, frames }]. */
-function mapLayers(text, ownApp) {
+/** Other apps' layers on the map (or target): [{ id, kind, app, klass, z, state, frames }]. */
+function mapLayers(text, ownApp, target) {
+    const tg = target || TARGET;
     const out = [];
     let last = null;
     String(text || '').split('\n').forEach((line) => {
@@ -103,18 +123,18 @@ function mapLayers(text, ownApp) {
         }
         last = null;
         const m = /^layer (\d+) (\w+) of (\S+) on (\w+), (\w+) z (-?\d+): (\w+)/.exec(line);
-        if (!m || m[4] !== TARGET || m[3] === ownApp) return;
+        if (!m || m[4] !== tg || m[3] === ownApp) return;
         last = { id: +m[1], kind: m[2], app: m[3], klass: m[5], z: +m[6], state: m[7], frames: -1 };
         out.push(last);
     });
     return out;
 }
-/** Our own layers on the map in the status text: [{ id, state }]. */
-function ownLayers(text, ownApp) {
-    const out = [];
+/** Our own layers on the map (or target) in the status text: [{ id, state }]. */
+function ownLayers(text, ownApp, target) {
+    const out = [], tg = target || TARGET;
     String(text || '').split('\n').forEach((line) => {
         const m = /^layer (\d+) \w+ of (\S+) on (\w+), \w+ z -?\d+: (\w+)/.exec(line);
-        if (m && m[3] === TARGET && m[2] === ownApp) out.push({ id: +m[1], state: m[4] });
+        if (m && m[3] === tg && m[2] === ownApp) out.push({ id: +m[1], state: m[4] });
     });
     return out;
 }
@@ -267,8 +287,8 @@ function wrapText(cv, s, size, w, max, opts) {
 }
 /**
  * 0.7.5: a line fitted to width w: at its size if it fits; else shrunk (down to shrink x size); else, with
- * max 2, wrapped to two lines at the largest size from wrap x size down to min that fits them whole; else at
- * min, cut with '...'. { size, lines } with every line at most w wide.
+ * max 2 or more, wrapped to two lines at the largest size from wrap x size down to min that fits them whole
+ * (0.8.0: then three, up to max); else at min, cut with '...'. { size, lines } with every line at most w wide.
  */
 function fitLines(cv, s, f, w, opts) {
     s = String(s || '').replace(/\s+/g, ' ').trim();
@@ -278,68 +298,117 @@ function fitLines(cv, s, f, w, opts) {
     const lo = Math.max(f.min, f.size * (f.shrink || 0.8));
     if (shrunk >= lo && cv.textWidth(s, shrunk, opts) <= w) return { size: shrunk, lines: [s] };
     if ((f.max || 1) > 1) {
-        for (let z = Math.floor(f.size * (f.wrap || 0.9) * 4) / 4; z >= f.min; z -= 0.25) {
-            const ls = wrapText(cv, s, z, w, f.max, opts);
-            if (ls.join(' ').replace(/\s+/g, '') === s.replace(/\s+/g, '') && ls.every((l) => cv.textWidth(l, z, opts) <= w)) return { size: z, lines: ls };
+        // 0.8.0: two lines at any size down to min first, then three (and so on up to max)
+        for (let n = 2; n <= f.max; n++) {
+            for (let z = Math.floor(f.size * (f.wrap || 0.9) * 4) / 4; z >= f.min; z -= 0.25) {
+                const ls = wrapText(cv, s, z, w, n, opts);
+                if (ls.join(' ').replace(/\s+/g, '') === s.replace(/\s+/g, '') && ls.every((l) => cv.textWidth(l, z, opts) <= w)) return { size: z, lines: ls };
+            }
         }
         return { size: f.min, lines: wrapText(cv, s, f.min, w, f.max, opts) };
     }
     return { size: f.min, lines: [fitText(cv, s, f.min, w, opts)] };
 }
 /**
- * What the text image shows, as a key (equal keys: the same picture): v = { mode 'lyrics' | 'viz',
- * title, artist, paused, cur, next, gap, prog (0..1, quantised), accent }.
+ * What the text image shows, as a key (equal keys: the same picture): v = { mode 'lyrics' | 'viz' | 'blank'
+ * (the HUD before a track's lyrics come), title, artist, paused, cur, next, gap, prog (0..1, quantised), accent,
+ * lay (the layout's id: the place and the size) }.
  */
 function textKey(v) {
-    return [v.mode, v.title, v.artist, v.paused ? 1 : 0, v.cur, v.next, v.gap ? 1 : 0, Math.round((v.prog || 0) * 200), v.accent].join('\u0001');
+    return [v.mode, v.title, v.artist, v.paused ? 1 : 0, v.cur, v.next, v.gap ? 1 : 0, Math.round((v.prog || 0) * 200), v.accent, v.lay || ''].join('\u0001');
 }
 /**
- * 0.7.5: the text image's layout: 0.7.4's (in its 544 x 240 px), scaled by SCALE about the centre; each text's
- * size, its least size when fitted (fitLines()), and its baseline. Widths: SAFE_TW at most.
+ * 0.7.5: the text image's layout: 0.7.4's (in its 544 x 240 px), scaled by the size's scale about the centre; each
+ * text's size, its least size when fitted (fitLines()), and its baseline. Widths: TW (SAFE_TW) at most. 0.8.0: per
+ * place ('map' | 'hud') and size, the least sizes scaled too (Medium: 0.7.5's), the bars and the progress line
+ * inside SAFE. The HUD's: the line playing (up to three lines) and the next, about its text image's centre.
  */
-const S = SCALE, CY = TEXT_H / 2, at = (y) => Math.round((CY + (y - CY) * S) * 4) / 4, sc = (v) => Math.round(v * S * 100) / 100;
-const LAYOUT = {
-    head: { size: sc(13), min: 9, shrink: 0.75, y: at(30) },                        // the title and artist over the lyrics
-    cur: { size: sc(30), min: 16, shrink: 0.8, wrap: 0.9, max: 2, y: at(116), y2: at(96), gap: sc(6) },   // the line playing
-    dots: { size: sc(34), y: at(112) },                                            // an instrumental gap
-    next: { size: sc(18), min: 11, shrink: 0.8, y: at(176) },                       // the next line, dim
-    label: { size: sc(11), spacing: sc(2), y: at(28) },                             // NOW PLAYING / PAUSED
-    title: { size: sc(22), min: 13, shrink: 0.8, y: at(54) },                       // the visualizer's title
-    artist: { size: sc(15), min: 10, shrink: 0.8, y: at(74) },
-    prog: { x: Math.round(TEXT_W / 2 - (TEXT_W / 2 - 92) * S), y: Math.round(at(210)), h: 2 },
-};
-/** The text image (TEXT_W x TEXT_H, opaque) for v (textKey()). Canvas: kit/canvas's. */
-function textImage(Canvas, v) {
-    const W = TEXT_W, H = TEXT_H, cv = new Canvas(W, H);
+const LAYOUTS = {};
+function layoutFor(place, size) {
+    const P = place === 'hud' ? 'hud' : 'map', Z = sizeOf(size), id = P + '.' + Z;
+    if (LAYOUTS[id]) return LAYOUTS[id];
+    const S = SIZE_SCALE[Z], hud = P === 'hud', W = hud ? HUD_TEXT_W : TEXT_W, H = hud ? HUD_TEXT_H : TEXT_H, TW = hud ? HUD_TW : SAFE_TW;
+    const CY = H / 2, at = (y) => Math.round((CY + (y - CY) * S) * 4) / 4, sc = (v) => Math.round(v * S * 100) / 100;
+    let L;
+    if (hud) {
+        L = {
+            cur: { size: sc(34), min: sc(25), shrink: 0.8, wrap: 0.9, max: 3, y: at(128), gap: sc(6) },
+            dots: { size: sc(38), y: at(124) },
+            next: { size: sc(22), min: sc(17), shrink: 0.8, y: at(186) },
+        };
+    } else {
+        const bw = Math.min(SAFE.w, Math.round(BARS_W * BARS_SC * S)), bh = Math.round(bw * BARS_H / BARS_W);
+        L = {
+            head: { size: sc(13), min: sc(12.5), shrink: 0.75, y: at(30) },                // the title and artist over the lyrics
+            cur: { size: sc(30), min: sc(22.25), shrink: 0.8, wrap: 0.9, max: 3, y: at(116), gap: sc(6) },   // the line playing (up to 3 lines)
+            dots: { size: sc(34), y: at(112) },                                            // an instrumental gap
+            next: { size: sc(18), min: sc(15.25), shrink: 0.8, y: at(176) },               // the next line, dim
+            label: { size: sc(11), spacing: sc(2), y: at(28) },                            // NOW PLAYING / PAUSED
+            title: { size: sc(22), min: sc(18), shrink: 0.8, y: at(54) },                  // the visualizer's title
+            artist: { size: sc(15), min: sc(14), shrink: 0.8, y: at(74) },
+            prog: { x: Math.round(Math.max(W / 2 - (W / 2 - 92) * S, (W - TW) / 2)), y: Math.round(at(210)), h: 2 },
+            // the bars' layer, map px: at the scale, at most SAFE's width, their top where 0.7.4's (y 185) scales to
+            bars: { w: bw, h: bh, x: Math.round((MAP_W - bw) / 2), y: Math.round(MAP_H / 2 + (185 - MAP_H / 2) * S) },
+        };
+    }
+    L.id = id; L.place = P; L.size = Z; L.S = S; L.W = W; L.H = H; L.TW = TW;
+    LAYOUTS[id] = L;
+    return L;
+}
+const LAYOUT = layoutFor('map', DEFAULT_SIZE);
+const BARS_SHOW_W = LAYOUT.bars.w, BARS_SHOW_H = LAYOUT.bars.h, BARS_X = LAYOUT.bars.x, BARS_Y = LAYOUT.bars.y;   // Medium: 544 x 102 at 272, 200
+/**
+ * The text image (L.W x L.H) for v (textKey()) in layout L (layoutFor(); the map's Medium when not given).
+ * The map's: opaque. The HUD's: light on black, each pixel's brightest channel its alpha (black see-through).
+ * Canvas: kit/canvas's.
+ */
+function textImage(Canvas, v, Lay) {
+    const Y = Lay || LAYOUT, W = Y.W, H = Y.H, cv = new Canvas(W, H), hud = Y.place === 'hud';
     cv.clear('#000000');
     const acc = lift(v.accent || '#3ad0ff', 170), dim = '#8a8f99', lit = '#ffffff', L = { literal: true }, B = { font: 'bold', literal: true };
-    const cx = W / 2, TW = SAFE_TW, Y = LAYOUT;
+    const cx = W / 2, TW = Y.TW;
     const one = (s, f, c, o) => { const r = fitLines(cv, s, f, TW, o); cv.text(r.lines[0], cx, f.y, r.size, c, Object.assign({ align: 'center' }, o)); };
-    if (v.mode === 'lyrics') {
-        const head = (v.paused ? 'PAUSED  \u00b7  ' : '') + v.title + (v.artist ? '  \u00b7  ' + v.artist : '');
-        one(head, Y.head, v.paused ? acc : dim, L);
-        if (v.gap || !v.cur) {
-            cv.text('\u00b7   \u00b7   \u00b7', cx, Y.dots.y, Y.dots.size, acc, { font: 'bold', literal: true, align: 'center' });
-        } else {
-            const r = fitLines(cv, v.cur, Y.cur, TW, B), lh = r.size + Y.cur.gap, y0 = r.lines.length > 1 ? Y.cur.y2 : Y.cur.y;
-            r.lines.forEach((l, k) => cv.text(l, cx, y0 + k * lh, r.size, lit, { font: 'bold', literal: true, align: 'center' }));
+    const curLines = (c) => {
+        if (v.gap || !v.cur) { cv.text('·   ·   ·', cx, Y.dots.y, Y.dots.size, acc, { font: 'bold', literal: true, align: 'center' }); return; }
+        // 0.8.0: two lines centred where one line's baseline is; a third goes up (the last line never lower than two's)
+        const r = fitLines(cv, v.cur, Y.cur, TW, B), lh = r.size + Y.cur.gap, n = r.lines.length;
+        const y0 = Y.cur.y + Math.min(n - 1, 1) * lh / 2 - (n - 1) * lh;
+        r.lines.forEach((l, k) => cv.text(l, cx, y0 + k * lh, r.size, c, { font: 'bold', literal: true, align: 'center' }));
+    };
+    if (hud) {
+        // the lyrics alone: the line playing (dimmer while paused), the next one dim
+        if (v.mode === 'lyrics') {
+            curLines(v.paused ? '#9aa0aa' : lit);
+            if (v.next) one(v.next, Y.next, '#7d838d', L);
         }
-        if (v.next) one(v.next, Y.next, '#6b7079', L);
     } else {
-        cv.text(v.paused ? 'PAUSED' : 'NOW PLAYING', cx, Y.label.y, Y.label.size, acc, { font: 'bold', literal: true, align: 'center', spacing: Y.label.spacing });
-        one(v.title, Y.title, lit, B);
-        if (v.artist) one(v.artist, Y.artist, dim, L);
+        if (v.mode === 'lyrics') {
+            const head = (v.paused ? 'PAUSED  ·  ' : '') + v.title + (v.artist ? '  ·  ' + v.artist : '');
+            one(head, Y.head, v.paused ? acc : dim, L);
+            curLines(lit);
+            if (v.next) one(v.next, Y.next, '#6b7079', L);
+        } else {
+            cv.text(v.paused ? 'PAUSED' : 'NOW PLAYING', cx, Y.label.y, Y.label.size, acc, { font: 'bold', literal: true, align: 'center', spacing: Y.label.spacing });
+            one(v.title, Y.title, lit, B);
+            if (v.artist) one(v.artist, Y.artist, dim, L);
+        }
+        // the progress line
+        const px = Y.prog.x, pw = W - 2 * px, py = Y.prog.y;
+        cv.fillRect(px, py, pw, Y.prog.h, '#26292e');
+        cv.fillRect(px, py, Math.max(0, Math.min(1, v.prog || 0)) * pw, Y.prog.h, acc);
     }
-    // the progress line
-    const px = Y.prog.x, pw = W - 2 * px, py = Y.prog.y;
-    cv.fillRect(px, py, pw, Y.prog.h, '#26292e');
-    cv.fillRect(px, py, Math.max(0, Math.min(1, v.prog || 0)) * pw, Y.prog.h, acc);
     const d = Buffer.from(cv.d.buffer, cv.d.byteOffset, cv.d.length);
-    for (let i = 3; i < d.length; i += 4) d[i] = 255;
+    if (hud) {
+        for (let i = 0; i < d.length; i += 4) {
+            const m = Math.max(d[i], d[i + 1], d[i + 2]);
+            if (m) { d[i] = Math.round(d[i] * 255 / m); d[i + 1] = Math.round(d[i + 1] * 255 / m); d[i + 2] = Math.round(d[i + 2] * 255 / m); }
+            d[i + 3] = m;
+        }
+    } else for (let i = 3; i < d.length; i += 4) d[i] = 255;
     return { w: W, h: H, d: Buffer.from(d) };
 }
 /**
- * The changed parts of b against a (same size): per BAND rows, the changed columns' span, as
+ * The changed parts of b against a (same size, alpha too: the HUD's): per BAND rows, the changed columns' span, as
  * { rects: [{x,y,w,h}], px } (px: the rects' pixels one after another), or null: nothing changed.
  */
 function dirty(a, b, w, h) {
@@ -351,7 +420,7 @@ function dirty(a, b, w, h) {
             const row = y * w * 4;
             for (let x = 0; x < w; x++) {
                 const o = row + x * 4;
-                if (a[o] !== b[o] || a[o + 1] !== b[o + 1] || a[o + 2] !== b[o + 2]) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+                if (a[o] !== b[o] || a[o + 1] !== b[o + 1] || a[o + 2] !== b[o + 2] || a[o + 3] !== b[o + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
             }
         }
         if (x1 < 0) continue;
@@ -371,10 +440,18 @@ function dirty(a, b, w, h) {
 /* ----- the cluster picture ----- */
 
 class MusicCluster {
-    /** opts: log, app ('ng_spotify'), Canvas, client / sock / testing (tests), now(), timers. */
+    /**
+     * opts: log, app ('ng_spotify'), Canvas, target ('map', the default; 0.8.0: 'hud', the lyrics alone),
+     * client / sock / testing (tests), now(), timers.
+     */
     constructor(opts) {
         const o = opts || {};
         this.o = o;
+        this.place = o.target === 'hud' ? 'hud' : 'map';
+        this.hud = this.place === 'hud';
+        this.target = this.hud ? 'hud' : TARGET;
+        this.tag = this.hud ? 'music hud' : 'music cluster';
+        this.lay = layoutFor(this.place, DEFAULT_SIZE);
         this.log = o.log || { info() {}, warn() {} };
         this.app = o.app || 'ng_spotify';
         this.Canvas = o.Canvas;
@@ -396,6 +473,7 @@ class MusicCluster {
         this.poll = null; this.anim = null; this.downAt = this.now();
         this.errRetries = 0; this.textAt = 0; this.progAt = -1e15; this.prog = 0;
         this.visible = null; this.mode = '';
+        this.tState = ''; this.tHolder = ''; this.tReason = '';   // 0.8.0: the target's state (the renderer's target events)
     }
 
     /**
@@ -403,13 +481,22 @@ class MusicCluster {
      * 'visualizer', ok (signed in, the player answered), track: { uri, title, artist, kind, duration,
      * ad } | null, playing, pos (ms), lyrics: lyrics.js's entry for the track | null, palette (the
      * artwork's), vizPalette (the screen's visualizer colours), source (0.6.1: G's Dash's Cluster source
-     * pick, 'auto' when not given) }.
+     * pick, 'auto' when not given), size (0.8.0: 'small' | 'medium' | 'large', the default Medium) }.
+     * The HUD's: setting 'off' | 'lyrics'; no source (the pick is about the map area); the lyrics always
+     * given when its setting is on.
      */
     update(s) {
         const now = this.now();
         this.s = s || {};
         const t = this.s.track;
-        const setting = this.s.setting === 'visualizer' || this.s.setting === 'lyrics' ? this.s.setting : 'off';
+        const setting = this.s.setting === 'lyrics' || (!this.hud && this.s.setting === 'visualizer') ? this.s.setting : 'off';
+        // 0.8.0: a new size: the layers made again (the bars' place changes), once the renderer let the old go
+        const lay = layoutFor(this.place, this.s.size);
+        if (lay !== this.lay) {
+            this.log.info(this.tag + ': size ' + lay.size);
+            this.lay = lay;
+            if (this.text || this.bars) { this._dropLayers(); this.freeUntil = now + FREE_MS; }
+        }
         if (t && this.s.playing) this.pausedAt = 0;
         else if (t && !this.pausedAt) this.pausedAt = now;
         let why = '';
@@ -417,13 +504,14 @@ class MusicCluster {
         const source = typeof this.s.source === 'string' ? this.s.source : 'auto';
         this.source = source;
         if (setting === 'off') why = 'off';
-        else if (source !== 'auto' && source !== 'music') why = 'source';
+        else if (!this.hud && source !== 'auto' && source !== 'music') why = 'source';
         else if (!this.s.ok) why = 'nospotify';
         else if (!t || !t.title || t.ad) why = 'notrack';
+        else if (this.hud && !this._lyricsMaybe()) why = 'nolyrics';
         else if (!this.s.playing && now - this.pausedAt > PAUSE_DROP_MS) why = 'paused';
         else if (this.gaveUp && this.gaveUp === t.uri) why = 'failed';
         if (this.gaveUp && t && this.gaveUp !== t.uri) this.gaveUp = '';
-        if (why !== this.reason && why) this.log.info('music cluster: ' + ({ off: 'off', nospotify: 'no Spotify', notrack: 'no track', paused: 'paused ' + (PAUSE_DROP_MS / 1000) + ' s - dropped', failed: 'given up for this track', source: 'G\'s Dash picked ' + source + ' - dropped' })[why]);
+        if (why !== this.reason && why) this.log.info(this.tag + ': ' + ({ off: 'off', nospotify: 'no Spotify', notrack: 'no track', paused: 'paused ' + (PAUSE_DROP_MS / 1000) + ' s - dropped', failed: 'given up for this track', nolyrics: 'no synced lyrics', source: 'G\'s Dash picked ' + source + ' - dropped' })[why]);
         this.reason = why;
         if (why) { if (this.cr) this._off(); this.want = false; return; }
         this.want = true;
@@ -436,7 +524,7 @@ class MusicCluster {
         if (this.err && now - this.errAt < LOAD_RETRY_MS) return;
         const c = loadClient(this.o);
         if (c.error) {
-            if (!this.err || this.err.error !== c.error) this.log.warn('music cluster: ' + c.text + (c.detail ? ' (' + c.detail + ')' : ''));
+            if (!this.err || this.err.error !== c.error) this.log.warn(this.tag + ': ' + c.text + (c.detail ? ' (' + c.detail + ')' : ''));
             this.err = c; this.errAt = now;
             return;
         }
@@ -444,29 +532,35 @@ class MusicCluster {
         this.stats.connects++;
         let cr;
         try { cr = this.cr = new c.ClusterRender(this.app, c.sock); } catch (e) { this.err = { error: 'load', text: e.message }; this.errAt = now; this.cr = null; return; }
-        cr.on('ready', () => { if (this.cr !== cr) return; this.ready = true; this.log.info('music cluster: connected'); this._ask(); });
+        cr.on('ready', () => { if (this.cr !== cr) return; this.ready = true; this.log.info(this.tag + ': connected'); this._ask(); });
         cr.on('disconnected', () => { if (this.cr !== cr) return; this.ready = false; this.polled = false; this.downAt = this.now(); });
         cr.on('layer', (ref, state, reason) => {
             if (this.cr !== cr) return;
             const L = this.text && this.text.ref === ref ? this.text : this.bars && this.bars.ref === ref ? this.bars : null;
             if (!L) return;
-            if (state === 'error' && L.state !== 'error') { L.errAt = this.now(); this.log.warn('music cluster: layer error' + (reason ? ' (' + reason + ')' : '')); }
+            if (state === 'error' && L.state !== 'error') { L.errAt = this.now(); this.log.warn(this.tag + ': layer error' + (reason ? ' (' + reason + ')' : '')); }
             L.state = state || '';
         });
         cr.on('budget', (cap, max) => { if (this.cr === cr) this.budget = { cap, max }; });
-        cr.on('refused', (op, ref, reason) => { if (this.cr === cr) this.log.warn('music cluster: refused ' + (op || '?') + ': ' + (reason || '?')); });
+        cr.on('refused', (op, ref, reason) => { if (this.cr === cr) this.log.warn(this.tag + ': refused ' + (op || '?') + ': ' + (reason || '?')); });
+        // 0.8.0: the target's state (the HUD: parked behind the car's own content, the panel holding its scene...)
+        cr.on('target', (name, state, holder, reason) => {
+            if (this.cr !== cr || name !== this.target) return;
+            if (state !== this.tState || (holder || '') !== this.tHolder) this.log.info(this.tag + ': ' + name + ' ' + state + (holder ? ' holder ' + holder : '') + (reason ? ' (' + reason + ')' : ''));
+            this.tState = state || ''; this.tHolder = holder || ''; this.tReason = reason || '';
+        });
         cr.on('status', (text) => {
             if (this.cr !== cr) return;
             const now = this.now(), seen = {}, others = [];
-            mapLayers(text, this.app).forEach((l) => {
+            mapLayers(text, this.app, this.target).forEach((l) => {
                 if (drawing(l, this.seen, now) && l.app === 'ng_tv') others.push(l);
                 seen[l.app + '#' + l.id] = this.seen[l.app + '#' + l.id];
             });
             this.seen = seen;
             if (others.length) this.tvAt = now;
-            if (!!others.length !== !!this.others.length) this.log.info('music cluster: G\'s TV ' + (others.length ? 'is drawing - hidden' : 'stopped'));
+            if (!!others.length !== !!this.others.length) this.log.info(this.tag + ': G\'s TV ' + (others.length ? 'is drawing - hidden' : 'stopped'));
             this.others = others;
-            ownLayers(text, this.app).forEach((l) => {
+            ownLayers(text, this.app, this.target).forEach((l) => {
                 [this.text, this.bars].forEach((L) => { if (L && L.ref === l.id && l.state === 'error' && L.state !== 'error') { L.state = 'error'; L.errAt = now; } });
             });
             this.polled = true;
@@ -474,28 +568,28 @@ class MusicCluster {
         });
         this.downAt = this.now();
         this.poll = this.T.setInterval(() => this._tick(), POLL_MS);
-        try { cr.connect(); } catch (e) { this.log.warn('music cluster: connect ' + e.message); }
+        try { cr.connect(); } catch (e) { this.log.warn(this.tag + ': connect ' + e.message); }
     }
     _ask() { if (this.cr && this.ready) { try { this.cr.status(); } catch (e) { /* next poll */ } } }
     _tick() {
         if (!this.want || !this.cr) return;
         const now = this.now();
         if (!this.ready) {
-            if (now - this.downAt >= RECONNECT_MS) { this.log.info('music cluster: reconnecting'); this._off(); this._connect(); }
+            if (now - this.downAt >= RECONNECT_MS) { this.log.info(this.tag + ': reconnecting'); this._off(); this._connect(); }
             return;
         }
         this._ask();
         const bad = [this.text, this.bars].filter((L) => L && L.state === 'error');
         if (bad.length && now - Math.max.apply(null, bad.map((L) => L.errAt)) >= ERR_RETRY_MS) {
             if (this.errRetries >= ERR_RETRIES) {
-                this.log.warn('music cluster: the renderer keeps refusing the layers - off for this track');
+                this.log.warn(this.tag + ': the renderer keeps refusing the layers - off for this track');
                 this.gaveUp = (this.s && this.s.track && this.s.track.uri) || '?';
                 this._off();
                 this.want = false; this.reason = 'failed';
                 return;
             }
             this.errRetries++;
-            this.log.info('music cluster: layer in error - making it again (' + this.errRetries + ' of ' + ERR_RETRIES + ')');
+            this.log.info(this.tag + ': layer in error - making it again (' + this.errRetries + ' of ' + ERR_RETRIES + ')');
             // 0.7.1: the old layers dropped now, made again FREE_MS later (an update or the next poll): never the
             // old and the new on the cluster's GPU in one batch (G's Dash 0.12.1's bug)
             this._dropLayers();
@@ -517,19 +611,25 @@ class MusicCluster {
         const was = this.guiding;
         if (raw && !this.guiding && now - this.rawSince >= GUIDE_ON_MS) this.guiding = true;
         if (!raw && this.guiding && now - this.rawSince >= GUIDE_OFF_MS) this.guiding = false;
-        if (was !== this.guiding) this.log.info('music cluster: ' + (this.guiding ? 'route guidance - hidden' : 'route guidance ended'));
+        if (was !== this.guiding) this.log.info(this.tag + ': ' + (this.guiding ? 'route guidance - hidden' : 'route guidance ended'));
         return this.guiding;
     }
 
-    /** What to show now: 'lyrics' (synced lines, setting Lyrics + visualizer) or 'viz'. */
+    /** 0.8.0, the HUD: the track has synced lyrics, or they are still being looked up. */
+    _lyricsMaybe() {
+        const s = this.s, e = s.lyrics;
+        if (!e || (s.track && s.track.kind === 'episode')) return false;
+        return e.state === 'loading' || (e.state === 'synced' && !!e.lines && e.lines.length > 0);
+    }
+    /** What to show now: 'lyrics' (synced lines, setting Lyrics + visualizer) or 'viz'; the HUD's 'lyrics' or 'blank'. */
     _mode() {
         const s = this.s, e = s.lyrics;
         if (s.setting === 'lyrics' && e && e.state === 'synced' && e.lines && e.lines.length && !(s.track && s.track.kind === 'episode')) return 'lyrics';
-        return 'viz';
+        return this.hud ? 'blank' : 'viz';
     }
     _view(mode, now) {
         const s = this.s, t = s.track, pal = barColours(s.palette);
-        const v = { mode, title: t.title || '', artist: t.artist || '', paused: !s.playing, cur: '', next: '', gap: false, accent: pal[0] };
+        const v = { mode, title: t.title || '', artist: t.artist || '', paused: !s.playing, cur: '', next: '', gap: false, accent: pal[0], lay: this.lay.id };
         if (mode === 'lyrics') {
             const L = lyricAt(s.lyrics.lines, s.pos || 0);
             v.cur = L.cur; v.next = L.next; v.gap = L.i < 0 || !L.cur;
@@ -537,7 +637,7 @@ class MusicCluster {
         // the progress line: moved at most every PROGRESS_MS (or at once on a jump), so it costs little
         const p = t.duration ? Math.max(0, Math.min(1, (s.pos || 0) / t.duration)) : 0;
         if (now - this.progAt >= PROGRESS_MS || Math.abs(p - this.prog) > 0.05 || !s.playing) { this.prog = p; this.progAt = now; }
-        v.prog = this.prog;
+        v.prog = this.hud ? 0 : this.prog;           // the HUD has no progress line
         return v;
     }
 
@@ -547,28 +647,30 @@ class MusicCluster {
         const guiding = this._guideTick(now);
         const vis = !guiding && !this.others.length && now - this.tvAt >= HOLD_MS;
         const mode = this._mode();
-        if (mode !== this.mode && this.mode) this.log.info('music cluster: ' + (mode === 'lyrics' ? 'synced lyrics' : 'visualizer'));
+        if (mode !== this.mode && this.mode) this.log.info(this.tag + ': ' + ({ lyrics: 'synced lyrics', viz: 'visualizer', blank: 'waiting for lyrics' })[mode]);
         this.mode = mode;
         if (!vis) {
             if (this.visible) {
                 [this.text, this.bars].forEach((L) => { if (L) { try { this.cr.set(L.ref, { visible: false }); } catch (e) { /* gone */ } } });
-                this.log.info('music cluster: hidden (' + (guiding ? 'route guidance' : 'G\'s TV') + ')');
+                this.log.info(this.tag + ': hidden (' + (guiding ? 'route guidance' : 'G\'s TV') + ')');
             }
             this.visible = false;
             this._animate(false);
             return;
         }
         if (!this.text && now < (this.freeUntil || 0)) return;     // 0.7.1: just dropped, not let go yet
+        // 0.8.0, the HUD: no layer until the track's lyrics are here (it would keep G's Dash's dials and HUD away)
+        if (!this.text && mode === 'blank') return;
         // the text layer: made once, then only its changes
-        const v = this._view(mode, now), key = textKey(v);
+        const v = this._view(mode, now), key = textKey(v), Lay = this.lay;
         if (!this.text) {
-            const img = textImage(this.Canvas, v);
-            const ref = this._make(Z_TEXT, 0, 0, MAP_W, MAP_H, img, 'bilinear', TEXT_FPS);
+            const img = textImage(this.Canvas, v, Lay);
+            const ref = this._make(this.hud ? Z_HUD : Z_TEXT, 0, 0, this.hud ? HUD_W : MAP_W, this.hud ? HUD_H : MAP_H, img, 'bilinear', TEXT_FPS);
             if (!ref) return;
             this.text = { ref, state: 'new', img, key, madeAt: now, errAt: 0 };
             this._send(ref, null, img.d, 'text');
         } else if (key !== this.text.key && now - this.textAt >= 1000 / TEXT_FPS) {
-            const img = textImage(this.Canvas, v), dd = dirty(this.text.img.d, img.d, TEXT_W, TEXT_H);
+            const img = textImage(this.Canvas, v, Lay), dd = dirty(this.text.img.d, img.d, img.w, img.h);
             this.text.key = key; this.text.img = img; this.textAt = now;
             if (dd) {
                 const whole = dd.px.length > img.d.length * 0.6;
@@ -579,7 +681,7 @@ class MusicCluster {
         if (mode === 'viz') {
             if (!this.bars) {
                 const img = this._barsFrame();
-                const ref = this._make(Z_BARS, BARS_X, BARS_Y, BARS_SHOW_W, BARS_SHOW_H, img, 'bilinear', BARS_FPS);
+                const B = Lay.bars, ref = this._make(Z_BARS, B.x, B.y, B.w, B.h, img, 'bilinear', BARS_FPS);
                 if (ref) { this.bars = { ref, state: 'new', img, madeAt: now, errAt: 0 }; this._send(ref, null, img.d, 'bars'); }
             }
         } else if (this.bars) {
@@ -588,17 +690,17 @@ class MusicCluster {
         }
         if (this.visible === false) {
             [this.text, this.bars].forEach((L) => { if (L) { try { this.cr.set(L.ref, { visible: true }); } catch (e) { /* gone */ } } });
-            this.log.info('music cluster: shown again');
+            this.log.info(this.tag + ': shown again');
         }
         this.visible = true;
         this._animate(mode === 'viz' && (!!this.s.playing || this.clk.e > 0));
     }
     _make(z, x, y, w, h, img, sampling, fps) {
-        const ref = this.cr.image({ target: TARGET, klass: KLASS, z, exclusive: false, contend: true, visible: true,
+        const ref = this.cr.image({ target: this.target, klass: KLASS, z, exclusive: false, contend: true, visible: true,
             x, y, w, h, iw: img.w, ih: img.h, sampling, fps });
-        if (!ref) { this.log.warn('music cluster: image layer refused by the client'); return 0; }
+        if (!ref) { this.log.warn(this.tag + ': image layer refused by the client'); return 0; }
         this.stats.layers++;
-        this.log.info('music cluster: layer z ' + z + ' ' + img.w + 'x' + img.h + ' at ' + x + ',' + y + ' ' + w + 'x' + h + ' ' + sampling + ', fps ' + fps);
+        this.log.info(this.tag + ': layer z ' + z + ' ' + img.w + 'x' + img.h + ' at ' + x + ',' + y + ' ' + w + 'x' + h + ' ' + sampling + ', fps ' + fps);
         return ref;
     }
     _send(ref, rects, px, which) {
@@ -641,7 +743,7 @@ class MusicCluster {
         const cr = this.cr;
         if (this.poll) this.T.clearInterval(this.poll);
         this._dropLayers();
-        if (cr) { try { cr.close(); } catch (e) { /* gone */ } this.log.info('music cluster: layers dropped'); }
+        if (cr) { try { cr.close(); } catch (e) { /* gone */ } this.log.info(this.tag + ': layers dropped'); }
         this._reset();
     }
     close() { this._off(); this.want = false; }
@@ -650,20 +752,31 @@ class MusicCluster {
     view() {
         const r = this.reason;
         const PICK = { auto: 'Auto', logo: 'Logo', music: 'Music', map: 'Map', stock: 'Stock' };
-        if (r === 'off') return { kind: 'off', text: this.source === 'music' ? 'Off - G\'s Dash picked Music: turn on here' : 'Off' };
+        if (r === 'off') return { kind: 'off', text: !this.hud && this.source === 'music' ? 'Off - G\'s Dash picked Music: turn on here' : 'Off' };
         if (r === 'source') return { kind: 'off', text: 'Set in G\'s Dash: ' + (PICK[this.source] || this.source) };
         if (this.err) return { kind: 'none', text: ({ missing: 'Needs Cluster renderer (Store)', noclient: 'Update Cluster renderer', untrusted: 'Renderer not trusted', load: 'Renderer failed to load' })[this.err.error] || this.err.text };
         if (r === 'nospotify' || r === 'notrack') return { kind: 'wait', text: 'Shows while a track plays' };
+        if (r === 'nolyrics') return { kind: 'wait', text: 'No synced lyrics for this track' };
         if (r === 'paused') return { kind: 'wait', text: 'Paused - comes back on Play' };
         if (r === 'failed') return { kind: 'error', text: 'Renderer refused - next track' };
         if (!this.cr || !this.ready || !this.polled) return { kind: 'wait', text: 'Connecting to renderer' };
         if (this.guiding) return { kind: 'wait', text: 'Hidden - route guidance' };
-        if (this.others.length || this.now() - this.tvAt < HOLD_MS) return { kind: 'wait', text: 'Hidden - G\'s TV in the cluster' };
+        if (this.others.length || this.now() - this.tvAt < HOLD_MS) return { kind: 'wait', text: 'Hidden - G\'s TV in the ' + (this.hud ? 'HUD' : 'cluster') };
+        if (this.hud) {
+            // 0.8.0: as G's Dash's HUD line - the target's own state first
+            if (!this.text) return { kind: 'wait', text: 'Waiting for lyrics' };
+            if (this.text.state === 'shown' || this.tState === 'shown' || this.tState === 'lingering') return { kind: 'on', text: 'Showing lyrics' };
+            if (this.tState === 'unavailable') return { kind: 'none', text: 'HUD unavailable' };
+            if (/scene id/.test(this.tReason)) return { kind: 'wait', text: 'Waiting - cluster panel in use' };
+            if (this.tState === 'parked' || this.tState === 'waiting') return { kind: 'wait', text: this.tHolder === 'foreign' ? 'Waiting - HUD in use' : 'Needs HUD takeover (renderer)' };
+            return { kind: 'wait', text: 'Asking for the HUD' };
+        }
         return { kind: 'on', text: this.mode === 'lyrics' ? 'Showing lyrics' : 'Showing the visualizer' };
     }
 }
 
 module.exports = { MusicCluster, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, barsImage, barColours, vizColours, colDirty,
-    textImage, textKey, dirty, lyricAt, wrapText, fitText, fitLines, pieces, lift, SCALE, SAFE, SAFE_TW, LAYOUT,
+    textImage, textKey, dirty, lyricAt, wrapText, fitText, fitLines, pieces, lift, SCALE, SAFE, SAFE_TW, LAYOUT, layoutFor, SIZES, SIZE_SCALE, DEFAULT_SIZE,
+    HUD_W, HUD_H, HUD_TEXT_W, HUD_TEXT_H, HUD_SAFE, HUD_TW, Z_HUD,
     TARGET, MAP_W, MAP_H, KLASS, Z_TEXT, Z_BARS, TEXT_W, TEXT_H, TEXT_FPS, BARS_W, BARS_H, BARS_SC, BARS_SHOW_W, BARS_SHOW_H, BARS_X, BARS_Y, BARS_FPS, BARS_COLS,
     POLL_MS, HOLD_MS, GUIDE_ON_MS, GUIDE_OFF_MS, PAUSE_DROP_MS, ERR_RETRIES, ERR_RETRY_MS, PROGRESS_MS };

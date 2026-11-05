@@ -17,6 +17,9 @@
  * off, or back on to its last on value; an amber dot (and its toast) when G's Dash's pick (Map, Stock or
  * Logo) keeps the cluster for something else. 0.7.9: with nothing playing, a line to open Spotify on the
  * phone (the 0.7.0 Shuffle Liked Songs button removed).
+ * 0.8.0: the synced lyrics in the HUD too (Settings: HUD, off by default; music_cluster.js with target 'hud', its
+ * own connection), and Settings: Cluster & HUD size (Small / Medium / Large) for both; at every size each line
+ * fits the cluster's and the HUD's clear width.
  *
  * Source: the Spotify Web API (spotify.js) over mgu-uplink (mgu-store), so it controls whatever device
  * your account plays on - the phone that is connected to the car included. Player commands need
@@ -342,6 +345,9 @@ mgu.run({
         }
         // the cluster's picture (music_cluster.js): lyrics or the visualizer while a track plays
         const mc = new MC.MusicCluster({ log, app: 'ng_spotify', Canvas });
+        // 0.8.0: the synced lyrics in the HUD (the same class, target 'hud', its own connection)
+        const mh = new MC.MusicCluster({ log, app: 'ng_spotify', Canvas, target: 'hud' });
+        const hudOn = () => settings.get('hud') === 'lyrics';
         // G's Dash's Cluster source pick (0.6.1): read every tick (only re-parsed when the file changed)
         const srcReader = new CSRC.SourceReader({ settings, log });
         const pick = () => srcReader.get().source;
@@ -356,18 +362,22 @@ mgu.run({
             const ok = status === 'ok' && !!pb;
             const t = ok && pb.title && !pb.ad ? { uri: pb.uri, title: pb.title, artist: pb.artist, kind: pb.kind, duration: pb.duration, ad: pb.ad } : null;
             const want = clusterOn() && t && settings.get('cluster') === 'lyrics' && pb.kind !== 'episode';
-            mc.update({ setting: settings.get('cluster'), source: pick(), ok, track: t, playing: !!(pb && pb.playing), pos: position(), posFn: () => position(),
-                lyrics: want ? lyr.get({ uri: pb.uri, title: pb.title, artist: pb.artist, artist1: pb.artist1, album: pb.album, duration: pb.duration }) : null,
-                palette: artPal, vizPalette: stageColours(ctx.theme()) });
+            const wantHud = hudOn() && t && pb.kind !== 'episode';
+            const lyrics = want || wantHud ? lyr.get({ uri: pb.uri, title: pb.title, artist: pb.artist, artist1: pb.artist1, album: pb.album, duration: pb.duration }) : null;
+            const size = settings.get('clusterSize'), playing = !!(pb && pb.playing), pos = position();
+            mc.update({ setting: settings.get('cluster'), source: pick(), ok, track: t, playing, pos, posFn: () => position(),
+                lyrics: want ? lyrics : null, size, palette: artPal, vizPalette: stageColours(ctx.theme()) });
+            mh.update({ setting: settings.get('hud'), ok, track: t, playing, pos, lyrics: wantHud ? lyrics : null, size, palette: artPal });
         };
         setInterval(() => { try { clusterTick(); } catch (e) { log.warn('music cluster: ' + e.message); } }, 250);
-        process.once('exit', () => mc.close());
+        process.once('exit', () => { mc.close(); mh.close(); });
         settings.onChange((k) => {
+            if (k === 'hud' || k === 'clusterSize') { nextPoll = 0; clusterTick(); return; }
             if (k !== 'cluster') return;
             if (CT.isOn(settings.get('cluster')) && settings.get(CT.LAST_KEY) !== settings.get('cluster')) settings.set(CT.LAST_KEY, settings.get('cluster'));
             shareSetting(); nextPoll = 0; clusterTick();
         });
-        // route guidance hides the cluster's picture, as G's Dash's logo (app.json "_optional" signals)
+        // route guidance hides the cluster's picture (and the HUD's lyrics), as G's Dash's logo (app.json "_optional" signals)
         const GUIDE = [
             ['de.bmw.infotainment.navigation.navigationstatus.NavigationStatus', '1', 'guidingState', 'nav'],
             ['de.bmw.infotainment.a4a.carplay.CarPlayManager', 'CarPlayManagerInst1', 'projectedGuidanceActive', 'carplay'],
@@ -375,15 +385,15 @@ mgu.run({
         ];
         if (ctx.signals && ctx.signals.watch) GUIDE.forEach((g) => {
             const h = {};
-            h[g[2]] = (v) => mc.guidance(g[3], v);
+            h[g[2]] = (v) => { mc.guidance(g[3], v); mh.guidance(g[3], v); };
             try {
                 ctx.signals.watch(g[0], g[1], h, log, { pollMs: 10000 })
                     .then((r) => log.info('guidance ' + g[3] + ': ' + (r && r.error ? 'unavailable (' + r.error + ')' : 'watched')), (e) => log.warn('guidance ' + g[3] + ': ' + e));
             } catch (e) { log.warn('guidance ' + g[3] + ': ' + e.message); }
         });
-        /** How often Spotify is read for the cluster alone (screen and widget not up): 0 = not. */
+        /** How often Spotify is read for the cluster (or the HUD) alone (screen and widget not up): 0 = not. */
         const clusterEvery = () => {
-            if (!clusterOn() || (status !== 'ok' && status !== 'idle')) return 0;
+            if (!(clusterOn() || hudOn()) || (status !== 'ok' && status !== 'idle')) return 0;
             if (pb && pb.playing) {
                 // a poll just after the track ends, so the next track's lyrics are on time
                 const left = pb.duration ? pb.duration - position() : 1e9;
@@ -974,6 +984,8 @@ mgu.run({
             ['theme', 'Colours', (v) => THEME_NAME[v] || v],
             ['stage', 'Show', (v) => ({ lyrics: 'Lyrics (else visualizer)', visualizer: 'Visualizer', off: 'Nothing' })[v] || v],
             ['cluster', 'Cluster (map area)', (v) => ({ lyrics: 'Lyrics + visualizer', visualizer: 'Visualizer only', off: 'Off' })[v] || v, () => mc.view()],
+            ['hud', 'HUD', (v) => ({ lyrics: 'Lyrics', off: 'Off' })[v] || v, () => mh.view()],
+            ['clusterSize', 'Cluster & HUD size', (v) => ({ small: 'Small', medium: 'Medium', large: 'Large' })[v] || v],
         ];
         function drawSettings(cv, t, A) {
             const on = t.accent2 || t.accent, hy = A.y, cyH = hy + HEAD_H / 2;

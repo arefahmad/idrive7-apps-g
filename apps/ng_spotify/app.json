@@ -1,8 +1,8 @@
 {
   "id": "ng_spotify",
   "title": "G's Music",
-  "description": "Full-screen Spotify player: album art, synced lyrics (LRCLIB) or a visualizer, big touch controls and a seek bar, sign-in by QR code from your phone, and a home-screen widget. While music plays, lyrics or the visualizer can show in the instrument cluster (needs the Cluster renderer tool). Needs Spotify Premium and internet through mgu-uplink.",
-  "version": "0.7.11",
+  "description": "Full-screen Spotify player: album art, synced lyrics (LRCLIB) or a visualizer, big touch controls and a seek bar, sign-in by QR code from your phone, and a home-screen widget. While music plays, lyrics or the visualizer can show in the instrument cluster, and the lyrics in the HUD (off by default), in a small, medium or large size; both need the Cluster renderer tool, and the HUD its HUD takeover setting. Needs Spotify Premium and internet through mgu-uplink.",
+  "version": "0.8.0",
   "share": ["ng_gsdash/cluster_source.js"],
   "vendor": "ng",
   "loggingId": "OAN2",
@@ -75,7 +75,11 @@
     {"key": "stage", "label": "Show", "type": "choice", "default": "lyrics",
      "options": [["lyrics", "Lyrics (else visualizer)"], ["visualizer", "Visualizer"], ["off", "Nothing"]]},
     {"key": "cluster", "label": "Cluster (map area)", "type": "choice", "default": "lyrics",
-     "options": [["off", "Off"], ["lyrics", "Lyrics + visualizer"], ["visualizer", "Visualizer only"]]}
+     "options": [["off", "Off"], ["lyrics", "Lyrics + visualizer"], ["visualizer", "Visualizer only"]]},
+    {"key": "hud", "label": "HUD", "type": "choice", "default": "off",
+     "options": [["off", "Off"], ["lyrics", "Lyrics"]]},
+    {"key": "clusterSize", "label": "Cluster & HUD size", "type": "choice", "default": "medium",
+     "options": [["small", "Small"], ["medium", "Medium"], ["large", "Large"]]}
   ],
   "_retiredSettings": "settings 0.5.0 had and 0.5.1 dropped: a saved value is deleted on start (kit/runtime/mgu.js). Spotify is polled every 3 s, the renderer is always the GPU one, no demo data.",
   "retiredSettings": ["poll", "renderer", "demo", "layout"]
