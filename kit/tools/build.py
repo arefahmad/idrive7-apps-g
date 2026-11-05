@@ -329,6 +329,28 @@ def make_icon(spec, out):
 
 
 WIDGET_COMPONENT_ID = 501
+STOCK_WIDGET_LAYOUT = 'LT_Table_OnlineApps_DriveRecorderWidget'
+
+
+def start_widget_layout(sw):
+    """The HMI template a home-screen widget uses: (layout, stream).
+
+    app.json "startWidget": {"stream": {"layout": "<template>", "marker": "<file>"}} asks for the stream widget
+    template that the Store's renderer (mgu-renderd-hmi) mounts into the HMI: the stock layout without its
+    vignette, with the renderer's stream surface over its picture (docs/animated-widget.md). It is used only
+    when the marker file on this unit (the build runs on the head unit) lists that template under
+    "startWidget"; otherwise the stock layout, as before. MGU_HMI_TEMPLATES names another marker (tests)."""
+    stock = sw.get('layout', STOCK_WIDGET_LAYOUT)
+    st = sw.get('stream')
+    if not isinstance(st, dict) or not st.get('layout'):
+        return stock, False
+    marker = os.environ.get('MGU_HMI_TEMPLATES') or st.get('marker')
+    try:
+        with open(marker, encoding='utf-8') as f:
+            offered = json.load(f).get('startWidget') or []
+    except (OSError, TypeError, ValueError, AttributeError):
+        return stock, False
+    return (st['layout'], True) if isinstance(offered, list) and st['layout'] in offered else (stock, False)
 
 
 def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
@@ -340,6 +362,7 @@ def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
     the app fills each placed widget (one "spawn" per widget) at runtime (kit/runtime/mgu.js)."""
     sw = spec['startWidget']
     name = sw.get('name', spec['title'])
+    layout, stream = start_widget_layout(sw)
     comp = app_id.upper() + '_WIDGET'
     sid_name = sid(app_id, 'WIDGET_NAME')
     icon = app_id + '_widget_icon.png'
@@ -364,7 +387,7 @@ def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
     ui = {'schemaVersion': '1.3.0', 'containers': {'500': {'type': 'logical', 'name': 'startWidgetLogical', 'components': {
         str(WIDGET_COMPONENT_ID): {'type': 'startWidget', 'name': comp,
                                    'properties': {'UUID': {'value': wuuid, 'type': 'Text'}},
-                                   'cells': {'Widget': {'value': sw.get('layout', 'LT_Table_OnlineApps_DriveRecorderWidget'), 'type': 'Text'},
+                                   'cells': {'Widget': {'value': layout, 'type': 'Text'},
                                              'SelectionName': {'value': sid_name, 'type': 'StringId'},
                                              'SelectionIcon': {'value': icon, 'type': 'ResourceId'}}}}}}}
     json.dump(ui, open(os.path.join(out, 'uiDescription', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
@@ -394,7 +417,7 @@ def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
         for lang in LANGS:
             json.dump({sid_name: name}, open(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
         shutil.copy(icon_src, os.path.join(pkg_out, 'variantGroups', 'Common', 'images', icon))
-    return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
+    return {'component': comp, 'layout': layout, 'stream': stream}
 
 
 def build(app_id, language='en'):
@@ -493,6 +516,10 @@ def build(app_id, language='en'):
             file.write(credit.encode('utf-8') + body)
     rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'retiredSettings', 'config', 'startWidget')}
     rt_spec['stateIds'] = state_ids
+    if spec.get('startWidget'):
+        # the template this build's widget uses (the app draws there only through the stream with "stream": true)
+        layout, stream = start_widget_layout(spec['startWidget'])
+        rt_spec['startWidget'] = dict(spec['startWidget'], built={'layout': layout, 'stream': stream})
     json.dump(rt_spec, open(os.path.join(src, 'javascript', 'kit', 'app-spec.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
     locale = {'language': language, 'strings': load_locale(language)}
     if language == 'zh-CN':
@@ -552,7 +579,7 @@ def build(app_id, language='en'):
     if spec.get('startWidget'):
         info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'),
                                   os.path.join(src, 'rhmiDataStartWidget'))
-        print('  home-screen widget: %s (%s)' % (info['component'], info['layout']))
+        print('  home-screen widget: %s (%s%s)' % (info['component'], info['layout'], ', stream template' if info['stream'] else ''))
 
     # --- installer helpers + metadata ---
     shutil.copytree(os.path.join(KIT, 'tools', 'oapgen'), os.path.join(stage, 'oapgen'))

@@ -368,6 +368,7 @@ class Widget {
         this._change = [];
         this._tap = [];
         this.timing = { png: 0, push: 0 };
+        this.assetsShown = 0;                // showAsset calls the HMI has answered (a frame rate for the app)
     }
     get ready() { return !!this.comp; }
     /** Placed widgets: [{ spawnId, big, visible }]. */
@@ -414,6 +415,8 @@ class Widget {
     /** Show a drawn image (canvas.js Canvas) in a placed widget (cell: app.json startWidget.image). */
     image(spawnId, img) {
         const st = this._img[spawnId] || (this._img[spawnId] = { n: 0, live: [], busy: null, next: null });
+        // an animation frame still on its way (showAsset) lands first: this picture must not be covered by it
+        if (st.assetBusy) return st.assetBusy.then(() => this.image(spawnId, img));
         if (st.busy) { st.next = img; return st.busy; }
         const cell = this.spec.image || 'BackgroundImage1';
         const run = async (frame) => {
@@ -438,6 +441,55 @@ class Widget {
             if (st.next) { const n = st.next; st.next = null; return this.image(spawnId, n); }
         });
         return st.busy;
+    }
+    /**
+     * Pictures made ahead (an animation's frames, PNG buffers): written to the HMI's resource folder under
+     * this run's names and given a resource handle each, once. Showing one is then a single setValue
+     * (showAsset), with nothing encoded or written per frame. The handles stay until releaseAssets(set):
+     * the HMI may still be loading or showing any of them while the loop goes round.
+     * Resolves { files, handles } (handles[i] for pngs[i]).
+     */
+    async assets(pngs, tag) {
+        if (!this.comp) throw new Error('no widget yet');
+        const rb = this.comp.getResourceBundle();
+        const files = pngs.map((png, i) => path.join(RHMI_RES, 'dyn_' + RUN_TAG + '_' + tag + '_' + i + '.png'));
+        const set = { files, handles: [], rb };
+        try {
+            files.forEach((f, i) => { fs.writeFileSync(f + '.tmp', pngs[i]); fs.renameSync(f + '.tmp', f); });
+            // a few at a time: one call with dozens of files is a large message to MainApp
+            for (let i = 0; i < files.length; i += 8) await rb.createResourceHandles(files.slice(i, i + 8));
+            set.handles = files.map((f) => rb.getResourceHandle(f));
+        } catch (e) { this.releaseAssets(set); throw e; }
+        return set;
+    }
+    /** Let go of assets() pictures: their handles, then their files. */
+    releaseAssets(set) {
+        if (!set || set.released) return;
+        set.released = true;
+        Promise.resolve().then(() => set.rb.destroyResourceHandles(set.files)).catch((e) => log.warn('widget assets release: ' + e))
+            .then(() => set.files.forEach((f) => { try { fs.unlinkSync(f); } catch (e) { /* gone */ } }));
+    }
+    /**
+     * Show handle (from assets()) in placed widget spawnId. One call to the HMI at a time per widget: while
+     * one is on its way, a newer one waits and any in between is skipped. Resolves once this one is sent.
+     */
+    showAsset(spawnId, handle) {
+        const st = this._img[spawnId] || (this._img[spawnId] = { n: 0, live: [], busy: null, next: null });
+        st.lastPx = null;                       // the cell no longer holds image()'s picture: push that one again
+        st.assetNext = handle;
+        if (st.assetBusy) return st.assetBusy;
+        const cell = this.spec.image || 'BackgroundImage1';
+        const run = () => {
+            const h = st.assetNext;
+            st.assetNext = undefined;
+            if (h === undefined || !this.comp) return Promise.resolve();
+            return Promise.resolve(this.comp.setValue(Number(spawnId), cell, h, 'Asset')).then(() => {
+                this.assetsShown++;
+                if (st.assetNext !== undefined) return run();
+            });
+        };
+        st.assetBusy = run().catch((e) => log.warn('widget asset ' + spawnId + ': ' + e)).then(() => { st.assetBusy = null; });
+        return st.assetBusy;
     }
     /**
      * Run draw(instance) -> Canvas for every widget on screen, about `fps` times a second
