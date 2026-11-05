@@ -7,27 +7,43 @@
  * red in the last 2000 rpm, then "SHIFT!" flashing blue / red from the shift point), a peak trail, an
  * item-box gear, a hi-score style top speed, two stat bars for oil and coolant, a pixel radar for g.
  * Behind: a night sky with twinkling pixel stars and two rows of pixel hills scrolling with the car's
- * speed (parallax). Every pixel is a rect on a 4 px grid; the static art is in cached layers.
+ * speed (parallax). Every pixel is a rect on a 4 px grid; the static art is in cached layers (keyed by
+ * the colour). Colour variants (0.14.3, tints.js VARIANTS.pixel): palette swaps - Night (default, as
+ * before), Sunset, Ocean, Handheld; the emblem keeps the G's Dash colours in every one.
  * Node 8: no ?., no ??, no object spread.
  */
 const G = require('./kit/gauges');
 const L = require('./lib');
 const P = require('./px');
+const TINTS = require('./tints');
 
 const { withAlpha, clamp, isNum } = L;
 const FONT = 'gs_p_px';
-const SKY0 = '#0c0a24', SKY1 = '#231a4e', INK = '#05060c', WHITE = '#f4f4ff', DIM = '#8f8cc0', GRN = '#3ee07a', GRN2 = '#1f9e50',
-    RED = '#ff3a4a', RED2 = '#a8162a', BLU = '#3a8bff', YEL = '#ffd23a', CYAN = '#58e1ff', FRAME = '#e8e6ff', BOX = '#141236';
+const INK = '#05060c';
+// the colours are the chosen variant's (tints.js): set by applyTint (Night, as before 0.14.3, until then)
+let TINT = '', C = TINTS.VARIANTS.pixel[0].c;
+let SKY0, WHITE, DIM, GRN, GRN2, RED, RED2, BLU, YEL, CYAN, FRAME, BOX;
 const N_HP = 20;
 
-const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), {
-    name: 'Pixel',
-    bg: SKY0, panelTop: BOX, panelBottom: '#0d0b28', panelEdge: FRAME,
-    track: '#24204e', tick: '#4a4590', text: WHITE, dim: DIM,
-    accent: YEL, accent2: CYAN, ok: GRN, warn: YEL, crit: RED, cold: BLU,
-    sel: YEL, selText: INK, marker: RED, stripes: [CYAN, BLU, RED],
-});
-const MODE = { 'sport+': RED, track: RED, sport: YEL, eco: GRN };
+const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), { name: 'Pixel', selText: INK });
+const MODE = {};
+/** oil / coolant zones (0.11.0, lib.js TEMP_ZONES): cold / ok / hot blocks, and their tags */
+const ZONES_PX = {};
+const ZONE_TAG = { cold: 'COLD', ok: 'OK', hot: 'HOT' };
+/** recolour the look in place for a variant (tints.js); the palette object stays the same one */
+function applyTint(v) {
+    if (!v || v.id === TINT) return;
+    TINT = v.id; C = v.c;
+    SKY0 = C.sky[0]; WHITE = C.white; DIM = C.dim; GRN = C.hp; GRN2 = C.hp2; RED = C.crit; RED2 = C.crit2;
+    BLU = C.flash; YEL = C.acc; CYAN = C.cyan; FRAME = C.frame; BOX = C.box;
+    Object.assign(palette, { bg: SKY0, panelTop: BOX, panelBottom: C.panelBottom, panelEdge: FRAME,
+        track: C.track, tick: C.tick, text: WHITE, dim: DIM,
+        accent: YEL, accent2: CYAN, ok: GRN, warn: YEL, crit: RED, cold: C.cold,
+        sel: YEL, marker: RED, stripes: [CYAN, C.shade, RED] });
+    Object.assign(MODE, { 'sport+': RED, track: RED, sport: YEL, eco: GRN });
+    Object.assign(ZONES_PX, { cold: C.cold, ok: GRN, hot: C.hot });
+}
+applyTint(TINTS.VARIANTS.pixel[0]);
 const ST = { scroll: [0, 0], at: 0, intro: 0, lastDraw: 0, hop: 0, gear: null, ghost: 0, gAt: 0 };
 
 /** The cell size for a number of font size `size` drawn as rects (cap height ~0.72 of the size). */
@@ -56,9 +72,9 @@ function hills(c, w, h, seed, col, top, amp) {
     }
 }
 function background(cv, t, reach) {
-    cv.blit(G.layer('gs-px-sky|' + reach, 1600, reach, (c) => {
+    cv.blit(G.layer('gs-px-sky|' + TINT + '|' + reach, 1600, reach, (c) => {
         // banded sky (hard steps, no smooth gradient: the 16-bit way)
-        const bands = [SKY0, '#100d2e', '#151137', '#1a1441', '#20184b', '#271c54'];
+        const bands = C.sky;
         bands.forEach((b, i) => c.fillRect(0, Math.round(reach * i / bands.length), 1600, Math.ceil(reach / bands.length) + 1, b));
         // (0.13.6: no dark left border any more: the sky carries on to the screen's edge, under the back arrow column)
     }), 0, 0);
@@ -68,10 +84,11 @@ const STARS = [];
     for (let i = 0; i < 46; i++) STARS.push({ x: Math.round(r() * 400) * 4, y: Math.round(r() * 70) * 4 + 40, ph: r() * 6.28, big: r() < 0.25 }); })();
 function moon(cv) {
     // a big pixel moon (the drive page only: it would peek between the cards elsewhere)
-    const mx = 935, my = 232, mr = 9;
-    cv.blit(G.layer('gs-px-moon', 1600, 320, (c) => {
-        for (let yy = -mr; yy <= mr; yy++) for (let xx = -mr; xx <= mr; xx++) if (xx * xx + yy * yy <= mr * mr) c.fillRect(mx + xx * 4, my + yy * 4, 4, 4, xx + yy < -6 ? '#fff6c8' : '#d8cf9a');
-        c.fillRect(mx - 12, my - 8, 8, 8, '#bdb37e'); c.fillRect(mx + 12, my + 8, 12, 8, '#bdb37e'); c.fillRect(mx - 4, my + 16, 8, 4, '#bdb37e');
+    // (Sunset: a low sun in the moon's place, the same pixels in its colours)
+    const mx = 935, my = 232, mr = 9, mc = C.moon;
+    cv.blit(G.layer('gs-px-moon|' + TINT, 1600, 320, (c) => {
+        for (let yy = -mr; yy <= mr; yy++) for (let xx = -mr; xx <= mr; xx++) if (xx * xx + yy * yy <= mr * mr) c.fillRect(mx + xx * 4, my + yy * 4, 4, 4, xx + yy < -6 ? mc[0] : mc[1]);
+        c.fillRect(mx - 12, my - 8, 8, 8, mc[2]); c.fillRect(mx + 12, my + 8, 12, 8, mc[2]); c.fillRect(mx - 4, my + 16, 8, 4, mc[2]);
     }), 0, 0);
 }
 function sky(cv, S, reach) {
@@ -82,13 +99,13 @@ function sky(cv, S, reach) {
     STARS.forEach((s) => {
         const k = Math.sin(now / 520 + s.ph * 5);
         if (k < -0.7) return;
-        const c = k > 0.6 ? '#ffffff' : '#8d88c8', x = (s.x - Math.floor(ST.scroll[0] * 0.3 / 4) * 4 + 1600 * 4) % 1600;
+        const c = k > 0.6 ? '#ffffff' : C.star, x = (s.x - Math.floor(ST.scroll[0] * 0.3 / 4) * 4 + 1600 * 4) % 1600;
         cv.fillRect(x, s.y, 4, 4, c);
         if (s.big && k > 0.6) { cv.fillRect(x - 4, s.y, 4, 4, withAlpha(c, 0.5)); cv.fillRect(x + 4, s.y, 4, 4, withAlpha(c, 0.5)); cv.fillRect(x, s.y - 4, 4, 4, withAlpha(c, 0.5)); cv.fillRect(x, s.y + 4, 4, 4, withAlpha(c, 0.5)); }
     });
     // hills: far (slow) and near (faster), each a 1600 px wide layer blitted twice to wrap
-    const far = G.layer('gs-px-far|' + reach, 1600, reach, (c) => hills(c, 1600, reach, 5, '#2b2163', reach - 230, 90));
-    const near = G.layer('gs-px-near|' + reach, 1600, reach, (c) => hills(c, 1600, reach, 9, '#171338', reach - 150, 70));
+    const far = G.layer('gs-px-far|' + TINT + '|' + reach, 1600, reach, (c) => hills(c, 1600, reach, 5, C.far, reach - 230, 90));
+    const near = G.layer('gs-px-near|' + TINT + '|' + reach, 1600, reach, (c) => hills(c, 1600, reach, 9, C.near, reach - 150, 70));
     [[far, ST.scroll[0]], [near, ST.scroll[1]]].forEach((l) => {
         const ox = -(Math.floor(l[1] / 4) * 4 % 1600);
         cv.blit(l[0], ox, 0); cv.blit(l[0], ox + 1600, 0);
@@ -126,31 +143,31 @@ function hpBar(cv, S, x, y, w, h) {
     const pad = 10, gap = 4, bw = (w - 2 * pad - gap * (N_HP - 1)) / N_HP, by = y + pad, bh = h - 2 * pad;
     for (let i = 0; i < N_HP; i++) {
         const bx = Math.round(x + pad + i * (bw + gap)), ww = Math.round(bw);
-        let c = '#1d1a40', top = null;
-        if (ko) { c = S.blink ? BLU : '#1d1a40'; if (S.blink) top = '#a8ccff'; }
-        else if (i < lit) { c = danger ? RED : GRN; top = danger ? '#ff9aa2' : '#b6ffcf'; }
-        else if (i < ghost) c = '#ffe9b0';
+        let c = C.barOff, top = null;
+        if (ko) { c = S.blink ? BLU : C.barOff; if (S.blink) top = C.flashTop; }
+        else if (i < lit) { c = danger ? RED : GRN; top = danger ? C.critTop : C.hpTop; }
+        else if (i < ghost) c = C.ghost;
         cv.fillRect(bx, by, ww, bh, c);
-        if (top) { cv.fillRect(bx, by, ww, 4, top); cv.fillRect(bx, by + bh - 4, ww, 4, ko ? '#1f4aa0' : danger ? RED2 : GRN2); }
+        if (top) { cv.fillRect(bx, by, ww, 4, top); cv.fillRect(bx, by + bh - 4, ww, 4, ko ? C.flash2 : danger ? RED2 : GRN2); }
     }
-    if (ko) ptxt(cv, 'SHIFT!', x + w / 2, by + (bh - 28) / 2, 4, S.blink ? WHITE : YEL, { align: 'center' });
+    if (ko) ptxt(cv, 'SHIFT!', x + w / 2, by + (bh - 28) / 2, 4, S.blink ? C.flashInk : YEL, { align: 'center' });
     return { pw, danger, ko };
 }
 
 /* ---------------- the g radar ---------------- */
 function radar(cv, S, x, y, s) {
     const max = S.gMax, u = 4;
-    cv.blit(G.layer(['gs-px-radar', s, max].join('|'), s + 8, s + 8, (c) => {
-        frame(c, 0, 0, s, s, FRAME, '#0d0b28');
+    cv.blit(G.layer(['gs-px-radar', TINT, s, max].join('|'), s + 8, s + 8, (c) => {
+        frame(c, 0, 0, s, s, FRAME, C.panelBottom);
         const cx = s / 2, cy = s / 2;
         for (let q = 0.5; q <= max + 1e-6; q += 0.5) {
             const r = Math.round(q / max * (s / 2 - 16) / u) * u;
             for (let a = 0; a < 360; a += 360 / Math.max(16, Math.round(r / 3))) {
                 const px = Math.round((cx + Math.sin(a * Math.PI / 180) * r) / u) * u, py = Math.round((cy - Math.cos(a * Math.PI / 180) * r) / u) * u;
-                c.fillRect(px, py, u, u, q % 1 === 0 ? '#4a4590' : '#2c2866');
+                c.fillRect(px, py, u, u, q % 1 === 0 ? C.ring : C.ring2);
             }
         }
-        for (let k = 12; k < s - 12; k += 8) { c.fillRect(Math.round(cx / u) * u, k, u, u, '#2c2866'); c.fillRect(k, Math.round(cy / u) * u, u, u, '#2c2866'); }
+        for (let k = 12; k < s - 12; k += 8) { c.fillRect(Math.round(cx / u) * u, k, u, u, C.ring2); c.fillRect(k, Math.round(cy / u) * u, u, u, C.ring2); }
     }), x, y);
     const R = s / 2 - 16, cx = x + s / 2, cy = y + s / 2, snap = (v) => Math.round(v / u) * u;
     const Pp = (lat, lon) => [snap(cx + clamp(lat / max, -1.05, 1.05) * R), snap(cy - clamp(lon / max, -1.05, 1.05) * R)];
@@ -165,12 +182,11 @@ function radar(cv, S, x, y, s) {
 
 /**
  * A stat bar (oil / coolant): label, value, 12 blocks in temperature zones (0.11.0, lib.js TEMP_ZONES): dim
- * blue / green / red blocks, lit to the value in the current zone's colour, and a tag (COLD / OK / HOT).
+ * cold / ok / hot blocks (ZONES_PX: Night's blue / green / red), lit to the value in the current zone's colour,
+ * and a tag (COLD / OK / HOT).
  */
-const ZONES_PX = { cold: BLU, ok: GRN, hot: '#ff4a5c' };
-const ZONE_TAG = { cold: 'COLD', ok: 'OK', hot: 'HOT' };
 function stat(cv, S, x, y, w, label, v) {
-    const n = 12, zg = L.tempGauge(v, ZONES_PX, '#1d1a40', 0.3), c = zg.on;
+    const n = 12, zg = L.tempGauge(v, ZONES_PX, C.barOff, 0.3), c = zg.on;
     ptxt(cv, label, x, y, 3, DIM);
     const val = L.tempText(v);
     ptxt(cv, val, x + w, y - 4, 4, !c ? DIM : zg.zone === 'ok' ? WHITE : c, { align: 'right' });
@@ -188,6 +204,8 @@ module.exports = {
     name: 'Pixel',
     blurb: 'Retro game dash: pixel font, an animated pixel G emblem, the rev lights as a health bar',
     palette,
+    tints: TINTS.VARIANTS.pixel,
+    applyTint,
     ui: {
         txt: FONT, num: FONT, size: 18, spacing: 1, upper: true, radius: 0, nameFont: FONT, nameSize: 24,
         // hub.js's numbers: the baked atlas up to 48 px; bigger ones drawn as rects (pixel-exact, no soft upscale)
@@ -203,14 +221,14 @@ module.exports = {
     emblemState: emblemNow,
 
     background(cv, t, reach) { background(cv, t, reach); },
-    card(cv, t, x, y, w, h, on) { frame(cv, x, y, w, h, on ? YEL : '#5a55a0', on ? '#2a2210' : BOX); },
+    card(cv, t, x, y, w, h, on) { frame(cv, x, y, w, h, on ? YEL : C.frameDim, on ? C.accCard : BOX); },
     cardBg(cv, t, x, y, w, h) {
-        cv.fillRect(x, y, w, h, SKY0); cv.fillRect(x, y + h * 0.5, w, h * 0.5, '#150f38');
-        hills(cv, w, h, 5, '#2b2163', h - 120, 40);
+        cv.fillRect(x, y, w, h, SKY0); cv.fillRect(x, y + h * 0.5, w, h * 0.5, C.floor);
+        hills(cv, w, h, 5, C.far, h - 120, 40);
     },
     panelPlate(cv, t, x, y, w, h) { frame(cv, x, y, w, h, FRAME, BOX); },
     gButton(cv, t, r, lit, down) {
-        frame(cv, r.x, r.y, r.w, r.h, lit || down ? YEL : FRAME, down ? '#3a2e10' : BOX);
+        frame(cv, r.x, r.y, r.w, r.h, lit || down ? YEL : FRAME, down ? C.accDown : BOX);
         const u = 3, ew = P.EMB.w * u, eh = P.EMB.h * u;
         P.emblem(cv, Math.round(r.x + (r.w - ew) / 2), Math.round(r.y + (r.h - eh) / 2), u, {});
     },
@@ -220,9 +238,9 @@ module.exports = {
         const u = 4, ew = P.EMB.w * u;
         P.emblem(cv, Math.round(x + (w - ew) / 2), y + 10, u, { shine: 9 });
         const by = y + 10 + P.EMB.h * u + 14;
-        P.heart(cv, x + 18, by, 3, RED, '#ffc0c6');
+        P.heart(cv, x + 18, by, 3, RED, C.heartHi);
         const n = 10, bw = Math.floor((w - 70 - 3 * (n - 1)) / n);
-        for (let i = 0; i < n; i++) cv.fillRect(x + 52 + i * (bw + 3), by + 2, bw, 18, i < 6 ? GRN : '#1d1a40');
+        for (let i = 0; i < n; i++) cv.fillRect(x + 52 + i * (bw + 3), by + 2, bw, 18, i < 6 ? GRN : C.barOff);
     },
 
     panelRect(S) { return { x: S.x + 1060, y: S.y + 104, w: S.w - 1060, h: S.h - 104 - 84 }; },
@@ -240,7 +258,7 @@ module.exports = {
         const hx = x0 + 200, hw = 960, hy = top + 18, hh = 52;
         const hb = hpBar(cv, S, hx + 52, hy, hw - 52, hh);
         const beat = hb.ko ? (S.blink ? 1 : 0) : hb.danger ? (Math.floor(S.now / 180) % 2) : 0;
-        P.heart(cv, hx - 2 - beat * 2, hy + 8 - beat * 2, 4 + beat, hb.ko && S.blink ? WHITE : RED, '#ffc0c6', INK);
+        P.heart(cv, hx - 2 - beat * 2, hy + 8 - beat * 2, 4 + beat, hb.ko && S.blink ? WHITE : RED, C.heartHi, INK);
         ptxt(cv, 'REV', hx + 52, hy + hh + 14, 3, DIM);
         ptxt(cv, 'SHIFT ' + S.shift, hx + hw, hy + hh + 14, 3, DIM, { align: 'right' });
         // the hi-score corner: top speed and the session clock (a tap there: the clock back to 0)
@@ -280,7 +298,7 @@ module.exports = {
         ptxt(cv, rt, cx - rw / 2, ry, 6, hb.ko ? RED : hb.danger ? YEL : WHITE);
         ptxt(cv, 'RPM', cx + rw / 2, ry + 18, 4, DIM, { align: 'right' });
         if (S.mode) {
-            const c = MODE[S.modeTone] || '#5a55a0', tw = P.width(S.mode, 4), w = tw + 40, mx = gx + gw / 2, x = Math.round(mx - w / 2), y = bottom - 96;
+            const c = MODE[S.modeTone] || C.frameDim, tw = P.width(S.mode, 4), w = tw + 40, mx = gx + gw / 2, x = Math.round(mx - w / 2), y = bottom - 96;
             frame(cv, x, y, w, 52, c, MODE[S.modeTone] ? withAlpha(c, 0.25) : BOX);
             ptxt(cv, S.mode, mx, y + 12, 4, WHITE, { align: 'center' });
         }
