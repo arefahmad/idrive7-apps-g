@@ -89,6 +89,7 @@ const Src = require('./tv_sources');
 const { Handoff } = require('./tv_handoff');
 const qrcodegen = require('./qrcodegen');
 const AP = require('./kit/audio_probe');
+const SP = require('./tv_sound_probe');
 
 const NAME = "G's TV";
 let VERSION = '';
@@ -798,6 +799,22 @@ mgu.run({
                 // one plain-ASCII line for the HMI's label (line breaks and other characters would take its string-bundle path)
                 label('AUDIO_INFO', (sum + ' | ' + txt.replace(/\n+/g, ' | ')).replace(/[^\x20-\x7e]/g, '?').slice(0, 1800));
             }, (e) => { log.warn('audio check: ' + e); label('AUDIO_INFO', 'Audio check failed: ' + (e && e.message || e)); });
+            soundCheck(r.configs.sources);
+        };
+        /*
+         * More > Sound outputs: where G's TV could write its decoded sound (output/tv_sound_probe.js, read-only:
+         * files, and only /bin/true and gst-inspect-1.0 run). Picking BMW's generic player switches the car to it;
+         * the sound itself goes to a SmartX ALSA output or through a program such as GStreamer, so this finds which
+         * of those this app may use. The report goes to <data>/sound.txt and the log.
+         */
+        const soundCheck = (sources) => {
+            label('SOUND_INFO', 'Sound outputs: reading...');
+            SP.scan({ sources }).then((r) => {
+                const lines = SP.summary(r);
+                try { require('fs').writeFileSync(require('path').join(ctx.dataDir, 'sound.txt'), SP.text(r)); } catch (e) { log.warn('sound check: not saved (' + e.message + ')'); }
+                lines.forEach((l) => log.info('sound check: ' + l));
+                label('SOUND_INFO', ('Sound outputs: ' + lines.join(' | ')).replace(/[^\x20-\x7e]/g, '?').slice(0, 1800));
+            }, (e) => { log.warn('sound check: ' + e); label('SOUND_INFO', 'Sound outputs check failed: ' + (e && e.message || e)); });
         };
         ui.onVisible((name, on) => { if (name === 'MORE' && on) audioCheck(); });
 
