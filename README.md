@@ -32,5 +32,5 @@ you are responsible for your car and for how you use these apps. Don't let them 
 ## License
 
 MIT, see [LICENSE](LICENSE). Bundled third-party code keeps its own licence:
-[kit/LICENSE.idrive7-apps](kit/LICENSE.idrive7-apps), [apps/ng_spotify/LICENSE](apps/ng_spotify/LICENSE),
-[apps/ng_tv/LICENSE](apps/ng_tv/LICENSE).
+[kit/LICENSE.idrive7-apps](kit/LICENSE.idrive7-apps), [apps/ng_gsdash/LICENSE](apps/ng_gsdash/LICENSE),
+[apps/ng_spotify/LICENSE](apps/ng_spotify/LICENSE), [apps/ng_tv/LICENSE](apps/ng_tv/LICENSE).
