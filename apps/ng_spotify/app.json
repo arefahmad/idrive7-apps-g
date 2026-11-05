@@ -2,7 +2,7 @@
   "id": "ng_spotify",
   "title": "G's Music",
   "description": "Full-screen Spotify player: album art, synced lyrics (LRCLIB) or a visualizer, big touch controls and a seek bar, sign-in by QR code from your phone, and a home-screen widget. While music plays, lyrics or the visualizer can show in the instrument cluster (needs the Cluster renderer tool). Needs Spotify Premium and internet through mgu-uplink.",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "share": ["ng_gsdash/cluster_source.js"],
   "vendor": "ng",
   "loggingId": "OAN2",

@@ -23,9 +23,10 @@
  * widget's stream surface instead of a layer over the screen. mgu-renderd-hmi binds that surface into the
  * stream widget template it mounts for HmiMain3D, so the HMI itself composites the frames inside the
  * widget (scrolling with the home screen, under popups, no vignette). Asked for with MODE 3 once the
- * renderer says it can (X_READY caps bit 32); PLACE's w and h are the surface's size in pixels (x and y
- * ignored), SHOW 1 / 0 starts and stops drawing there. A renderer without it (or an upstream one) gets
- * no MODE at all: the client emits 'unsupported' instead of 'ready' and the caller closes it.
+ * renderer offers it (X_READY's modes word, bit 2, beside bit 0 layer and bit 1 embed); PLACE's w and h are
+ * the surface's size in pixels (x and y ignored), SHOW 1 / 0 starts and stops drawing there. A renderer
+ * without it (or an upstream one) gets no MODE at all: the client emits 'unsupported' instead of 'ready'
+ * and the caller closes it. (Not in mgu-render yet: docs/animated-widget.md.)
  */
 const net = require('net');
 const fs = require('fs');
@@ -47,9 +48,11 @@ const CLAIM = 9, TOUCH = 105, CLOSED = 106;
 // mgu-render/1 (mgu-store native/mgu-render/PROTOCOL.md)
 const X = { MODE: 0x4d520001, GRAB: 0x4d520002, READY: 0x4d520101, STATE: 0x4d520102, CCU: 0x4d520103 };
 const X_MODE_LAYER = 1;
-// MODE 2 is the renderer's in-page drawing ("embed"); 3 the home-screen widget's stream surface (caps bit 32)
+// MODE 2 is the renderer's in-page drawing ("embed"); 3 the home-screen widget's stream surface. X_READY's second
+// word says which modes are offered now (bit 0 layer, bit 1 embed, bit 2 widget); its third is caps (32 there is
+// "embed frames drawn zero-copy", not a mode)
 const X_MODE_WIDGET = 3;
-const CAP_WIDGET = 32;
+const MODE_WIDGET_BIT = 4;
 
 // mgu-render/1 (iterio numbering): message 10 is IMAGE, op 18 is `x y w h r id`
 const NATIVE_IMAGE = 10;
@@ -258,9 +261,9 @@ class RenderClient extends EventEmitter {
             const p = this.inbuf.slice(8, 8 + len);
             this.inbuf = this.inbuf.slice(8 + len);
             if (type === X.READY && p.length >= 12) {
-                const caps = p.readUInt32LE(8);
+                const modes = p.readUInt32LE(4), caps = p.readUInt32LE(8);
                 this.native = true;
-                this.info = { touch: !!(caps & 1), controller: !!(caps & 2), frontGate: !!(caps & 4), video: !!(caps & 16), widget: !!(caps & CAP_WIDGET) };
+                this.info = { touch: !!(caps & 1), controller: !!(caps & 2), frontGate: !!(caps & 4), video: !!(caps & 16), widget: !!(modes & MODE_WIDGET_BIT) };
             } else if (type === E.READY) {
                 if (this.widget && !(this.native && this.info && this.info.widget)) {
                     // no widget surface on this renderer: nothing is sent, the caller closes this connection
@@ -472,4 +475,4 @@ class RenderClient extends EventEmitter {
     }
 }
 
-module.exports = { RenderClient, SOCKET, SOCKETS, X_MODE_WIDGET, CAP_WIDGET };
+module.exports = { RenderClient, SOCKET, SOCKETS, X_MODE_WIDGET, MODE_WIDGET_BIT };

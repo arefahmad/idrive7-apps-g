@@ -47,11 +47,10 @@ const ASSET_RETRY_MS = 30000;       // the HMI refused the frames' resources: tr
 const CACHE_MS = 15000;             // decoded frames let go this long after the GPU and the preview stop using them
 const FPS_WINDOW_MS = 3000;
 
-/** The marker file (build.py start_widget_layout's) still lists template `layout`. */
+/** The marker file (build.py stream_widget_offered's) still names template `layout` as the stream widget. */
 function offered(stream, layout) {
     try {
-        const list = JSON.parse(fs.readFileSync(process.env.MGU_HMI_TEMPLATES || (stream && stream.marker), 'utf8')).startWidget;
-        return Array.isArray(list) && list.indexOf(layout) >= 0;
+        return JSON.parse(fs.readFileSync(process.env.MGU_HMI_TEMPLATES || (stream && stream.marker), 'utf8')).streamWidget === layout;
     } catch (e) { return false; }
 }
 
