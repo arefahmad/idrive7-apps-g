@@ -2,9 +2,8 @@
 /**
  * G's Dash - a driver display and car hub for the iDrive 7 (MGU) head unit, in seven looks.
  *
- *   - six screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
- *     Cluster & HUD (0.17.0: the cluster's centre and dials & HUD picks and the G's Dash on cluster & HUD
- *     switch, one tap each) · Showcase (the car, Spotify or a 12-hour clock, the logo) · Drive (the look's dash, below;
+ *   - five screens, a horizontal swipe apart (page dots beside the G button, stopping at the ends):
+ *     Showcase (the car, Spotify or a 12-hour clock, the logo) · Drive (the look's dash, below;
  *     the screen the app opens on) · Warm-up (oil / coolant, the warm-up rev limit) · G-force (peak hold, hold a finger down to
  *     reset) · Tires (TPMS pressure / temperature). hub.js draws all but Drive. A cold start opens
  *     Warm-up and goes back to Drive by itself once warm (a swipe cancels that).
@@ -1480,46 +1479,6 @@ mgu.run({
             ['map', "Waze's map, always"],
             ['stock', "The car's own, always"],
         ];
-        /** A tile's small picture of the map area (1088 x 480): what the pick puts there. */
-        function srcThumb(cv, kind, x, y, w, h, sel) {
-            const r = 8;
-            if (kind === 'map') {
-                cv.roundRect(x, y, w, h, r, '#202830');
-                cv.line(x + 8, y + h * 0.72, x + w - 8, y + h * 0.40, 5, '#3a4752');
-                cv.line(x + w * 0.30, y + 6, x + w * 0.42, y + h - 6, 4, '#3a4752');
-                cv.line(x + w * 0.20, y + h - 8, x + w * 0.55, y + h * 0.55, 6, '#33ccff');
-                cv.line(x + w * 0.55, y + h * 0.55, x + w * 0.80, y + h * 0.22, 6, '#33ccff');
-                const ax = x + w * 0.24, ay = y + h - 16;
-                cv.quad([[ax, ay - 12], [ax + 9, ay + 8], [ax, ay + 3], [ax - 9, ay + 8]], '#ffffff');
-            } else if (kind === 'stock') {
-                cv.roundRect(x, y, w, h, r, '#0c1726');
-                for (let i = 1; i < 5; i++) cv.line(x + 6, y + i * h / 5, x + w - 6, y + i * h / 5 + 6, 2, '#1d3350');
-                for (let i = 1; i < 6; i++) cv.line(x + i * w / 6, y + 6, x + i * w / 6 - 8, y + h - 6, 2, '#1d3350');
-                cv.line(x + 10, y + h * 0.62, x + w - 10, y + h * 0.48, 5, '#355a86');
-                const ax = x + w / 2, ay = y + h * 0.55;
-                cv.quad([[ax, ay - 12], [ax + 9, ay + 9], [ax, ay + 4], [ax - 9, ay + 9]], '#e8eef6');
-            } else {
-                cv.roundRect(x, y, w, h, r, '#000000');
-                if (kind === 'logo') {
-                    const bh = h * 0.42, bw = L.badgeWidth(bh);
-                    L.badge(cv, x + (w - bw) / 2, y + (h + bh) / 2, bh);
-                } else if (kind === 'music') {
-                    cv.roundRect(x + w * 0.18, y + h * 0.20, w * 0.64, 9, 4, '#ffffff');
-                    cv.roundRect(x + w * 0.28, y + h * 0.40, w * 0.44, 6, 3, '#6b7079');
-                    const N = 17, g = (w * 0.76) / N;
-                    for (let i = 0; i < N; i++) {
-                        const bh = h * 0.30 * (0.25 + 0.75 * Math.abs(Math.sin(i * 0.9 + 0.6)));
-                        cv.roundRect(x + w * 0.12 + i * g, y + h * 0.74 - bh / 2, g * 0.5, bh, g * 0.25, i < 6 ? '#3ad0ff' : i < 12 ? '#7a6cff' : '#ff4fa3');
-                    }
-                } else {
-                    const bh = h * 0.30, bw = L.badgeWidth(bh);
-                    L.badge(cv, x + w * 0.27 - bw / 2, y + (h + bh) / 2, bh);
-                    for (let i = 0; i < 6; i++) { const bh2 = h * (0.15 + 0.3 * Math.abs(Math.sin(i * 1.3 + 0.4))); cv.roundRect(x + w * 0.58 + i * 9, y + h / 2 - bh2 / 2, 5, bh2, 2.5, i < 3 ? '#3ad0ff' : '#ff4fa3'); }
-                    cv.line(x + w / 2, y + 12, x + w / 2, y + h - 12, 1.5, L.withAlpha('#ffffff', 0.25));
-                }
-            }
-            cv.strokeRoundRect(x, y, w, h, r, 1, L.withAlpha('#ffffff', sel ? 0.35 : 0.16));
-        }
         // G's Music's own Cluster setting (its state.json), read at most every MUSIC_READ_MS for the Now card
         let musicSeen = { error: 'missing' }, musicReadAt = -1e15;
         const MUSIC_READ_MS = 2000;
@@ -1659,119 +1618,34 @@ mgu.run({
             cv.target(x, y, w, h, () => { gDown = Date.now(); downKey = 'cs:control'; settings.set('clusterControl', gsdOn() ? 'off' : 'on'); }, 'cs:control', u.radius);
         }
         /**
-         * Cluster & HUD (0.10.0). Left: what the cluster's centre map area shows - the five picks (setting
-         * "clusterSource"), the Now card (what is there now and why, the rules at its foot; one amber line to
-         * Diagnostics only when something is wrong), and CarPlay's map in the cluster Off / On only when Waze
-         * on cluster is installed (a change asks first: the confirmation over the page, the page's own targets
-         * left out meanwhile). Right: your look on the car's displays (setting "displays"): Cluster dials, HUD
-         * or Neither, and what it does now. The renderer's state, Waze's install state and Refresh cluster
-         * are on Diagnostics.
+         * Cluster & HUD (0.10.0; 0.17.1: one tap for each pick, as big tiles). Header: back to Options, the page's name and
+         * the G's Dash on cluster & HUD switch. Then the two picks (hub.js pickRows): the cluster's centre (setting
+         * "clusterSource") and the dials & HUD (setting "displays"), each tile saying what it does or in amber why it
+         * cannot show now (srcState()). The foot: what the cluster and the HUD show now (as confirmed: centreNow() and
+         * the skins' / HUD's own lines), CarPlay's map in the cluster Off / On only when Waze on cluster is installed (a
+         * change asks first: the confirmation over the page, the page's own targets left out meanwhile), and Diagnostics.
          */
         function clusterPage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent;
             const mark = cv.targets ? cv.targets.length : 0;
             header(cv, S, lk, lbl, card, 'Cluster & HUD', 1);
             controlSwitch(cv, S, lk, card);
-            const v = cmap.view(), x0 = S.x, LW = Math.round(S.w * 0.655), bottom = S.y + S.h, cur = srcPick(), top = S.y + 34;
+            const v = cmap.view(), bottom = S.y + S.h;
             if (ask && (Date.now() - ask.at > ASK_MS || v.can !== ask.cmd)) ask = null;
-            lbl('In the cluster\'s centre (map area)', x0, S.y + 20, 18, t.dim);
-            // the five picks
-            const n = SRC_TILES.length, gap = 12, tw = (LW - (n - 1) * gap) / n, th = 166;
-            const pw = tw - 20, ph = Math.min(Math.round(pw * 480 / 1088), th - 76), tf = { font: u.txt, spacing: u.upper ? u.spacing * 0.6 : 0, literal: true };
-            const ctlOn = gsdOn();
-            SRC_TILES.forEach((s2, i) => {
-                const bx = x0 + i * (tw + gap), sel = ctlOn && cur === s2[0], ss = srcState(s2[0]);
-                if (sel) { cv.roundRect(bx, top, tw, th, u.radius, L.withAlpha(acc, 0.20)); cv.strokeRoundRect(bx, top, tw, th, u.radius, 3, acc); }
-                else card(cv, t, bx, top, tw, th, isDown('src:' + s2[0]));
-                srcThumb(cv, s2[0], bx + 10, top + 10, pw, ph, sel);
-                // 0.13.9: a pick that cannot show what it says now: dimmed, the reason in its line
-                if (!ss.ok) cv.roundRect(bx + 10, top + 10, pw, ph, 8, L.withAlpha('#000000', 0.6));
-                const nm = CSRC.NAMES[s2[0]];
-                cv.text(fitText(cv, valueText(u, nm), u.size + 4, tw - 60, tf), bx + 14, top + ph + 44, u.size + 4, ss.ok ? t.text : L.withAlpha(t.dim, 0.7), tf);
-                cv.text(fitText(cv, ss.text, 15, tw - 24), bx + 14, top + ph + 68, 15, !ss.ok ? '#ffb020' : sel ? t.text : t.dim, { literal: true });
-                if (!ctlOn) return;          // G's Dash off: nothing to pick (the pick is kept for when it is on again)
-                if (sel) {
-                    const cx = bx + tw - 26, cy = top + ph + 36;
-                    cv.circle(cx, cy, 12, acc);
-                    cv.line(cx - 6, cy, cx - 1, cy + 5, 3, t.selText || '#ffffff'); cv.line(cx - 1, cy + 5, cx + 7, cy - 5, 3, t.selText || '#ffffff');
-                } else cv.target(bx, top, tw, th, () => { gDown = Date.now(); downKey = 'src:' + s2[0]; settings.set('clusterSource', s2[0]); }, 'src:' + s2[0], u.radius);
-            });
-            // CarPlay's map (Waze on cluster): only when the tool is installed
-            const waze = v.kind !== 'none' && v.kind !== 'checking', mh = 84;
-            // what the cluster shows now, and why; the rules at the foot
-            const nc = nowCard(), sy = top + th + 14, sh = bottom - (waze ? mh + 14 : 0) - sy;
-            const tone = nc.tone === 'ok' ? HUB.GREEN : nc.tone === 'wait' ? '#ffb020' : t.dim;
+            const M = quickModel(), st = HUB.style(lk, t), Q = HUB.pickLayout(S.y, bottom);
+            HUB.pickRows(cv, st, S, M, Q);
             centreTrack();
-            cv.roundRect(x0, sy, LW, sh, u.radius, L.withAlpha('#ffffff', 0.04));
-            cv.strokeRoundRect(x0, sy, LW, sh, u.radius, 1, L.withAlpha('#ffffff', 0.12));
-            cv.circle(x0 + 26, sy + 27, 8, tone);
-            lbl(fitText(cv, u.upper ? nc.title.toUpperCase() : nc.title, 24, LW - 70, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0 }), x0 + 46, sy + 36, 24, t.text);   // measured as drawn (0.13.9)
-            const RULES = ['Logo, Music, Waze and Stock always show that pick, also during route guidance.',
-                "Auto decides: directions, G's TV, G's Music or the logo. Shared with G's Music and G's TV."];
-            // 0.13.9: the rules at the foot only when the card has room for them below a line of its own
-            const rulesFit = sh >= 64 + 26 + RULES.length * 24 + 6;
-            const ruleY = rulesFit ? sy + sh - 18 - (RULES.length - 1) * 24 : sy + sh + 30;
-            let ly = sy + 64;
-            // 0.13.9: a long line wraps (two lines at most) rather than being cut
-            const line = (s2, c) => {
-                let rest = s2;
-                for (let k = 0; k < 2 && rest && ly <= ruleY - 30; k++) {
-                    let cut = rest;
-                    if (k === 0 && cv.textWidth(rest, 17, { literal: true }) > LW - 44) {
-                        const words = rest.split(' '); cut = '';
-                        while (words.length && cv.textWidth(cut + (cut ? ' ' : '') + words[0], 17, { literal: true }) <= LW - 44) cut += (cut ? ' ' : '') + words.shift();
-                        if (!cut) cut = words.shift() || '';
-                        rest = words.join(' ');
-                    } else rest = '';
-                    cv.text(fitText(cv, cut, 17, LW - 44), x0 + 22, ly, 17, c, { literal: true }); ly += 24;
-                }
-                ly += 2;
-            };
-            // 0.13.9: why the pick cannot show now comes first (the card is short when Waze on cluster's row is up)
-            nc.notes.filter((nt) => nt[1] === 'warn').forEach((nt) => line(nt[0], '#ffb020'));
-            if (nc.sub) line(nc.sub, t.dim);
-            nc.notes.filter((nt) => nt[1] !== 'warn').forEach((nt) => line(nt[0], t.dim));
-            if (clusterTrouble()) line('Something needs attention: details in Options > Diagnostics', '#ffb020');
-            if (rulesFit) RULES.forEach((r2, k) => cv.text(fitText(cv, r2, 15, LW - 44), x0 + 22, ruleY + k * 24, 15, L.withAlpha(t.dim, 0.9), { literal: true }));
-            if (waze) {
-                const wy = bottom - mh, vt = v.kind === 'on' ? HUB.GREEN : v.kind === 'pending' || v.kind === 'busy' ? '#ffb020' : v.kind === 'conflict' || v.kind === 'error' ? (t.crit || '#ff3b30') : null;
-                card(cv, t, x0, wy, LW, mh, false);
-                const bw = 110, bx0 = x0 + LW - 2 * bw - 18;
-                rowText(cv, S, lk, x0 + (vt ? 18 : 0), wy, bx0 - x0 - 12 - (vt ? 18 : 0), mh, 'CarPlay map in the cluster (Waze on cluster)', v.value, { shrink: true });
-                if (vt) cv.circle(x0 + 22, wy + mh - 20, 6, vt);
-                [[false, 'Off', 'revert'], [true, 'On', 'apply']].forEach((b, i) => {
-                    const bx = bx0 + i * (bw + 6), on = v.on === b[0], tap = v.can === b[2], by = wy + (mh - 56) / 2, bh = 56;
-                    if (on) { cv.roundRect(bx, by, bw, bh, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(bx, by, bw, bh, u.radius, 2, acc); }
-                    else cv.roundRect(bx, by, bw, bh, u.radius, L.withAlpha('#ffffff', 0.06));
-                    cv.text(u.upper ? b[1].toUpperCase() : b[1], bx + bw / 2, by + bh / 2 + 9, 24, on || tap ? t.text : L.withAlpha(t.dim, 0.55), { font: u.txt, align: 'center', spacing: u.upper ? u.spacing : 0, literal: true });
-                    if (tap) cv.target(bx, by, bw, bh, () => { ask = { cmd: b[2], at: Date.now() }; }, 'cm:' + b[1].toLowerCase(), u.radius);
-                });
-            }
-            // your look on the car's displays: one of three
-            const rx = x0 + LW + 32, rw = S.x + S.w - rx, dcur = displays();
-            lbl('Dials & HUD', rx, S.y + 20, 18, t.dim);
-            const oh = 68, og = 8;                              // 0.17.0: four picks (G's Music's lyrics on the HUD)
-            PREFS.DISPLAYS.forEach((o, i) => {
-                const oy = top + i * (oh + og), on = ctlOn && dcur === o[0];     // G's Dash off: no pick lit (kept for On)
-                if (on) { cv.roundRect(rx, oy, rw, oh, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(rx, oy, rw, oh, u.radius, 2.5, acc); }
-                else card(cv, t, rx, oy, rw, oh, isDown('disp:' + o[0]));
-                cv.arc(rx + 30, oy + oh / 2, 11, 13, 0, 360, on ? acc : t.dim);
-                if (on) cv.circle(rx + 30, oy + oh / 2, 6, acc);
-                cv.text(fitText(cv, valueText(u, o[1]), u.size + 2, rw - 70, tf), rx + 58, oy + 30, u.size + 2, on ? t.text : t.dim, tf);
-                cv.text(fitText(cv, ctlOn ? o[2] : "Off: G's Dash is off", 16, rw - 70), rx + 58, oy + 54, 16, ctlOn ? t.dim : '#ffb020', { literal: true });
-                if (!on && ctlOn) cv.target(rx, oy, rw, oh, () => { gDown = Date.now(); downKey = 'disp:' + o[0]; settings.set('displays', o[0]); log.info('displays: ' + o[0]); }, 'disp:' + o[0], u.radius);
+            // the foot: what shows now | CarPlay's map (Waze on cluster, when installed) | Diagnostics
+            const vt = v.kind === 'on' ? 'ok' : v.kind === 'pending' || v.kind === 'busy' ? 'wait' : v.kind === 'conflict' || v.kind === 'error' ? 'bad' : '';
+            HUB.pickFoot(cv, st, S, Q, {
+                now: M.now, hud: M.hud,
+                // the first reason something is not as picked (amber), when the foot has room for a third line
+                warn: (nowCard().notes.filter((nt) => nt[1] === 'warn')[0] || [clusterTrouble() ? 'Something needs attention: see Diagnostics' : ''])[0],
+                waze: v.kind !== 'none' && v.kind !== 'checking' ? { value: v.value, on: v.on, can: v.can, tone: vt } : null,
+                down: (k) => isDown(k),
+                ask: (cmd) => { ask = { cmd, at: Date.now() }; },
+                diag: () => { gDown = Date.now(); downKey = 'cs:diag'; DIAG.reset(); press(3, 'cs:diag'); },
             });
-            const ms = musicState();
-            const st = !ctlOn ? { kind: 'off', text: "The car's own dials and HUD" } : fcTest && (dcur === 'skin' || dcur === 'hud') ? { kind: 'pending', text: 'Paused (full-screen cluster test)' }
-                : dcur === 'skin' ? cskin.view() : dcur === 'hud' ? hud.view()
-                    : dcur === 'music' ? (ms.error ? { kind: 'wait', text: "Open G's Music once" } : { kind: 'info', text: "G's Music: lyrics on the HUD while a track plays" }) : null;
-            const dy = top + PREFS.DISPLAYS.length * (oh + og) + 18;
-            if (st) { cv.circle(rx + 7, dy - 6, 6, logoTone(t, st.kind) || t.dim); cv.text(fitText(cv, st.text, 17, rw - 22), rx + 22, dy, 17, t.text, { literal: true }); }
-            else cv.text(fitText(cv, "Nothing of ours on the dials or HUD", 17, rw), rx, dy, 17, t.dim, { literal: true });
-            // 0.17.0: one owner at a time; Waze's HUD map is switched off while one of ours owns them (waze_ctl.js)
-            const wazeNote = CSRC.wazeHud(dcur) === 0 && ctlOn && wctl.state === 'ok' ? " Waze's HUD map stays off meanwhile." : '';
-            cv.text(fitText(cv, 'One owner at a time: they share one display.' + wazeNote, 15, rw), rx, dy + 26, 15, t.dim, { literal: true });
-            linkMini(cv, S, lk, rx, bottom - 64, rw, 64, 'cs:diag', 'Diagnostics', () => { DIAG.reset(); press(3, 'cs:diag'); });
             if (!ask) return;
             // the confirmation, over the page: only its two buttons take taps
             if (cv.targets) cv.targets.length = mark;
@@ -1801,8 +1675,8 @@ mgu.run({
             }, 'cm:confirm', u.radius);
         }
         /**
-         * 0.17.0: the hub's Cluster & HUD screen (hub.js quick()): the two picks of Options > Cluster & HUD and the
-         * G's Dash on cluster & HUD switch, one tap each, with the same words as that page (srcState(), centreNow()).
+         * Options > Cluster & HUD's picks and what shows now (hub.js pickRows(); 0.17.0's dash screen became that page):
+         * the tiles with srcState()'s words, centreNow() and the skins' / HUD's own lines.
          */
         function quickModel() {
             const on = gsdOn(), dcur = displays(), c = centreNow(), ms = musicState();
@@ -1822,9 +1696,8 @@ mgu.run({
                 hud: hudNow,
                 down: (k) => isDown(k),
                 tap: (k, fn) => { gDown = Date.now(); downKey = k; fn(); },
-                pickSrc: (v) => { settings.set('clusterSource', v); log.info('cluster source: ' + v + ' (quick page)'); say('Cluster: ' + CSRC.NAMES[v]); },
-                pickDisp: (v) => { settings.set('displays', v); log.info('displays: ' + v + ' (quick page)'); say('Dials & HUD: ' + PREFS.displayName(v)); },
-                toggle: () => { const was = gsdOn(); settings.set('clusterControl', was ? 'off' : 'on'); say(was ? "G's Dash off: the car is stock" : "G's Dash on the cluster & HUD"); },
+                pickSrc: (v) => { settings.set('clusterSource', v); log.info('cluster source: ' + v); },
+                pickDisp: (v) => { settings.set('displays', v); log.info('displays: ' + v); },
             };
         }
         /** The logo's state as a colour (null: none): shown green, waiting amber, an error red. */
@@ -2199,7 +2072,6 @@ mgu.run({
                 else if (id === 'warmup') HUB.warmup(cv, st, Object.assign({}, S, { redline: WARM_REDLINE, maxRpm: Math.max(7000, S.maxRpm) }), warmModel(S));
                 else if (id === 'gforce') HUB.gforce(cv, st, S, gModel(S));
                 else if (id === 'tires') HUB.tires(cv, st, S, tireModel(S));
-                else if (id === 'quick') HUB.quick(cv, st, S, quickModel());
                 HUB.dots(cv, st, gr, scr, HUB.SCREENS.length, id === 'drive' && !!lk.dotsAbove && S.panel !== 'spotify');
                 if (toastMsg) {
                     const age = Date.now() - toastMsg.at;

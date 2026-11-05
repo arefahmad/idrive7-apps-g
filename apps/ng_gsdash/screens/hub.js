@@ -12,9 +12,9 @@ const CLOCK = require('./clock');
 const U = require('./units');
 const { withAlpha, isNum } = L;
 
-// left to right as the swipe goes; the app opens on HOME (Drive), second: Showcase is a swipe right of it;
-// 0.17.0: the Cluster & HUD quick picks a swipe right of Showcase (the other screens keep their places from Drive)
-const SCREENS = [['quick', 'Cluster & HUD'], ['showcase', 'Showcase'], ['drive', 'Drive'], ['warmup', 'Warm-up'], ['gforce', 'G-force'], ['tires', 'Tires']];
+// left to right as the swipe goes; the app opens on HOME (Drive), second: Showcase is a swipe right of it
+// (0.17.0's Cluster & HUD screen became Options > Cluster & HUD itself, 0.17.1: pickRows())
+const SCREENS = [['showcase', 'Showcase'], ['drive', 'Drive'], ['warmup', 'Warm-up'], ['gforce', 'G-force'], ['tires', 'Tires']];
 const HOME = 'drive';
 const GREEN = '#2fd27a';
 
@@ -90,13 +90,7 @@ function toast(cv, st, S, text, age, sub, at) {
     cv.alpha(1);
 }
 
-/* ---------- Cluster & HUD quick picks (0.17.0) ---------- */
-/**
- * The two picks of Options > Cluster & HUD, one tap each, and the switch for G's Dash on the cluster & HUD.
- * M (main.js): { on, src, srcTiles: [{ id, name, line, ok }], disp, dispTiles: [{ id, name, line }],
- * now: { text, tone ('ok' | 'wait' | 'off'), line }, hud: { text, tone }, tap(key, fn), down(key) }. Taps only
- * where the kit runs the screen (S.own); a swipe never taps (the hub's touch handler takes it).
- */
+/* ---------- Cluster & HUD picks (0.17.0; 0.17.1: Options > Cluster & HUD) ---------- */
 /** s cut to width w at size ('...' at the end), in the look's label font */
 function fitTxt(cv, st, s, size, w) {
     let txt = String(s);
@@ -113,27 +107,44 @@ function quickTile(cv, st, x, y, w, h, o) {
     }
     const dim = !o.enabled;
     // the radio mark, then the name and what it does now (amber: why it cannot show now)
-    cv.arc(x + 30, y + 36, 11, 13, 0, 360, o.sel ? acc : withAlpha(t.dim, dim ? 0.5 : 1));
-    if (o.sel) cv.circle(x + 30, y + 36, 6, acc);
+    cv.arc(x + 28, y + 32, 10, 12, 0, 360, o.sel ? acc : withAlpha(t.dim, dim ? 0.5 : 1));
+    if (o.sel) cv.circle(x + 28, y + 32, 5.5, acc);
     const fit = (s, size, ww) => fitTxt(cv, st, s, size, ww);
-    st.txt(cv, fit(o.name, 26, w - 72), x + 56, y + 46, 26, dim ? withAlpha(t.dim, 0.6) : o.sel ? t.text : withAlpha(t.text, 0.85));
+    st.txt(cv, fit(o.name, 24, w - 64), x + 50, y + 41, 24, dim ? withAlpha(t.dim, 0.6) : o.sel ? t.text : withAlpha(t.text, 0.85));
     const line = o.ok === false ? o.why : o.line;
     if (line) {
-        // two lines at most, the second cut with an ellipsis
-        const words = String(line).split(' '), lines = [''];
+        // two lines at most (one when the tile is short), the last cut with '...'
+        const max = h >= 100 ? 2 : 1, words = String(line).split(' '), lines = [''];
         words.forEach((wd) => {
             const cur = lines[lines.length - 1], next = cur ? cur + ' ' + wd : wd;
-            if (st.txtW(cv, next, 16) <= w - 36 || !cur) lines[lines.length - 1] = next;
-            else if (lines.length < 2) lines.push(wd);
-            else lines[1] = lines[1] + ' ' + wd;
+            if (st.txtW(cv, next, 15) <= w - 32 || !cur) lines[lines.length - 1] = next;
+            else if (lines.length < max) lines.push(wd);
+            else lines[lines.length - 1] = cur + ' ' + wd;
         });
-        lines.forEach((l, i) => st.txt(cv, fit(l, 16, w - 36), x + 18, y + h - 44 + i * 22, 16, o.ok === false ? t.warn : withAlpha(t.dim, dim ? 0.6 : 1)));
+        lines.forEach((l, i) => st.txt(cv, fit(l, 15, w - 32), x + 16, y + h - 14 - (lines.length - 1 - i) * 21, 15, o.ok === false ? t.warn : withAlpha(t.dim, dim ? 0.6 : 1)));
     }
     if (dim) cv.roundRect(x, y, w, h, st.r, withAlpha('#000000', 0.45));     // G's Dash off: nothing to pick
 }
-function quick(cv, st, S, M) {
-    const t = st.t, acc = t.sel || t.accent, X = S.x + 8, W = S.w - 16, gap = 14;
-    title(cv, st, S, 'Cluster & HUD', M.on ? 'One tap: what the cluster and HUD show' : "G's Dash is off on the cluster & HUD");
+/**
+ * Options > Cluster & HUD's parts for the page's room (top: the page area's top under its header, bottom: its foot;
+ * 388 px between them on the car's usual 520 px page): the two rows of picks, then the foot row (what shows now,
+ * Waze on cluster's switch, Diagnostics), the rows sharing what more there is. { yA, hA, yB, hB, yC, hC }.
+ */
+function pickLayout(top, bottom) {
+    const room = Math.max(0, bottom - top - 388);
+    const hA = Math.min(150, 120 + Math.round(room * 0.4)), hB = Math.min(130, 110 + Math.round(room * 0.4));
+    const yA = top + 30, yB = yA + hA + 38, yC = yB + hB + 14;
+    return { yA, hA, yB, hB, yC, hC: Math.min(120, bottom - yC) };
+}
+/**
+ * The two rows of picks: the cluster's centre (Auto, Logo, Music, Waze, Stock) and the dials & HUD (Cluster dials,
+ * G's Dash HUD, G's Music lyrics, Car's own), one tap each. Each tile says what it does, or in amber why it cannot
+ * show now. M (main.js quickModel): { on, src, srcTiles: [{ id, name, line, ok, why }], disp, dispTiles: [{ id,
+ * name, line }], tap(key, fn), down(key), pickSrc(id), pickDisp(id) }. With G's Dash off on the cluster & HUD the
+ * picks are dimmed and take no tap (the page's switch does).
+ */
+function pickRows(cv, st, S, M, Q) {
+    const t = st.t, X = S.x, W = S.w, gap = 14;
     const row = (label, y, h, tiles, cur, key, pick) => {
         st.txt(cv, label, X, y - 12, 18, t.dim);
         const n = tiles.length, w = (W - (n - 1) * gap) / n;
@@ -143,27 +154,52 @@ function quick(cv, st, S, M) {
             if (S.own && M.on && !sel) cv.target(x, y, w, h, () => M.tap(k, () => pick(tl.id)), k, st.r);
         });
     };
-    const yA = S.y + 92, hA = 150, yB = yA + hA + 54, hB = 130;
-    row("The cluster's centre", yA, hA, M.srcTiles, M.src, 'qs', M.pickSrc);
-    row('Dials & HUD', yB, hB, M.dispTiles, M.disp, 'qd', M.pickDisp);
-    // what shows now (as confirmed by the renderer and Waze), and the switch
-    const yC = yB + hB + 26, hC = 96, sw = 540, cw = W - sw - gap;
-    const tone = (k) => (k === 'ok' ? GREEN : k === 'wait' ? t.warn : withAlpha(t.dim, 0.9));
-    st.plate(cv, X, yC, cw, hC, null);
-    cv.circle(X + 24, yC + 30, 8, tone(M.now.tone));
-    st.txt(cv, fitTxt(cv, st, 'Centre: ' + M.now.text, 20, cw - 64), X + 44, yC + 37, 20, t.text);
-    cv.circle(X + 24, yC + 68, 8, tone(M.hud.tone));
-    st.txt(cv, fitTxt(cv, st, 'Dials & HUD: ' + M.hud.text, 18, cw - 64), X + 44, yC + 75, 18, withAlpha(t.text, 0.85));
-    const sx = X + cw + gap, kc = 'qc';
-    if (M.on) st.plate(cv, sx, yC, sw, hC, null);
-    else { cv.roundRect(sx, yC, sw, hC, st.r, withAlpha(t.warn, 0.14)); cv.strokeRoundRect(sx, yC, sw, hC, st.r, 2, t.warn); }
-    if (M.down(kc)) cv.roundRect(sx, yC, sw, hC, st.r, withAlpha(acc, 0.16));
-    const bw = 66, bh = 34, bx = sx + sw - 20 - bw, by = yC + (hC - bh) / 2, tw = bx - sx - 36;
-    st.txt(cv, fitTxt(cv, st, "G's Dash on cluster & HUD", 19, tw), sx + 20, yC + 40, 19, t.text);
-    st.txt(cv, fitTxt(cv, st, M.on ? 'On. Off: the car back to stock' : 'Off: the car is stock. Tap for On', 15, tw), sx + 20, yC + 70, 15, M.on ? t.dim : t.warn);
-    cv.roundRect(bx, by, bw, bh, bh / 2, M.on ? acc : withAlpha('#ffffff', 0.18));
-    cv.circle(M.on ? bx + bw - bh / 2 : bx + bh / 2, by + bh / 2, bh / 2 - 4, '#ffffff');
-    if (S.own) cv.target(sx, yC, sw, hC, () => M.tap(kc, M.toggle), kc, st.r);
+    row("In the cluster's centre (map area)", Q.yA, Q.hA, M.srcTiles, M.src, 'qs', M.pickSrc);
+    row('Dials & HUD (one at a time: they share one display)', Q.yB, Q.hB, M.dispTiles, M.disp, 'qd', M.pickDisp);
+}
+
+/**
+ * Options > Cluster & HUD's foot (Q.yC, Q.hC): what the cluster and the HUD show now (with the first reason something
+ * is not as picked, amber, when there is room), CarPlay's map in the cluster Off / On when Waze on cluster is
+ * installed, and Diagnostics. F (main.js): { now: { text, tone }, hud: { text, tone }, warn, waze: null | { value, on,
+ * can ('apply' | 'revert' | ''), tone ('ok' | 'wait' | 'bad' | '') }, down(key), ask(cmd), diag() }.
+ */
+function pickFoot(cv, st, S, Q, F) {
+    const t = st.t, u = st.u, acc = t.sel || t.accent, gap = 14, fy = Q.yC, fh = Q.hC, X = S.x;
+    const diagW = 250, wazeW = F.waze ? 470 : 0, nw = S.w - diagW - gap - (F.waze ? wazeW + gap : 0);
+    const tone = (k) => (k === 'ok' ? GREEN : k === 'wait' ? t.warn : k === 'bad' ? t.crit : withAlpha(t.dim, 0.9));
+    st.plate(cv, X, fy, nw, fh, null);
+    const lines = [[tone(F.now.tone), 'Centre: ' + F.now.text, 18, t.text], [tone(F.hud.tone), 'Dials & HUD: ' + F.hud.text, 17, withAlpha(t.text, 0.85)]];
+    if (F.warn && fh >= 96) lines.push([null, F.warn, 15, t.warn]);
+    const lh = fh / lines.length;
+    lines.forEach((ln, i) => {
+        const y = fy + lh * i + lh / 2;
+        if (ln[0]) cv.circle(X + 22, y, 7, ln[0]);
+        st.txt(cv, fitTxt(cv, st, ln[1], ln[2], nw - 56), X + 40, y + ln[2] * 0.36, ln[2], ln[3]);
+    });
+    if (F.waze) {
+        const W = F.waze, wx = X + nw + gap, dot = W.tone ? tone(W.tone) : null;
+        st.plate(cv, wx, fy, wazeW, fh, null);
+        const bw = 92, bh = Math.min(56, fh - 20), bx0 = wx + wazeW - 2 * bw - 22, tw = bx0 - wx - 28;
+        st.txt(cv, fitTxt(cv, st, 'Waze on cluster', 15, tw), wx + 16, fy + fh / 2 - 8, 15, t.dim);
+        if (dot) cv.circle(wx + 22, fy + fh / 2 + 16, 6, dot);
+        st.txt(cv, fitTxt(cv, st, W.value, 17, tw - (dot ? 18 : 0)), wx + 16 + (dot ? 18 : 0), fy + fh / 2 + 22, 17, t.text);
+        [[false, 'Off', 'revert'], [true, 'On', 'apply']].forEach((b, i) => {
+            const bx = bx0 + i * (bw + 6), on = W.on === b[0], tap = W.can === b[2], by = fy + (fh - bh) / 2, k = 'cm:' + b[1].toLowerCase();
+            if (on) { cv.roundRect(bx, by, bw, bh, st.r, withAlpha(acc, 0.22)); cv.strokeRoundRect(bx, by, bw, bh, st.r, 2, acc); }
+            else cv.roundRect(bx, by, bw, bh, st.r, withAlpha('#ffffff', 0.06));
+            st.txt(cv, b[1], bx + bw / 2, by + bh / 2 + 8, 22, on || tap ? t.text : withAlpha(t.dim, 0.55), { font: u.txt, align: 'center' });
+            if (tap && S.own) cv.target(bx, by, bw, bh, () => F.ask(b[2]), k, st.r);
+        });
+    }
+    // Diagnostics: a card with a chevron
+    const dx = X + S.w - diagW;
+    st.plate(cv, dx, fy, diagW, fh, null);
+    if (F.down('cs:diag')) cv.roundRect(dx, fy, diagW, fh, st.r, withAlpha(acc, 0.16));
+    st.txt(cv, 'Diagnostics', dx + 20, fy + fh / 2 + 7, u.size, t.text);
+    const cx = dx + diagW - 26, cy = fy + fh / 2;
+    cv.line(cx - 4.5, cy - 9, cx + 4.5, cy, 2.5, t.dim); cv.line(cx + 4.5, cy, cx - 4.5, cy + 9, 2.5, t.dim);
+    if (S.own) cv.target(dx, fy, diagW, fh, F.diag, 'cs:diag', st.r);
 }
 
 /* ---------- warm-up ---------- */
@@ -495,4 +531,4 @@ function showcase(cv, st, S, music, lk, gr, sc, now) {
     return R;
 }
 
-module.exports = { SCREENS, HOME, GREEN, style, dots, dotsBox, toast, pill, quick, warmup, gforce, tires, showcase, clock12, CAR_BOX, dimOf };
+module.exports = { SCREENS, HOME, GREEN, style, dots, dotsBox, toast, pill, quickTile, fitTxt, pickLayout, pickRows, pickFoot, warmup, gforce, tires, showcase, clock12, CAR_BOX, dimOf };
