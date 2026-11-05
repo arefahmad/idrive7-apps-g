@@ -7,7 +7,7 @@
   "loggingId": "OAN1",
   "iconGlyph": "gauge",
   "internet": true,
-  "share": ["ng_spotify/spotify.js", "ng_spotify/signin.js", "ng_spotify/signin_config.js", "ng_spotify/qrcodegen.js", "ng_spotify/jpeg_decoder.js", "ng_tv/tv_net.js"],
+  "share": ["ng_spotify/spotify/spotify.js", "ng_spotify/spotify/signin.js", "ng_spotify/spotify/signin_config.js", "ng_spotify/vendor/qrcodegen.js", "ng_spotify/vendor/jpeg_decoder.js", "ng_tv/net/tv_net.js"],
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
