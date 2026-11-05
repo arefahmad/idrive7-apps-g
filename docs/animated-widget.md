@@ -48,19 +48,26 @@ The Home widget page shows which way is in use and the measured frame rate.
 
 ## The dark edge
 
-The dark edge (vignette) over the widget is drawn by `HmiMain3D` itself, as part of BMW's Drive Recorder
-layout (`LT_Table_OnlineApps_DriveRecorderWidget`), which G's Dash's widget uses. An app only fills that
-layout's cells, so nothing the app draws can remove it. Three ways to get rid of it, cheapest first:
+The dark edge (vignette) over the widget is drawn by `HmiMain3D` itself. G's Dash's widget uses BMW's Drive
+Recorder layout (`LT_Table_OnlineApps_DriveRecorderWidget`), which a car session (Nov 2026) took apart:
 
-1. **Dark edge test** (G's Dash 0.15.2, Options > Home widget). The layout has a Bool cell, `background`, that
-   G's Dash has always set to true. **Backdrop off** sets it to false on every placed widget. It is not known
-   yet what that cell switches. If the dark edge goes, leave it off. If your picture goes as well, turn it back
-   on.
-2. **A changed copy of the layout**, mounted by the Store's renderer (below). This needs the layout's
-   definition from the unit first. Run `kit/tools/hmi_widget_probe.js` on the unit and see
-   [Finding the vignette](#finding-the-vignette).
-3. **The stream widget (Option A)**: the same changed copy, plus the renderer's surface over the picture for
-   display-rate playback.
+- The layout picks `LT_Table_OnlineApps_DriveRecorderWidget_Big` or `_Small` (both in
+  `common/widget/generated/Spec_Startmenu.pbw`).
+- In `_Big`, the child that shows the picture (`ImageRes1 <- BackgroundImage1`) is of type
+  `LT_Label_WidgetBackgroundMask` (`bmw/id7/widget/`, 67 bytes, one render pass, `shadow_content`). **The mask
+  and the picture are one child.** No cell an app writes can remove the edge and keep the picture; the
+  `background` cell (G's Dash 0.15.2's Backdrop off test) doesn't either.
+- `_Small` has no mask, and no picture either.
+
+Two ways to get rid of it, cheapest first:
+
+1. **Another BMW layout** that shows a picture without a mask. Then G's Dash only changes its widget's layout
+   name: no Store change, no risk to the HMI. **G's Dash > Options > Diagnostics > Widgets** reads every widget
+   layout on the unit (`kit/runtime/hmi_widgets.js`, read-only) and lists the ones with a picture, green when
+   it is plain and amber when it is masked, with the cell to write. See [Reading the layouts](#reading-the-layouts).
+2. **A changed copy of the layout in mgu-render's overlay** (below): a `_Big` without the mask, or a mask type
+   without `shadow_content` (that one changes every widget using it). Untested: whether `HmiMain3D` honours a
+   second definition of a type that is already defined. The overlay covers `bmw/widget/` only.
 
 ## How the HMI's widgets are built (from the Store's mgu-render)
 
@@ -69,7 +76,8 @@ display-bridge and this kit's upstream renderer) already changes the HMI's widge
 is how:
 
 - `HmiMain3D` builds every page and widget from the `*.pbw` files (protobuf) in its widget folder,
-  `/mnt/dataro/data/hmi/bmw/widget`, and loads every `*.pbw` it finds there.
+  `/mnt/dataro/data/hmi/bmw/widget` (`/mnt/dataro/dataro1/hmi/...` on a P18 unit, where the files are spread over
+  `bmw/widget`, `bmw/id7/widget` and `common/widget/generated`), and loads every `*.pbw` it finds there.
 - Every name in those files (templates, child widgets, parameters, values) is a number: an index into an
   identifier table compiled into `HmiMain3D`, so the numbers belong to one HMI build. **A template can only
   have a name that is already in that table.** mgu-render's `js/hmi_template.js` reads the table from the binary
@@ -84,36 +92,27 @@ is how:
 So the vignette lives in the Drive Recorder layout's `.pbw` definition, and taking it out means a changed copy
 of that definition in the same mounted folder.
 
-## Finding the vignette
+## Reading the layouts
 
-Nobody has looked inside the Drive Recorder layout's definition yet. `kit/tools/hmi_widget_probe.js` prints it.
-It is read-only (it writes, mounts and restarts nothing) and runs on the unit's Node 8 as root, because it
-reads `HmiMain3D` whole, as the template build does:
+`kit/runtime/hmi_widgets.js` reads how the HMI builds its widgets. It is read-only: it writes, mounts and restarts
+nothing. It reads `HmiMain3D` in pages (it never loads it whole) and the `*.pbw` files under
+`/mnt/dataro/dataro1/hmi` (where they are on a P18 unit) and `/mnt/dataro/data/hmi`. For every widget layout, it
+follows each cell into the child that shows it, through nested layouts such as the Drive Recorder's `_Big`, and
+says whether that child is a mask:
 
-```bash
-nice -n 19 node hmi_widget_probe.js > probe.txt
-```
-
-It prints:
-
-- the file that defines the layout;
-- its child widgets, each with its parameters, set to a value or bound to one of the layout's own parameters
-  (the cells an app writes, such as `BackgroundImage1` and `background`, are among those);
-- the lines that name a vignette, shadow, gradient, mask or background;
-- the whole definition, with identifiers named;
-- the widget-type names this `HmiMain3D` knows that no file defines, i.e. the names a new template could take.
-
-`--template NAME` prints another layout. It was tested against a synthetic `HmiMain3D` and widget files
-written the way mgu-render writes its own, including mgu-render's real template, which it reads back. Its
-first run on a real unit is still to come.
+- **In G's Dash:** Options > Diagnostics > Widgets > Read the widget layouts. It shows the layouts with a picture
+  and saves the full list as `hmi_widgets.txt` in G's Dash's data folder. This works only if an app may read
+  those files; if not, the screen says so.
+- **Over SSH:** `node hmi_widgets.js` prints the full list; `--template NAME` prints one layout's whole
+  definition with its identifiers named; `--hmi FILE` and `--roots DIR,DIR` point it elsewhere.
 
 ## Option A: what the Store's renderer would need
 
-This repository has the app side only. What the probe shows decides the details; this is the shape:
+This repository has the app side only. What the Widgets reading shows decides the details; this is the shape:
 
 1. **The layout.** Either change the stock Drive Recorder definition in mgu-render's mounted copy (drop the
    vignette child, or bind its visibility to a parameter; this changes every widget using that layout,
-   G's Music's and BMW's own Drive Recorder too), or define a free widget-type name from the probe's list as
+   G's Music's and BMW's own Drive Recorder too), or define a widget-type name the binary knows but no file defines as
    a copy without the vignette. For playback at display rate, add an `eWidgetType_EmbeddedSurface` child over the
    picture, sampling a second ivi surface id the renderer feeds. With no frames on it, the surface shows
    nothing, so the HMI-picture path still works in the same layout.
