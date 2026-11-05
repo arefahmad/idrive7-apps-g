@@ -47,6 +47,14 @@ const CUTS = [
     GEOM.cut.speedLimit, GEOM.cut.autoH, GEOM.cut.park, CENTRE, GEOM.keep.bottom, ACC_AREA,
 ];
 /**
+ * 0.14.3: where the top numerals reach into the centre (panel px): the speedometer's top one (200, or 320 in
+ * km/h) and the tachometer's 8 stand past the centre's edges on the car's own cluster too (its 200 runs to
+ * x 738, its 8 from x 1191). 0.8.0-0.14.2 cut them there, so a look's top numeral showed clipped with the
+ * end of the car's own beside it; these boxes are drawn (the numeral on the look's opaque background), the
+ * rest of the centre stays the car's.
+ */
+const NOTCHES = [[717, 76, 747, 118], [1186, 76, 1195, 118]];
+/**
  * The small gauges, left to the car (0.8.1): their box (dial, needle sweep, numerals, icon; panel px)
  * minus the big dial's own zone (MAIN_ZONE: sd from the big contour, so its rim stays covered). The
  * bake makes the art transparent there; no small fill or needle is drawn.
@@ -111,10 +119,19 @@ function dirAt(k, s) {
 }
 /** panel rect -> the side's layer rect (may be empty / outside) */
 function local(side, r) { const S = SIDES[side]; return [r[0] - S.x, r[1] - S.y, r[2] - S.x, r[3] - S.y]; }
-/** the cut-outs that touch a side, in its layer px, padded */
+/** rect a minus rect b ([x0, y0, x1, y1]): the up to four rects left (above, below, left, right of b) */
+function minus(a, b) {
+    if (b[0] >= a[2] || b[2] <= a[0] || b[1] >= a[3] || b[3] <= a[1]) return [a];
+    const y0 = Math.max(a[1], b[1]), y1 = Math.min(a[3], b[3]);
+    return [[a[0], a[1], a[2], y0], [a[0], y1, a[2], a[3]], [a[0], y0, Math.max(a[0], b[0]), y1], [Math.min(a[2], b[2]), y0, a[2], y1]]
+        .filter((r) => r[2] > r[0] && r[3] > r[1]);
+}
+/** the cut-outs that touch a side, in its layer px, padded (0.14.3: less the NOTCHES) */
 function cutsOf(side) {
     const S = SIDES[side];
-    return CUTS.map((r) => local(side, [r[0] - CUT_PAD, r[1] - CUT_PAD, r[2] + CUT_PAD, r[3] + CUT_PAD]))
+    let rs = CUTS.map((r) => [r[0] - CUT_PAD, r[1] - CUT_PAD, r[2] + CUT_PAD, r[3] + CUT_PAD]);
+    NOTCHES.forEach((n) => { rs = [].concat.apply([], rs.map((r) => minus(r, n))); });
+    return rs.map((r) => local(side, r))
         .filter((r) => r[2] > 0 && r[3] > 0 && r[0] < S.w && r[1] < S.h)
         .map((r) => [Math.max(0, r[0]), Math.max(0, r[1]), Math.min(S.w, r[2]), Math.min(S.h, r[3])]);
 }
@@ -256,6 +273,8 @@ function fragment(meta, side, dims) {
         '    return texture2D(t, (o + p - tc * TILE + 0.5) / at.xy);',
         '}',
         'bool inRect(vec2 p, vec4 r) { return p.x >= r.x && p.y >= r.y && p.x < r.z && p.y < r.w; }',
+        '// a field texel\'s s (r + g * 256: 1 / S_SCALE px)',
+        'float fieldS(vec4 f) { return (floor(f.r * 255.0 + 0.5) + floor(f.g * 255.0 + 0.5) * 256.0) / ' + f1(S_SCALE) + '; }',
         '// a capsule from A to B, w wide: anti-aliased coverage, or (hard 1) all or nothing',
         'float segCov(vec2 p, vec2 A, vec2 B, float w, float hard) {',
         '    vec2 ab = B - A; float t = clamp(dot(p - A, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);',
@@ -319,20 +338,46 @@ function glyphGlsl(cells) {
 }
 /** 0.14.1: the gear's two places: the cell's own, each moved u_gl.z / u_gl.w px across ([x, y, offset]) */
 function gearSlots(cells) { return [[cells.rect[0], cells.rect[1], 'z'], [cells.rect[0], cells.rect[1], 'w']]; }
+/**
+ * A fill's GLSL. 0.14.3: a look that samples per pixel (no q) takes s and sd between the field's texels: the
+ * field is half resolution (FIELD_K), so each 2x2 block of pixels used to share one s and one sd and the
+ * fill's edges stepped every 2 px; each pixel now adds the gradient to the texel's right / below neighbour
+ * (when it is the same gauge's, s within FIELD_STEP), so the fill's rows and head follow the gauge to the
+ * pixel. A q look (Pixel: 4 px blocks) samples as before.
+ */
+const FIELD_STEP = 4;
 function fillCall(U, rows, f, q, tr, hd, g) {
     if (!f || f.kind === 'none') return '';
     const p = q ? 'floor(q / ' + f1(q) + ') * ' + f1(q) + ' + ' + f1(q / 2) : 'q';
-    const b0 = g === 1 ? 0 : SMALL_CODE;
+    const b0 = g === 1 ? 0 : SMALL_CODE, B = f1(rows * 2);
+    const call = (sd) => '                c = fill(c, top, s, ' + sd + ', ' + U + ', ' + f1(rows) + ', vec3(' + tr.map(f1).join(', ') + '), vec2(' + hd.map(f1).join(', ') + '), ' + (f.add ? '1.0' : '0.0') + ', ' + (q ? '1.0' : '0.0') + ');';
+    // the neighbour at o: its s and b decoded, used when it is a texel of this gauge's band and s is continuous
+    const near = (o, k) => [
+        '                if (o.' + k + ' > 0.5) {',
+        '                    vec4 fn = tiled(u_field, ft + vec2(' + o + '), FSZ, FAT);',
+        '                    float bn = floor(fn.b * 255.0 + 0.5) - ' + f1(b0) + ', sn = fieldS(fn);',
+        '                    if (bn >= 0.0 && bn < ' + B + ' && abs(sn - s0) < ' + f1(FIELD_STEP) + ') { s += (sn - s0) / ' + f1(FIELD_K) + '; d += (bn - b) / ' + f1(2 * FIELD_K) + '; }',
+        '                }',
+    ];
     return [
         '        {',
-        '            vec4 fd = tiled(u_field, floor((' + p + ') / ' + f1(FIELD_K) + '), FSZ, FAT);',
+        '            vec2 ft = floor((' + p + ') / ' + f1(FIELD_K) + ');',
+        '            vec4 fd = tiled(u_field, ft, FSZ, FAT);',
         '            float b = floor(fd.b * 255.0 + 0.5) - ' + f1(b0) + ';',
-        '            if (b >= 0.0 && b < ' + f1(rows * 2) + ') {',
-        '                float s = (floor(fd.r * 255.0 + 0.5) + floor(fd.g * 255.0 + 0.5) * 256.0) / ' + f1(S_SCALE) + ';',
-        '                c = fill(c, top, s, floor(b / 2.0 + 0.01), ' + U + ', ' + f1(rows) + ', vec3(' + tr.map(f1).join(', ') + '), vec2(' + hd.map(f1).join(', ') + '), ' + (f.add ? '1.0' : '0.0') + ', ' + (q ? '1.0' : '0.0') + ');',
+        '            if (b >= 0.0 && b < ' + B + ') {',
+        '                float s0 = fieldS(fd), s = s0;',
+    ].concat(q ? [call('floor(b / 2.0 + 0.01)')] : [
+        // the texel holds floor(sd * 2) at its own (top-left) pixel: the middle of that half px, then the offset
+        '                float d = b / 2.0 + 0.25;',
+        '                vec2 o = q - ft * ' + f1(FIELD_K) + ' - 0.5;',
+    ].concat(near('1.0, 0.0', 'x'), near('0.0, 1.0', 'y'), [
+        '                if (d >= 0.0) {',
+        '    ' + call('floor(d)'),
+        '                }',
+    ])).concat([
         '            }',
         '        }',
-    ].join('\n');
+    ]).join('\n');
 }
 
 /**
@@ -370,4 +415,4 @@ function nominalDims() {
     return { art: d(REGION_W, REGION_H), band: d(BAND_W, BAND_ROWS), field: d(Math.ceil(REGION_W / FIELD_K), Math.ceil(REGION_H / FIELD_K)) };
 }
 module.exports = { FIELD_K, TILE, ATLAS_W, atlasLayout, nominalDims, GEOM, PANEL_W, PANEL_H, REGION_W, REGION_H, SIDES, BAND_W, BAND_ROWS, MAIN_ROWS, SMALL_ROW, SMALL_ROWS, ALT_ROW,
-    SMALL_CODE, S_SCALE, CUTS, CUT_PAD, RANGE, ACC_AREA, CENTRE, SMALL_BOX, MAIN_ZONE, SPEED_COVER, GEAR_COVER, SPEED_MAX, LEN, MAJ, at, sOf, dirAt, local, cutsOf, uniforms, fragment, gearPair, gearSlots, clamp, isNum, RESERVED, reservedUses };
+    SMALL_CODE, S_SCALE, CUTS, CUT_PAD, NOTCHES, RANGE, ACC_AREA, CENTRE, SMALL_BOX, MAIN_ZONE, SPEED_COVER, GEAR_COVER, SPEED_MAX, LEN, MAJ, at, sOf, dirAt, local, cutsOf, uniforms, fragment, gearPair, gearSlots, clamp, isNum, RESERVED, reservedUses };

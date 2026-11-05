@@ -7,7 +7,9 @@
  *   the page        look_<id>.js apply(colours) recolours the look's module colours and palette in place
  *   the HUD         hud_core.js LOOKS[look + '-' + tint] (shader constants only, the gear atlas is a mask)
  *   the cluster     skin id look + '-' + tint -> skin_<look>-<tint>.png (baked per variant, only the
- *                   active one decoded and uploaded); the logo's shader constants (no picture)
+ *                   active one decoded and uploaded); the logo's shader constants (no picture; Pixel's
+ *                   emblem is the same in every variant)
+ *   Showcase        waves.js PAL[look + '-' + tint]
  * Node 8.
  */
 const VARIANTS = {
@@ -52,6 +54,65 @@ const VARIANTS = {
             lit: '#e9eef3', lit2: '#8a949e', ink: '#ffffff', shift: '#ffb84a', crit: '#ff3b4a', label: '#8a939c', faint: '#3b4148',
             grid: '#171a1e', track: '#131619', edge: '#2a2f35', bg0: '#060708', bg1: '#0d0f12',
             hud: { base: '#e9eef3', zones: ['#e9eef3', '#ffb84a', '#ff3b4a'], flash: '#ff3b4a', dim: '#1d2125', redDim: '#3a0f14', tick: '#8a939c', tickRed: '#ff3b4a', gear: '#ffffff', pre: '#e9eef3' } } },
+    ],
+    // Pixel (0.14.3): palette swaps, the way a retro game recolours a stage. c: sky (six bands, top down; sky[0] the
+    // page's background), box / panelBottom / track / tick / barOff (unlit blocks) / floor / far / near (the hills) /
+    // star / moon (light, body, spots), frame / frameDim (an unpicked card) / dim / white (text) / ring / ring2 (the
+    // g radar), acc (the yellow: labels, a picked card, the gear) with accCard / accDown, cyan (units, the speedo's
+    // fill), hp / hp2 / hpTop (the power bar), ghost (its peak trail), crit / crit2 / critTop / hot / heartHi /
+    // redDim (red stays red in every one: past the shift point, too hot, the heart, the needles), flash / flashTop /
+    // flash2 / flashInk (SHIFT! - the blocks and the word over them), cold (the cold zone), shade (the speedo
+    // fill's far end and the speed digits' shadow on the cluster), wave (Showcase: c1, c2, hi), hud (hud_core.js).
+    // The emblem (px.js) keeps the G's Dash colours in every one.
+    pixel: [
+        { id: 'night', name: 'Night', swatch: '#5b4fd6', c: {
+            sky: ['#0c0a24', '#100d2e', '#151137', '#1a1441', '#20184b', '#271c54'],
+            box: '#141236', panelBottom: '#0d0b28', track: '#24204e', tick: '#4a4590', barOff: '#1d1a40', floor: '#150f38',
+            far: '#2b2163', near: '#171338', star: '#8d88c8', moon: ['#fff6c8', '#d8cf9a', '#bdb37e'],
+            frame: '#e8e6ff', frameDim: '#5a55a0', dim: '#8f8cc0', white: '#f4f4ff', ring: '#4a4590', ring2: '#2c2866',
+            acc: '#ffd23a', accCard: '#2a2210', accDown: '#3a2e10', cyan: '#58e1ff',
+            hp: '#3ee07a', hp2: '#1f9e50', hpTop: '#b6ffcf', ghost: '#ffe9b0',
+            crit: '#ff3a4a', crit2: '#a8162a', critTop: '#ff9aa2', hot: '#ff4a5c', heartHi: '#ffc0c6', redDim: '#461228',
+            flash: '#3a8bff', flashTop: '#a8ccff', flash2: '#1f4aa0', flashInk: '#f4f4ff', cold: '#3a8bff', shade: '#3a8bff',
+            wave: ['#2c1e68', '#5432a0', '#ff6ec8'],
+            hud: { base: '#e8e6ff', zones: ['#3ee07a', '#ffd23a', '#ff3a4a'], flash: '#3a8bff', dim: '#1c1a34', redDim: '#3a0f18', tick: '#9a98c0', tickRed: '#ff3a4a', gear: '#ffd23a', gear2: '#a8162a', pre: '#78c8ff', pre2: '#a8162a' } } },
+        // dusk: a plum sky glowing toward the horizon, a low sun, peach frames, a teal power bar, pink and violet
+        { id: 'sunset', name: 'Sunset', swatch: '#ff6a8e', c: {
+            sky: ['#150823', '#1d0a2b', '#270c33', '#340e3a', '#45123f', '#591643'],
+            box: '#1d0a25', panelBottom: '#16081e', track: '#3b1639', tick: '#7a3468', barOff: '#2f1031', floor: '#2b0c2f',
+            far: '#5c1a4c', near: '#270b2b', star: '#d88ab4', moon: ['#fff2b8', '#ffb45a', '#ff8a4a'],
+            frame: '#ffe4d2', frameDim: '#9a4478', dim: '#d48cb0', white: '#fff4f0', ring: '#7a3468', ring2: '#4a1a46',
+            acc: '#ffbe3a', accCard: '#2e1c0a', accDown: '#3c260c', cyan: '#ff7ad0',
+            hp: '#3ee2c4', hp2: '#2b9e89', hpTop: '#b4fff0', ghost: '#ffe0c4',
+            crit: '#ff3a4a', crit2: '#a8162a', critTop: '#ff9aa2', hot: '#ff4a5c', heartHi: '#ffc0c6', redDim: '#461228',
+            flash: '#a64dff', flashTop: '#dcb8ff', flash2: '#5a22a4', flashInk: '#fff4f0', cold: '#6a8cff', shade: '#a64dff',
+            wave: ['#5a163e', '#922a5c', '#ffb066'],
+            hud: { base: '#ffe4d2', zones: ['#3ee2c4', '#ffbe3a', '#ff3a4a'], flash: '#a64dff', dim: '#2a0f26', redDim: '#3a0f18', tick: '#d48cb0', tickRed: '#ff3a4a', gear: '#ffbe3a', gear2: '#a8162a', pre: '#ff7ad0', pre2: '#a8162a' } } },
+        // underwater: deep teal water, bubbles for stars, seafoam and aqua, the yellow kept
+        { id: 'ocean', name: 'Ocean', swatch: '#2cc6d4', c: {
+            sky: ['#03121a', '#041821', '#061e29', '#082531', '#0a2d3a', '#0d3643'],
+            box: '#061c26', panelBottom: '#04151d', track: '#0e3540', tick: '#2a7482', barOff: '#0b2b35', floor: '#062430',
+            far: '#0f4552', near: '#072630', star: '#5fb0c0', moon: ['#e6fffa', '#a4dcd4', '#82c0b8'],
+            frame: '#d6faff', frameDim: '#357f8c', dim: '#78bcc8', white: '#f0feff', ring: '#2a7482', ring2: '#154753',
+            acc: '#ffd23a', accCard: '#2a2210', accDown: '#3a2e10', cyan: '#6cf2dc',
+            hp: '#3ee07a', hp2: '#1f9e50', hpTop: '#b6ffcf', ghost: '#fff0b8',
+            crit: '#ff3a4a', crit2: '#a8162a', critTop: '#ff9aa2', hot: '#ff4a5c', heartHi: '#ffc0c6', redDim: '#461228',
+            flash: '#3a8bff', flashTop: '#a8ccff', flash2: '#1f4aa0', flashInk: '#f0feff', cold: '#3a8bff', shade: '#2f7cf0',
+            wave: ['#0c3a48', '#14606e', '#6cf2dc'],
+            hud: { base: '#d6faff', zones: ['#3ee07a', '#ffd23a', '#ff3a4a'], flash: '#3a8bff', dim: '#0e2a30', redDim: '#3a0f18', tick: '#78bcc8', tickRed: '#ff3a4a', gear: '#ffd23a', gear2: '#a8162a', pre: '#6cf2dc', pre2: '#1f4aa0' } } },
+        // an old green-screen handheld: every colour a shade of LCD green, except red past the shift point / too hot;
+        // SHIFT! flashes pale (white-hot) with dark text over it
+        { id: 'handheld', name: 'Handheld', swatch: '#9bbc0f', c: {
+            sky: ['#081208', '#0a170a', '#0d1c0c', '#10220e', '#142810', '#182e12'],
+            box: '#0e1e0c', panelBottom: '#0a170a', track: '#1e3618', tick: '#4a7428', barOff: '#162c12', floor: '#10220e',
+            far: '#28481c', near: '#112410', star: '#6a8c34', moon: ['#e8f8b0', '#b4d060', '#94b040'],
+            frame: '#cde88a', frameDim: '#4e7a2c', dim: '#86a648', white: '#eefad0', ring: '#4a7428', ring2: '#2a4a1c',
+            acc: '#e2f25a', accCard: '#222c0c', accDown: '#303c10', cyan: '#b8e04a',
+            hp: '#7ccf3a', hp2: '#579128', hpTop: '#d4f5b0', ghost: '#f2fac8',
+            crit: '#ff3a4a', crit2: '#a8162a', critTop: '#ff9aa2', hot: '#ff4a5c', heartHi: '#ffc0c6', redDim: '#461228',
+            flash: '#eaf8c8', flashTop: '#ffffff', flash2: '#9ab86a', flashInk: '#0e1e0c', cold: '#5aa8b4', shade: '#4e8a2a',
+            wave: ['#1e3a16', '#3a6424', '#b8e04a'],
+            hud: { base: '#cde88a', zones: ['#7ccf3a', '#e2f25a', '#ff3a4a'], flash: '#eaf8c8', dim: '#142410', redDim: '#3a0f18', tick: '#86a648', tickRed: '#ff3a4a', gear: '#e2f25a', gear2: '#306230', pre: '#b8e04a', pre2: '#306230' } } },
     ],
 };
 const KEY = 'tints';

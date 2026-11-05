@@ -26,6 +26,8 @@ const PAL = {
     Object.keys(TV).forEach((look) => TV[look].forEach((v, i) => {
         const c = v.c, id = i ? look + '-' + v.id : look;
         if (i === 0 && PAL[id]) return;
+        // Pixel (0.14.3): its own stepped folds, in the variant's sky and wave colours
+        if (look === 'pixel') { PAL[id] = Object.assign({}, PAL.pixel, { c0: rgb(c.sky[0]), c1: rgb(c.wave[0]), c2: rgb(c.wave[1]), hi: rgb(c.wave[2]) }); return; }
         const bg = rgb(c.bg0), lit = rgb(c.lit);
         PAL[id] = look === 'digital' ? { c0: bg, c1: mixc(bg, lit, 0.09), c2: mixc(bg, lit, 0.17), hi: lit, crest: 0.012, amt: 0.85, N: 5.0 }
             : { c0: bg, c1: mixc(bg, rgb(c.lit2), 0.16), c2: mixc(bg, rgb(c.lit2), 0.30), hi: lit, crest: 0.02, amt: 0.55, N: 3.4 };

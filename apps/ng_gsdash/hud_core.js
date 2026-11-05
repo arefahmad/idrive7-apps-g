@@ -59,8 +59,8 @@ const LOOKS = {
         dim: '#24282f', redDim: '#3e0b0b', tick: '#8b93a1', tickRed: '#ff2a2a', gear: '#ffc21a', pre: '#8b93a1', gearFlash: true, glow: [2, 0.35] },
     lumen: { n: 24, shape: 'bead', beadR: 5, base: '#bfe9ff', zones: ['#2fd27a', '#ffc21a', '#ff4d5e'], flash: '#ff4d5e', flash2: '#e6fbff',
         dim: '#16292f', redDim: '#2e0f13', tick: '#4fa8c4', tickRed: '#ff4d5e', gear: '#7fe3ff', gear2: '#2f8bff', pre: '#7fe3ff', pre2: '#2f8bff', glow: [5, 0.9] },
-    pixel: { n: 20, slant: 0, gap: 4, inset: 2, pq: 2, base: '#e8e6ff', zones: ['#3ee07a', '#ffd23a', '#ff3a4a'], flash: '#3a8bff',
-        dim: '#1c1a34', redDim: '#3a0f18', tick: '#9a98c0', tickRed: '#ff3a4a', gear: '#ffd23a', gear2: '#a8162a', pre: '#78c8ff', pre2: '#a8162a', solid: true },
+    // Pixel: hard-edged blocks; colours from its default variant, Night (tints.js; 0.14.3)
+    pixel: Object.assign({ n: 20, slant: 0, gap: 4, inset: 2, pq: 2, solid: true }, require('./tints').VARIANTS.pixel[0].c.hud),
     // Vector: many thin segments, little glow; colours from its default variant (tints.js)
     vector: Object.assign({ n: 48, slant: 0, gap: 2, inset: 5, glow: [1, 0.18] }, require('./tints').VARIANTS.vector[0].c.hud),
 };
