@@ -9,8 +9,8 @@ robertn_store, which builds each app on the head unit from this repository.
 
 A driver display and car hub for the centre screen.
 
-- **Seven looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel and Vector, some with a choice
-  of colours. Star your favourites and tap the gear on Drive to switch between them.
+- **Eight looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector and Space (drifting
+  stars that sway with the g-force), some with a choice of colours. Star your favourites and tap the gear on Drive to switch between them.
 - **Pages:** swipe between Showcase (the car, what Spotify is playing, or a clock), Drive (shift
   lights, gear, rpm, speed, g-meter, drive mode, oil and coolant temperatures), Warm-up, G-force and
   Tires (tire pressures and temperatures).

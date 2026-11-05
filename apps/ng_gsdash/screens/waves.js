@@ -2,7 +2,7 @@
 /**
  * waves.js - the Showcase background (0.11.0): flowing satin folds drawn procedurally per look, no
  * picture files. M red, GT gunmetal with a gold edge light, Digital '84 green lines, Sim Racing
- * carbon / amber, Lumen blue, Pixel stepped purple / pink.
+ * carbon / amber, Lumen blue, Pixel stepped purple / pink, Space a violet nebula with stars.
  *
  * One picture for the current look only (W x H, W = 1024: the native renderer's longest side),
  * drawn a few rows per frame (step()) so a look change never stalls the loop; the page scales it up.
@@ -18,6 +18,7 @@ const PAL = {
     simracing: { c0: [6, 7, 9],    c1: [26, 28, 33],  c2: [46, 48, 55],   hi: [255, 196, 30],  crest: 0.018, amt: 0.55, N: 3.2 },
     lumen:     { c0: [4, 6, 18],   c1: [18, 34, 84],  c2: [36, 64, 140],  hi: [140, 224, 255], crest: 0.10, amt: 0.30, N: 2.4 },
     pixel:     { c0: [12, 10, 36], c1: [44, 30, 104], c2: [84, 50, 160],  hi: [255, 110, 200], crest: 0.08, amt: 0.45, N: 2.8, px: 8, levels: 5 },
+    space:     { c0: [3, 4, 11],   c1: [26, 14, 58],  c2: [62, 30, 120],  hi: [79, 227, 255],  crest: 0.06, amt: 0.30, N: 2.2, stars: 1 },
 };
 /* the colour variants' pictures (tints.js): id look-tint, from the variant's colours (the base look's shape) */
 (function () {
@@ -64,6 +65,14 @@ function row(P, d, y, H) {
             d[o + c] = clamp(Math.round(val), 0, 255);
         }
         d[o + 3] = 255;
+        // Space: stars over the nebula folds (a hash per pixel: the same sky every time), a few with a halo
+        if (P.stars) {
+            const hsh = Math.imul(x * 73856093 ^ y * 19349663, 0x27d4eb2d) >>> 0, r = (hsh & 0xffff) / 65536;
+            if (r < 0.0016) {
+                const b = 140 + ((hsh >>> 16) & 115), w = (hsh >>> 24) & 3;
+                d[o] = Math.max(d[o], b - (w === 1 ? 30 : 0)); d[o + 1] = Math.max(d[o + 1], b - (w === 2 ? 20 : 0)); d[o + 2] = Math.max(d[o + 2], Math.min(255, b + 20));
+            }
+        }
     }
 }
 
