@@ -19,7 +19,7 @@
  * phone (the 0.7.0 Shuffle Liked Songs button removed).
  * 0.8.0: the synced lyrics in the HUD too (Settings: HUD, off by default; music_cluster.js with target 'hud', its
  * own connection), and Settings: Cluster & HUD size (Small / Medium / Large) for both; at every size each line
- * fits the cluster's and the HUD's clear width.
+ * fits the cluster's and the HUD's clear width. In both the lyrics scroll to each new line as drawLyrics does here.
  *
  * Source: the Spotify Web API (spotify.js) over mgu-uplink (mgu-store), so it controls whatever device
  * your account plays on - the phone that is connected to the car included. Player commands need
@@ -367,7 +367,7 @@ mgu.run({
             const size = settings.get('clusterSize'), playing = !!(pb && pb.playing), pos = position();
             mc.update({ setting: settings.get('cluster'), source: pick(), ok, track: t, playing, pos, posFn: () => position(),
                 lyrics: want ? lyrics : null, size, palette: artPal, vizPalette: stageColours(ctx.theme()) });
-            mh.update({ setting: settings.get('hud'), ok, track: t, playing, pos, lyrics: wantHud ? lyrics : null, size, palette: artPal });
+            mh.update({ setting: settings.get('hud'), ok, track: t, playing, pos, posFn: () => position(), lyrics: wantHud ? lyrics : null, size, palette: artPal });
         };
         setInterval(() => { try { clusterTick(); } catch (e) { log.warn('music cluster: ' + e.message); } }, 250);
         process.once('exit', () => { mc.close(); mh.close(); });

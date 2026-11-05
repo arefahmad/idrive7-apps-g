@@ -8,7 +8,8 @@
  * Two opaque image layers on the "map" target, class "content", never exclusive, never "alert":
  *   text  z 60  TEXT_W x TEXT_H (half the map's 1088 x 480), drawn over the whole map, bilinear:
  *               the black background, the words, the progress line. Written only when what it shows
- *               changes, and then only the changed bands (dirty rects); fps TEXT_FPS at most.
+ *               changes, and then only the changed bands (dirty rects); fps TEXT_FPS at most (0.8.0:
+ *               ANIM_FPS while a lyric line scrolls in, about 4 frames a line; the layer says ANIM_FPS).
  *   bars  z 61  BARS_W x BARS_H shown at BARS_SC x the size's scale (at most SAFE's width), bilinear: the visualizer only,
  *               at BARS_FPS at most, and then only the bars' changed columns (dirty rects); on Pause
  *               the bars settle to rest (as on the screen, ~2 s) and then nothing is sent.
@@ -28,6 +29,10 @@
  * HUD_SAFE at every size. Hidden while route guidance runs (the car's HUD shows the directions) and while
  * G's TV draws on the HUD; G's Dash's dials and HUD give way to it (they share the HUD's scene). G's Dash's
  * Cluster source pick is about the map area only: the HUD has its own setting.
+ * 0.8.0, the lyrics animated as on the screen (main.js drawLyrics): at each new line, over SCROLL_MS (eased), the
+ * next line rises into the playing line's place growing and lighting up, the old line rises and fades out, and
+ * the new next line fades in below. Only then is the text image redrawn faster (ANIM_FPS, its changed bands
+ * only, as always); not while paused, nor while the renderer's upload cap is cut (the line just changes).
  * z 60/61: over Waze's map (z 0) and G's Dash's logo (z 50), under G's TV (z 100). Like the logo,
  * the layers hide while G's TV draws on the map and while route guidance runs (debounced
  * GUIDE_ON_MS / GUIDE_OFF_MS), and come back HOLD_MS after G's TV stops.
@@ -51,6 +56,9 @@ const TESTING = !!(process.env.NG_CR_CLIENT || process.env.NG_CR_SOCK);
 const TARGET = 'map', MAP_W = 1088, MAP_H = 480;
 const KLASS = 'content', Z_TEXT = 60, Z_BARS = 61;
 const TEXT_W = 544, TEXT_H = 240, TEXT_FPS = 4;
+// 0.8.0: the lyrics' scroll to the next line (main.js's SCROLL_MS, eased as there), drawn at ANIM_FPS in ANIM_STEPS steps at most
+const SCROLL_MS = 380, ANIM_FPS = 10, ANIM_STEPS = 12;
+const easeOut = (e) => 1 - Math.pow(1 - e, 3);
 // 0.7.5: the whole view at a scale about the map's centre (0.7.4 and before: 1, and cut off by the cluster's edge);
 // 0.8.0: the scale is the size setting's (clusterSize), Medium 0.7.5's 0.72
 const SIZES = ['small', 'medium', 'large'], DEFAULT_SIZE = 'medium';
@@ -235,14 +243,18 @@ function colDirty(a, b, w, h, cols) {
 
 /* ----- the text image ----- */
 
-/** The lyric line playing at pos and the next one: { i, cur, next } (cur '' = an instrumental gap). */
+/**
+ * The lyric line playing at pos and the next one: { i, cur, next, prev, e } (cur '' = an instrumental gap);
+ * 0.8.0: prev the line before (null: none), e 0..1 how far the scroll to line i has gone (1: done; not eased).
+ */
 function lyricAt(lines, pos) {
     const p = pos + LEAD_MS;
     let lo = 0, hi = lines.length - 1, i = -1;
     while (lo <= hi) { const mid = (lo + hi) >> 1; if (lines[mid].t <= p) { i = mid; lo = mid + 1; } else hi = mid - 1; }
     let n = i + 1;
     while (n < lines.length && !lines[n].text) n++;                 // the next line with words
-    return { i, cur: i >= 0 ? lines[i].text : '', next: n < lines.length ? lines[n].text : '' };
+    const e = i >= 0 ? Math.max(0, Math.min(1, (p - lines[i].t) / SCROLL_MS)) : 1;
+    return { i, cur: i >= 0 ? lines[i].text : '', next: n < lines.length ? lines[n].text : '', prev: i > 0 ? lines[i - 1].text : null, e };
 }
 /** s cut (by characters, so also a long word or CJK) to width w with '...', or s when it fits. */
 function fitText(cv, s, size, w, opts) {
@@ -312,10 +324,13 @@ function fitLines(cv, s, f, w, opts) {
 /**
  * What the text image shows, as a key (equal keys: the same picture): v = { mode 'lyrics' | 'viz' | 'blank'
  * (the HUD before a track's lyrics come), title, artist, paused, cur, next, gap, prog (0..1, quantised), accent,
- * lay (the layout's id: the place and the size) }.
+ * lay (the layout's id: the place and the size), anim (0.8.0: the scroll to cur, eased and quantised, 0..1; 1 = still),
+ * prev (the line scrolling out; null: none) }.
  */
 function textKey(v) {
-    return [v.mode, v.title, v.artist, v.paused ? 1 : 0, v.cur, v.next, v.gap ? 1 : 0, Math.round((v.prog || 0) * 200), v.accent, v.lay || ''].join('\u0001');
+    const a = v.anim == null ? 1 : v.anim;
+    return [v.mode, v.title, v.artist, v.paused ? 1 : 0, v.cur, v.next, v.gap ? 1 : 0, Math.round((v.prog || 0) * 200), v.accent, v.lay || '',
+        a, a < 1 ? v.prev : ''].join('\u0001');
 }
 /**
  * 0.7.5: the text image's layout: 0.7.4's (in its 544 x 240 px), scaled by the size's scale about the centre; each
@@ -334,7 +349,7 @@ function layoutFor(place, size) {
         L = {
             cur: { size: sc(34), min: sc(25), shrink: 0.8, wrap: 0.9, max: 3, y: at(128), gap: sc(6) },
             dots: { size: sc(38), y: at(124) },
-            next: { size: sc(22), min: sc(17), shrink: 0.8, y: at(186) },
+            next: { size: sc(22), min: sc(17), shrink: 0.8, wrap: 0.95, max: 2, gap: sc(3), y: at(186) },
         };
     } else {
         const bw = Math.min(SAFE.w, Math.round(BARS_W * BARS_SC * S)), bh = Math.round(bw * BARS_H / BARS_W);
@@ -342,7 +357,7 @@ function layoutFor(place, size) {
             head: { size: sc(13), min: sc(12.5), shrink: 0.75, y: at(30) },                // the title and artist over the lyrics
             cur: { size: sc(30), min: sc(22.25), shrink: 0.8, wrap: 0.9, max: 3, y: at(116), gap: sc(6) },   // the line playing (up to 3 lines)
             dots: { size: sc(34), y: at(112) },                                            // an instrumental gap
-            next: { size: sc(18), min: sc(15.25), shrink: 0.8, y: at(176) },               // the next line, dim
+            next: { size: sc(18), min: sc(15.25), shrink: 0.8, wrap: 0.95, max: 2, gap: sc(3), y: at(176) },   // the next line, dim (0.8.0: up to 2 lines)
             label: { size: sc(11), spacing: sc(2), y: at(28) },                            // NOW PLAYING / PAUSED
             title: { size: sc(22), min: sc(18), shrink: 0.8, y: at(54) },                  // the visualizer's title
             artist: { size: sc(15), min: sc(14), shrink: 0.8, y: at(74) },
@@ -368,25 +383,51 @@ function textImage(Canvas, v, Lay) {
     const acc = lift(v.accent || '#3ad0ff', 170), dim = '#8a8f99', lit = '#ffffff', L = { literal: true }, B = { font: 'bold', literal: true };
     const cx = W / 2, TW = Y.TW;
     const one = (s, f, c, o) => { const r = fitLines(cv, s, f, TW, o); cv.text(r.lines[0], cx, f.y, r.size, c, Object.assign({ align: 'center' }, o)); };
-    const curLines = (c) => {
-        if (v.gap || !v.cur) { cv.text('·   ·   ·', cx, Y.dots.y, Y.dots.size, acc, { font: 'bold', literal: true, align: 'center' }); return; }
-        // 0.8.0: two lines centred where one line's baseline is; a third goes up (the last line never lower than two's)
-        const r = fitLines(cv, v.cur, Y.cur, TW, B), lh = r.size + Y.cur.gap, n = r.lines.length;
-        const y0 = Y.cur.y + Math.min(n - 1, 1) * lh / 2 - (n - 1) * lh;
-        r.lines.forEach((l, k) => cv.text(l, cx, y0 + k * lh, r.size, c, { font: 'bold', literal: true, align: 'center' }));
+    const DOTS = '·   ·   ·', BK = '#000000';
+    /**
+     * Where the playing line's block (txt; '' = the gap's dots) sits when still: { lines, size, lh, y0 (the first
+     * baseline) }. 0.8.0: two lines centred where one line's baseline is; a third goes up (the last line never lower
+     * than two's).
+     */
+    const place = (txt) => {
+        if (!txt) return { lines: [DOTS], size: Y.dots.size, lh: 0, y0: Y.dots.y };
+        const r = fitLines(cv, txt, Y.cur, TW, B), lh = r.size + Y.cur.gap, n = r.lines.length;
+        return { lines: r.lines, size: r.size, lh, y0: Y.cur.y + Math.min(n - 1, 1) * lh / 2 - (n - 1) * lh };
+    };
+    /** A block (place()) drawn in colour c with its first baseline at y, its size and spacing times k (k <= 1: inside TW). */
+    const block = (P, c, y, k) => P.lines.forEach((l, j) => cv.text(l, cx, y + j * P.lh * k, P.size * k, c, { font: 'bold', literal: true, align: 'center' }));
+    /**
+     * The lyrics: the playing line (colour c; the gap's dots in the accent) and the next one (nc). 0.8.0: while the
+     * scroll to a new line runs (v.anim < 1), as main.js's drawLyrics: the old line rises by the distance between
+     * the two lines and fades out (gone halfway), the new one comes up from the next line's place and size,
+     * lighting up, and in the second half the new next line fades in, rising a little.
+     */
+    const lyrics = (c, nc) => {
+        const a = v.anim == null ? 1 : v.anim, cur = v.gap ? '' : v.cur || '', P = place(cur), cc = cur ? c : acc;
+        // the next line: wrapped to two lines rather than cut (0.8.0), at its baseline y
+        const nextAt = (y, col) => {
+            const r = fitLines(cv, v.next, Y.next, TW, L), lh = r.size + Y.next.gap;
+            r.lines.forEach((l, j) => cv.text(l, cx, y + j * lh, r.size, col, { literal: true, align: 'center' }));
+        };
+        if (a >= 1) { block(P, cc, P.y0, 1); if (v.next) nextAt(Y.next.y, nc); return; }
+        const D = Y.next.y - Y.cur.y;
+        if (v.prev !== null && v.prev !== undefined) {
+            const O = place(v.prev);
+            block(O, mixc(v.prev ? c : acc, BK, Math.min(1, a * 2)), O.y0 - D * a, 1);   // gone halfway
+        }
+        const k0 = Math.min(1, Y.next.size / P.size);
+        block(P, mixc(nc, cc, a), Y.next.y + (P.y0 - Y.next.y) * a, k0 + (1 - k0) * a);
+        // the new next line: in the second half, coming up from below
+        if (v.next && a > 0.5) nextAt(Y.next.y + D * 0.2 * (1 - a) * 2, mixc(BK, nc, (a - 0.5) * 2));
     };
     if (hud) {
         // the lyrics alone: the line playing (dimmer while paused), the next one dim
-        if (v.mode === 'lyrics') {
-            curLines(v.paused ? '#9aa0aa' : lit);
-            if (v.next) one(v.next, Y.next, '#7d838d', L);
-        }
+        if (v.mode === 'lyrics') lyrics(v.paused ? '#9aa0aa' : lit, '#7d838d');
     } else {
         if (v.mode === 'lyrics') {
             const head = (v.paused ? 'PAUSED  ·  ' : '') + v.title + (v.artist ? '  ·  ' + v.artist : '');
-            one(head, Y.head, v.paused ? acc : dim, L);
-            curLines(lit);
-            if (v.next) one(v.next, Y.next, '#6b7079', L);
+            lyrics(lit, '#6b7079');
+            one(head, Y.head, v.paused ? acc : dim, L);        // after: the line scrolling out passes under it
         } else {
             cv.text(v.paused ? 'PAUSED' : 'NOW PLAYING', cx, Y.label.y, Y.label.size, acc, { font: 'bold', literal: true, align: 'center', spacing: Y.label.spacing });
             one(v.title, Y.title, lit, B);
@@ -464,6 +505,7 @@ class MusicCluster {
         this.pausedAt = 0; this.gaveUp = '';
         this.stats = { layers: 0, sends: 0, bytes: 0, textBytes: 0, barsBytes: 0, drops: 0, connects: 0 };
         this.clk = VIZ.clock();                      // the visualizer's clock (viz.js), as main.js's
+        this.lyrT = null;                            // 0.8.0: the lyrics' scroll timer (_scroll())
         this._reset();
     }
     _reset() {
@@ -631,8 +673,12 @@ class MusicCluster {
         const s = this.s, t = s.track, pal = barColours(s.palette);
         const v = { mode, title: t.title || '', artist: t.artist || '', paused: !s.playing, cur: '', next: '', gap: false, accent: pal[0], lay: this.lay.id };
         if (mode === 'lyrics') {
-            const L = lyricAt(s.lyrics.lines, s.pos || 0);
+            // 0.8.0: the position now (posFn), so the scroll is drawn on time between main.js's 250 ms updates
+            const pos = typeof s.posFn === 'function' ? s.posFn() : s.pos || 0;
+            const L = lyricAt(s.lyrics.lines, pos || 0);
             v.cur = L.cur; v.next = L.next; v.gap = L.i < 0 || !L.cur;
+            v.prev = L.prev;
+            v.anim = s.playing && this._animOk() && L.e < 1 ? Math.round(easeOut(L.e) * ANIM_STEPS) / ANIM_STEPS : 1;
         }
         // the progress line: moved at most every PROGRESS_MS (or at once on a jump), so it costs little
         const p = t.duration ? Math.max(0, Math.min(1, (s.pos || 0) / t.duration)) : 0;
@@ -655,7 +701,7 @@ class MusicCluster {
                 this.log.info(this.tag + ': hidden (' + (guiding ? 'route guidance' : 'G\'s TV') + ')');
             }
             this.visible = false;
-            this._animate(false);
+            this._animate(false); this._scroll(false);
             return;
         }
         if (!this.text && now < (this.freeUntil || 0)) return;     // 0.7.1: just dropped, not let go yet
@@ -665,13 +711,13 @@ class MusicCluster {
         const v = this._view(mode, now), key = textKey(v), Lay = this.lay;
         if (!this.text) {
             const img = textImage(this.Canvas, v, Lay);
-            const ref = this._make(this.hud ? Z_HUD : Z_TEXT, 0, 0, this.hud ? HUD_W : MAP_W, this.hud ? HUD_H : MAP_H, img, 'bilinear', TEXT_FPS);
+            const ref = this._make(this.hud ? Z_HUD : Z_TEXT, 0, 0, this.hud ? HUD_W : MAP_W, this.hud ? HUD_H : MAP_H, img, 'bilinear', ANIM_FPS);
             if (!ref) return;
-            this.text = { ref, state: 'new', img, key, madeAt: now, errAt: 0 };
+            this.text = { ref, state: 'new', img, key, madeAt: now, errAt: 0, anim: v.anim };
             this._send(ref, null, img.d, 'text');
-        } else if (key !== this.text.key && now - this.textAt >= 1000 / TEXT_FPS) {
+        } else if (key !== this.text.key && now - this.textAt >= 1000 / (v.anim < 1 || this.text.anim < 1 ? ANIM_FPS : TEXT_FPS) - 2) {
             const img = textImage(this.Canvas, v, Lay), dd = dirty(this.text.img.d, img.d, img.w, img.h);
-            this.text.key = key; this.text.img = img; this.textAt = now;
+            this.text.key = key; this.text.img = img; this.textAt = now; this.text.anim = v.anim;
             if (dd) {
                 const whole = dd.px.length > img.d.length * 0.6;
                 this._send(this.text.ref, whole ? null : dd.rects, whole ? img.d : dd.px, 'text');
@@ -694,6 +740,27 @@ class MusicCluster {
         }
         this.visible = true;
         this._animate(mode === 'viz' && (!!this.s.playing || this.clk.e > 0));
+        // while synced lyrics play: checked at ANIM_FPS, so a scroll starts on time (main.js updates every 250 ms);
+        // the image is drawn again only when its key changes
+        this._scroll(!!this.text && ((mode === 'lyrics' && !!this.s.playing && this._animOk()) || v.anim < 1 || this.text.anim < 1 || this.text.key !== key));
+    }
+    /**
+     * 0.8.0: while synced lyrics play, _apply() at ANIM_FPS (this timer): the view's key is cheap, the image is drawn
+     * and sent only when it changed (a scroll: about 4 frames a line), else as before on main.js's updates.
+     */
+    _scroll(run) {
+        if (!run) { if (this.lyrT) { this.T.clearInterval(this.lyrT); this.lyrT = null; } return; }
+        if (!this.lyrT) {
+            this.lyrT = this.T.setInterval(() => {
+                if (!this.want || !this.cr || !this.ready) { this._scroll(false); return; }
+                try { this._apply(); } catch (e) { this.log.warn(this.tag + ': ' + e.message); this._scroll(false); }
+            }, Math.round(1000 / ANIM_FPS));
+        }
+    }
+    /** 0.8.0: the scroll only while the renderer's upload cap is whole (Waze busy: the line just changes). */
+    _animOk() {
+        const b = this.budget;
+        return !(b && b.max > 0 && b.cap < b.max);
     }
     _make(z, x, y, w, h, img, sampling, fps) {
         const ref = this.cr.image({ target: this.target, klass: KLASS, z, exclusive: false, contend: true, visible: true,
@@ -737,7 +804,7 @@ class MusicCluster {
     _dropLayers() {
         [this.text, this.bars].forEach((L) => { if (L && this.cr) { try { this.cr.drop(L.ref); this.stats.drops++; } catch (e) { /* gone */ } } });
         this.text = null; this.bars = null; this.visible = null;
-        this._animate(false);
+        this._animate(false); this._scroll(false);
     }
     _off() {
         const cr = this.cr;
@@ -778,5 +845,6 @@ class MusicCluster {
 module.exports = { MusicCluster, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, barsImage, barColours, vizColours, colDirty,
     textImage, textKey, dirty, lyricAt, wrapText, fitText, fitLines, pieces, lift, SCALE, SAFE, SAFE_TW, LAYOUT, layoutFor, SIZES, SIZE_SCALE, DEFAULT_SIZE,
     HUD_W, HUD_H, HUD_TEXT_W, HUD_TEXT_H, HUD_SAFE, HUD_TW, Z_HUD,
+    SCROLL_MS, ANIM_FPS, ANIM_STEPS,
     TARGET, MAP_W, MAP_H, KLASS, Z_TEXT, Z_BARS, TEXT_W, TEXT_H, TEXT_FPS, BARS_W, BARS_H, BARS_SC, BARS_SHOW_W, BARS_SHOW_H, BARS_X, BARS_Y, BARS_FPS, BARS_COLS,
     POLL_MS, HOLD_MS, GUIDE_ON_MS, GUIDE_OFF_MS, PAUSE_DROP_MS, ERR_RETRIES, ERR_RETRY_MS, PROGRESS_MS };

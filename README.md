@@ -37,8 +37,8 @@ A full-screen Spotify player with synced lyrics or a visualizer.
 - Synced lyrics from [LRCLIB](https://lrclib.net), or a visualizer.
 - Sign in by scanning a QR code with your phone.
 - A home-screen widget showing what's playing.
-- While music plays, lyrics or the visualizer in the instrument cluster, and optionally the lyrics in
-  the HUD (off by default), in a small, medium or large size. Both need the Cluster renderer tool; the
+- While music plays, lyrics (scrolling as in the app) or the visualizer in the instrument cluster, and
+  optionally the lyrics in the HUD (off by default), in a small, medium or large size. Both need the Cluster renderer tool; the
   HUD also needs its HUD takeover setting turned on. G's Dash's cluster dials and HUD step aside while
   lyrics show in the HUD.
 
