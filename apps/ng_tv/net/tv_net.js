@@ -11,25 +11,9 @@
  */
 const https = require('https');
 const http = require('http');
-const dns = require('dns');
-const fs = require('fs');
-const path = require('path');
 const url = require('url');
-
-/**
- * Optional ca.pem in the data folder: PEM roots to trust instead of Node's bundled ones (as
- * mgu-updater's ca_file). Only a regular file owned by root and not writable by group or others
- * counts: the app's own uid can write its data folder, so a file it (or anything running as it)
- * put there must not be able to replace the TLS roots. Anything else: null, Node's bundled roots.
- */
-function trustedCa(dir) {
-    const file = path.join(dir, 'ca.pem');
-    try {
-        const st = fs.lstatSync(file);
-        if (!st.isFile() || st.uid !== 0 || (st.mode & 0o022)) return null;
-        return fs.readFileSync(file, 'utf8');
-    } catch (e) { return null; }
-}
+// the uplink lease, its DNS servers and the optional root-owned ca.pem (kit/uplink.js), as G's Music uses them
+const uplink = require('./kit/uplink');
 
 const MAX_JSON = 16 * 1024 * 1024;
 
@@ -45,36 +29,15 @@ class Net {
         this.agent = new https.Agent({ keepAlive: true, maxSockets: 4 });
         this.plain = new http.Agent({ keepAlive: true, maxSockets: 2 });
         this.redirects = new Map();         // url -> final url (data node), kept while it works
-        this.ca = trustedCa(dataDir);
+        this.ca = uplink.trustedCa(dataDir);
         this.bytes = 0;
+        this._lookupFor = uplink.resolver();     // the lease's DNS servers (_lookup)
     }
 
-    lease() {
-        const files = [path.join(this.dataDir, 'uplink.json'), '/run/mgu-uplink/lease.json'];
-        for (let i = 0; i < files.length; i++) {
-            try {
-                const l = JSON.parse(fs.readFileSync(files[i], 'utf8'));
-                if (l && l.ip) return l;
-            } catch (e) { /* next */ }
-        }
-        return null;
-    }
+    lease() { return uplink.lease(this.dataDir); }
 
-    _lookup() {
-        const l = this.lease();
-        const servers = l && Array.isArray(l.dns) ? l.dns.filter((s) => typeof s === 'string' && s) : [];
-        if (!servers.length) return undefined;
-        const key = servers.join(',');
-        if (key !== this._dnsKey) { this._resolver = new dns.Resolver(); this._resolver.setServers(servers); this._dnsKey = key; }
-        const resolver = this._resolver;
-        return (hostname, options, cb) => {
-            if (typeof options === 'function') cb = options;
-            resolver.resolve4(hostname, (err, addrs) => {
-                if (err || !addrs || !addrs.length) { cb(err || new Error('no address for ' + hostname)); return; }
-                cb(null, addrs[0], 4);
-            });
-        };
-    }
+    /** http(s).request's lookup through the lease's DNS servers; undefined: the system resolver */
+    _lookup() { return this._lookupFor(this.lease()); }
 
     /** GET href: resolves { status, headers, body, url } (the final URL after redirects). */
     get(href, headers, maxBody, hops) { return this.request('GET', href, headers, null, maxBody, hops); }

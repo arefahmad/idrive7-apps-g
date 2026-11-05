@@ -26,11 +26,11 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
-const dns = require('dns');
 const url = require('url');
 const childProcess = require('child_process');
 const x25519 = require('./x25519.js');
 const ringlog = require('./ringlog.js');
+const uplink = require('./uplink.js');
 
 const MAGIC = Buffer.from('NGRL1');
 const INFO = Buffer.from('ng-remotelog v1');
@@ -160,29 +160,16 @@ function readDrop(dataDir) {
 /* ---------------- network (as G's TV / G's Music: the mgu-uplink lease's DNS, a root-owned ca.pem) ---------------- */
 function makeRequester(dataDir) {
     const agent = new https.Agent({ keepAlive: false, maxSockets: 1 });
-    let resolver = null, dnsKey = '';
-    const lease = () => {
-        for (const f of [path.join(dataDir, 'uplink.json'), '/run/mgu-uplink/lease.json']) {
-            try { const l = JSON.parse(fs.readFileSync(f, 'utf8')); if (l && l.ip) return l; } catch (e) { /* next */ }
-        }
-        return null;
-    };
-    const ca = () => {
-        try { const f = path.join(dataDir, 'ca.pem'), st = fs.lstatSync(f); return st.isFile() && st.uid === 0 && !(st.mode & 0o022) ? fs.readFileSync(f, 'utf8') : null; } catch (e) { return null; }
-    };
+    const lookupFor = uplink.resolver();
     return (method, href, headers, body) => new Promise((resolve, reject) => {
         const u = url.parse(href), tls = u.protocol === 'https:';
         if (!tls && !(u.protocol === 'http:' && process.env.NG_REMOTELOG_TEST_API)) { reject(new Error('https only')); return; }
         const opts = { method, host: u.hostname, port: u.port || (tls ? 443 : 80), path: u.path, headers: Object.assign({}, headers), timeout: 20000 };
         if (tls) opts.agent = agent;
         if (body != null) opts.headers['Content-Length'] = Buffer.byteLength(body);
-        const l = lease(), servers = l && Array.isArray(l.dns) ? l.dns.filter((s) => typeof s === 'string' && s) : [];
-        if (servers.length) {
-            if (servers.join(',') !== dnsKey) { resolver = new dns.Resolver(); resolver.setServers(servers); dnsKey = servers.join(','); }
-            const r = resolver;
-            opts.lookup = (h, o, cb) => { if (typeof o === 'function') cb = o; r.resolve4(h, (e, a) => (e || !a || !a.length) ? cb(e || new Error('no address')) : cb(null, a[0], 4)); };
-        }
-        const c = tls && ca(); if (c) opts.ca = c;
+        const lookup = lookupFor(uplink.lease(dataDir));
+        if (lookup) opts.lookup = lookup;
+        const c = tls && uplink.trustedCa(dataDir); if (c) opts.ca = c;
         const req = (tls ? https : http).request(opts, (res) => {
             const chunks = []; let n = 0;
             res.on('data', (d) => { n += d.length; if (n < 65536) chunks.push(d); });
