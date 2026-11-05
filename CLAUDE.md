@@ -32,3 +32,4 @@
 - **`kit/tools/build.py` installs an app's `.js`, `.png` and `.wasm` files from every folder side by side**, so a module requires another as `./<name>` and reads a file at `path.join(__dirname, '<name>')` whichever folder either is kept in. Moving a file between folders changes nothing that is installed (no version bump), but **file names must be unique within an app**, files it shares in included; the build stops if two collide.
 - **`data/<name>/` is a data folder:** packed into `<name>.pack` and read with `kit/runtime/pack.js`.
 - **`"share"` names the file's path inside the other app**, e.g. `"ng_spotify/vendor/qrcodegen.js"`.
+- **`test/`:** plain-Node tests, not installed (no version bump). Run `node test/cluster_rules.test.js` after any change to how the apps share the cluster and HUD (`cluster_source.js` holds those rules).

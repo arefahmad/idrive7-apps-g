@@ -21,8 +21,8 @@
  *
  * Hidden: closed, off, demo data, no speed signal, values older than LIVE_MS (300 ms) while moving or
  * while the shift lights run (shown again after RESHOW_MS of fresh values), G's Dash's loop older than
- * STALE_MS, another app's layer on the HUD or the panel (G's TV's video: back HOLD_MS, about 1 s, after
- * it goes), any renderer error. No rpm: the arc dim, the gear still shown.
+ * STALE_MS, any renderer error (0.17.0: never for another app's layer - the dials & HUD pick names the HUD's
+ * owner, cluster_source.js). No rpm: the arc dim, the gear still shown.
  * Fail-safe as the cluster skins (failsafe.js): u_fresh held by a renderer animation re-armed every REARM_MS; G's Dash
  * stopping or hanging and the HUD fades by itself within about 0.3 s. 0.11.3: re-armed new-first (no frame with
  * u_fresh 0 between a stop and the next start: the HUD strobed with the stock HUD under it), the client's u_fresh 1
@@ -379,8 +379,7 @@ class HudShift {
             this.staleAt = now; return 'stale values';
         }
         if (now - this.staleAt < RESHOW_MS) return 'stale values';
-        if (this.others.length) return 'hud in use';
-        if (now - this.busyAt < HOLD_MS) return 'hud in use';
+        // 0.17.0: no giving way to another app's layer: the dials & HUD pick names the owner (cluster_source.js)
         if (this.layerErr || this.noEffect) return 'renderer error';
         if (this.cur && !this.cur.ok && this.cur.id === this.lookId()) return 'making';
         if (!this.cur && this.build.gaveUp) return 'stuck';   // 0.13.8: reported; Refresh cluster or a setting change tries again
@@ -570,10 +569,15 @@ class HudShift {
             // as G's TV's HUD status: the layer or the target shown counts first
             if (this.layerState === 'shown' || this.hudState === 'shown' || this.hudState === 'lingering') return { kind: 'on', text: 'Shown on the HUD' };
             if (this.hudState === 'unavailable') return { kind: 'none', text: 'HUD unavailable' };
-            if (/scene id/.test(this.hudReason)) return { kind: 'wait', text: 'Waiting - cluster panel shares the HUD' };
+            if (/scene id/.test(this.hudReason)) {
+                const by = this.others.filter((l) => l.target === 'panel' && l.state === 'shown')[0];
+                return { kind: 'wait', text: by ? 'Waiting - ' + CL.appName(by.app) + ' is on the cluster panel (one scene)' : 'Waiting - the cluster panel is letting go' };
+            }
             if (this.hudState === 'parked' || this.hudState === 'waiting') {
-                // the car's own HUD content in front: the renderer leaves it unless its hud_take_over_stock is on
-                return { kind: 'wait', text: this.hudHolder === 'foreign' ? 'Waiting - another program holds the HUD' : 'Waiting - turn on HUD takeover (renderer setting)' };
+                // 0.17.0: the car's own HUD content in front (a pop-up, the speech dialog): the renderer never takes the HUD
+                // from it and asks again once it goes. 0.16 said to turn on the renderer's hud_take_over_stock, which
+                // since cluster-render 0.4.0 leaves the HUD out altogether.
+                return { kind: 'wait', text: this.hudHolder === 'foreign' ? 'Waiting - another program holds the HUD' : "Waiting - the car's own content is on the HUD" };
             }
             return { kind: 'wait', text: 'Asking for the HUD' };
         }

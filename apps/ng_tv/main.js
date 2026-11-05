@@ -255,8 +255,9 @@ mgu.run({
                 const toCluster = !!settings.get('cluster'), toHud = !!settings.get('hud');
                 if (toCluster || toHud) {
                     if (gate().ok) {                           // the gate again, now, before each cluster / HUD picture
-                        if (toCluster && !guided) cluster.write(f);
-                        if (toHud) hud.write(f);
+                        // 0.5.0: and G's Dash's picks, as pickStep() last read them (once a second; it takes a picture off at once)
+                        if (toCluster && !guided && mapWas) cluster.write(f);
+                        if (toHud && hudWas) hud.write(f);
                     } else gateStep();                         // closes the gate and takes the picture off
                 }
             },
@@ -573,7 +574,10 @@ mgu.run({
             toast = null;
             const was = Object.keys(OUT).filter((o) => o !== k && settings.get(o))[0];
             settings.set(k, true);
-            if (was) say(OUT[was].name + ' off - ' + OUT[k].name + ' on (one at a time, parked only)', 3500);
+            // 0.5.0: on, but G's Dash's pick keeps the place for something else: said now, not left to guess
+            const why = k === 'cluster' ? mapWhy() : hudWhy();
+            if (why) say(OUT[k].name + ' on, but ' + why, 5000);
+            else if (was) say(OUT[was].name + ' off - ' + OUT[k].name + ' on (one at a time, parked only)', 3500);
             else say(OUT[k].name + ': on (parked only)');
         }
         /** Cluster on / off: the map area's connection. */
@@ -623,7 +627,26 @@ mgu.run({
         });
         /** After the picture: G's Dash's Cluster source pick, the last good one, else Auto. */
         const afterTv = () => CSRC.NAMES[srcReader.get().source] || 'Auto';
+        /**
+         * 0.5.0, G's Dash's picks (cluster_source.js): a pick other than Auto always shows what it says, so the
+         * map area is G's TV's only in Auto; the HUD only while G's Dash's dials & HUD pick is the car's own (or
+         * no pick is known). Why not, in words, else ''.
+         */
+        const mapWhy = () => { const p = srcReader.get().source; return CSRC.tvAllowed(p) ? '' : "G's Dash's cluster pick is " + (CSRC.NAMES[p] || p) + ': set Auto there to play here'; };
+        const hudWhy = () => { const d = srcReader.get().displays; return CSRC.tvHudAllowed(d) ? '' : "G's Dash's Dials & HUD is " + (CSRC.DISPLAY_NAMES[d] || d) + ": set Car's own there"; };
+        const mapOk = () => !mapWhy(), hudOk = () => !hudWhy();
+        let mapWas = mapOk(), hudWas = hudOk();
+        /** The picks changing under a picture: taken off at once (and back with the next frame when allowed again). */
+        function pickStep() {
+            const m = mapOk(), h = hudOk();
+            if (!m && mapWas) { cluster.stop(); log.info('cluster picture: off - ' + mapWhy()); }
+            if (!h && hudWas) { hud.stop(); log.info('hud picture: off - ' + hudWhy()); }
+            if (m !== mapWas || h !== hudWas) labels();
+            mapWas = m; hudWas = h;
+        }
         function outStatus(playing) {
+            if (settings.get('cluster') && !mapOk()) return { level: 'warn', text: 'Cluster: ' + mapWhy() };
+            if (settings.get('hud') && !hudOk()) return { level: 'warn', text: 'HUD: ' + hudWhy() };
             if (settings.get('cluster') && guided) return { level: 'info', text: 'Cluster: directions (route guidance) - the picture stays on this screen, back after the route' };
             if (settings.get('cluster')) { const cs = cluster.status(gateOpen, playing); return { level: cs.level, text: clusterText(cs) + ' - after TV: ' + afterTv() }; }
             if (settings.get('hud')) { const hs = hud.status(gateOpen, playing); return { level: hs.level, text: 'HUD: ' + hs.text }; }
@@ -704,6 +727,7 @@ mgu.run({
         setInterval(() => {
             gateStep();
             guideStep();
+            pickStep();
             // the warm state: at most WARM_MS paused, not while memory is tight, at most WARM_BYTES of samples
             if (player.v && player.paused && warmAt) {
                 if (Date.now() - warmAt > WARM_MS) dropWarm(Math.round(WARM_MS / 60000) + ' min paused');

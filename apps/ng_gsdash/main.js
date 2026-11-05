@@ -64,9 +64,11 @@
  *   - every clock H:MM with a colon (0.10.0, clock.js): Showcase's 12-hour clock from the head unit's
  *     clock in its own zone (the car keeps it set); a car time once a signal for it is known (Diagnostics
  *     lists the catalog's time / date fields). The session clocks are stopwatches: m:ss.t.
- *   - Your look on the car's displays (0.10.0, setting "displays", Options > Cluster & HUD): Cluster
- *     dials (the skins, the default), HUD or Neither - one at a time (they share one display layer).
- *     0.9.0's two settings (clusterSkin, hudShift) are moved over once at start (prefs.js).
+ *   - Dials & HUD (0.10.0, setting "displays", Options > Cluster & HUD): Cluster dials, G's Dash HUD,
+ *     0.17.0 G's Music lyrics (on the HUD) or Car's own (the default) - one owner at a time (they share one
+ *     scene), shared with G's Music and G's TV (cluster_source.js), Waze's HUD map off while one of ours owns
+ *     it (waze_ctl.js). 0.9.0's two settings (clusterSkin, hudShift) are moved over once at start (prefs.js);
+ *     0.17.0: G's Music's own HUD lyrics setting once, when the pick was Car's own.
  *   - cluster skins (0.8.0, cluster_skin.js, "displays" Cluster dials): with the cluster in
  *     its M / Sport layout (any drive mode), the cluster's own dials redrawn in the G's Dash look (the look switches the skin;
  *     Stock, the stock dials redrawn, from diagnostics), the telltales on top. 0.8.1: driving too - the
@@ -109,6 +111,7 @@ const DIAG = require('./diag');
 const ClusterMap = require('./cluster').ClusterMap;
 const CL = require('./cluster_logo');
 const CSRC = require('./cluster_source');
+const { WazeCtl } = require('./waze_ctl');
 const CS = require('./cluster_skin');
 const HS = require('./hud_shift');
 const FCL = require('./fcluster');
@@ -311,18 +314,21 @@ mgu.run({
         let ending = false; // the app ending: nothing of ours asked for again (a last frame after 'exit')
         const gsdOn = () => !ending && settings.get('clusterControl') !== 'off';
         const sharedPick = () => (gsdOn() ? srcPick() : 'stock');
+        // 0.17.0: the dials & HUD's owner, shared too (G's Music's HUD lyrics and G's TV's HUD go by it)
+        const sharedDisplays = () => (gsdOn() ? displays() : 'none');
         let srcRev = 0, srcPub = { ok: false, text: '' };
         const publishSource = (why) => {
             srcRev++;
-            srcPub = CSRC.publish(sharedPick(), srcRev);
+            srcPub = CSRC.publish(sharedPick(), srcRev, { displays: sharedDisplays() });
             if (srcPub.error) log.warn('cluster source: ' + srcPub.text);
-            else log.info('cluster source: ' + sharedPick() + ' shared (' + why + (gsdOn() ? '' : ', G\'s Dash off') + ')');
+            else log.info('cluster source: ' + sharedPick() + ', dials & HUD ' + sharedDisplays() + ' shared (' + why + (gsdOn() ? '' : ', G\'s Dash off') + ')');
         };
         publishSource('start');
         /** The logo per the pick: Auto as before (open and clusterLogo on), Logo / Music also in the background, Map / Stock none. */
         const clogoUpdate = (open) => {
             const d = car.data(), src = srcPick(), on = gsdOn();
             clogo.update({ on: on && CSRC.logoWanted(src, open, settings.get('clusterLogo')), enabled: on && (src === 'auto' ? logoOn() : (src === 'logo' || src === 'music')),
+                guideHides: CSRC.guideHides(src), exclusive: CSRC.logoExclusive(src),
                 pixel: look().id === 'pixel', look: skinKey(), parked: L.isNum(d.speed) && d.speed < 1,
                 idleText: !on ? 'Off - G\'s Dash is off on the cluster' : src === 'auto' ? 'On - while G\'s Dash is open' : 'Off - ' + CSRC.NAMES[src] + ' picked' });
             centreTrack();
@@ -369,10 +375,35 @@ mgu.run({
         if (ui.onVisible) ui.onVisible((st, on) => { if (st === 'MAIN') logoUpdate(on); });
         settings.onChange((k) => {
             if (k === 'clusterControl') log.info('cluster control: G\'s Dash ' + (gsdOn() ? 'on the cluster & HUD again' : 'off - the cluster and HUD left to the car (everything of ours let go)'));
-            if (k === 'clusterSource' || k === 'clusterControl') publishSource('change');
+            if (k === 'clusterSource' || k === 'clusterControl' || k === 'displays') publishSource('change');
             if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'displays' || k === 'look' || k === TINTS.KEY || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
         });
-        process.once('exit', () => { ending = true; clearInterval(bgLogo); clogo.close(); cskin.close(); hud.close(); fcl.close(); });
+        // 0.17.0: Waze on cluster's map switched as the picks say (waze_ctl.js): off on the cluster for Stock, on for
+        // Waze, off on the HUD while one of ours owns it; what Waze had put back once nothing needs it, and with
+        // G's Dash off on the cluster & HUD
+        const wctl = new WazeCtl(log, { settings });
+        const wazeWant = () => (gsdOn() ? { cluster: CSRC.wazeCluster(srcPick()), hud: CSRC.wazeHud(displays()) } : {});
+        const wazeTick = () => { try { wctl.tick(wazeWant()); } catch (e) { log.warn('waze ctl: ' + e.message); } };
+        const wazeIv = setInterval(wazeTick, 2000);
+        if (wazeIv.unref) wazeIv.unref();
+        wazeTick();
+        // 0.17.0, once: G's Music's HUD lyrics (its own HUD setting, 0.8.0) become the dials & HUD pick when nothing of
+        // G's Dash's had it (Car's own); with the dials or G's Dash's HUD picked, that pick stays (shown in G's Music)
+        const MIGRATED_KEY = '_hudPickMigrated';
+        const hudMigrate = () => {
+            if (settings.get(MIGRATED_KEY)) return;
+            const ms = CSRC.readMusic();
+            if (ms.error || ms.hud === null) return;              // G's Music not seen yet, or before 0.9.0: later
+            try { settings.set(MIGRATED_KEY, 'done'); } catch (e) { return; }
+            if (ms.hud === 'lyrics' && displays() === 'none') {
+                log.info("dials & HUD: G's Music's lyrics (its HUD setting was on)");
+                settings.set('displays', 'music');
+            }
+        };
+        const migIv = setInterval(() => { hudMigrate(); if (settings.get(MIGRATED_KEY)) clearInterval(migIv); }, 5000);
+        if (migIv.unref) migIv.unref();
+        hudMigrate();
+        process.once('exit', () => { ending = true; clearInterval(bgLogo); clearInterval(wazeIv); wctl.close(); clogo.close(); cskin.close(); hud.close(); fcl.close(); });
         // route guidance (0.7.4, 0.7.5): the logo steps aside while it runs, and only then (or for G's TV). The stock navigation's guidingState
         // (INACTIVE / CALCULATING_ROUTE / ACTIVE) and the phone's projectedGuidanceActive (CarPlay: Waze
         // or Maps with a route; Android Auto), all app.json "_optional"; read again every GUIDE_POLL_MS
@@ -735,7 +766,7 @@ mgu.run({
             chevron(cv, x + w - 28, y + h / 2, 10, t.dim);
             cv.target(x, y, w, h, () => press(to, key), key, u.radius);
         }
-        const displaysLine = () => ({ skin: 'Cluster dials', hud: 'HUD', none: 'Neither' })[displays()];
+        const displaysLine = () => ({ skin: 'Cluster dials', hud: "G's Dash HUD", music: "G's Music lyrics on HUD", none: "Car's own dials & HUD" })[displays()];
         // 0.13.6: and the G-meter (its tile went; the same Driving page)
         const engineLine = () => { const r = num('redline', 6500); return 'Redline ' + r + ' \u00b7 shift ' + (r - (Number(settings.get('shiftBefore')) || 0)) + ' rpm \u00b7 G-meter ' + (Number(settings.get('gScale')) || 1.5).toFixed(1) + ' g'; };
         /** Something of ours in the cluster / HUD that should work does not: the renderer is missing or says no. */
@@ -1440,12 +1471,13 @@ mgu.run({
         }
         // the Cluster & HUD page's five picks of the cluster's centre (0.8.3, cluster_source.js); 0.13.9: each
         // line says what the pick puts there, in plain words (srcState() swaps in why, when it cannot now)
+        // 0.17.0: every pick but Auto always shows what it says (cluster_source.js)
         const SRC_TILES = [
-            ['auto', 'Music, or logo while open'],
+            ['auto', 'Smart: route, TV, music, logo'],
             ['logo', "G's Dash logo, always"],
-            ['music', 'Lyrics if playing, else logo'],
-            ['map', "Waze's map from CarPlay"],
-            ['stock', "The car's own display"],
+            ['music', 'Lyrics, else the logo'],
+            ['map', "Waze's map, always"],
+            ['stock', "The car's own, always"],
         ];
         /** A tile's small picture of the map area (1088 x 480): what the pick puts there. */
         function srcThumb(cv, kind, x, y, w, h, sel) {
@@ -1523,6 +1555,7 @@ mgu.run({
             if (mv.on === false) return 'Waze on cluster is Off (below)';
             if (mv.kind === 'pending') return 'Waze on cluster: restart the head unit to finish';
             if (mn.state === 'showing') return '';
+            if (mn.state === 'off') return "Waze's map is switched off on the cluster" + (wctl.view().text ? ' (' + wctl.view().text + ')' : '');
             if (mn.state === 'idle') return 'CarPlay is not sending a map now (it does while Waze guides a route)';
             if (mn.state === 'frozen') return "Waze's map froze (the phone sends an empty picture): reconnect the phone, then start the route";   // 0.14.2
             if (mn.state === 'starting') return 'Waze map waiting' + (mn.reason ? ': ' + mn.reason : '');
@@ -1538,9 +1571,8 @@ mgu.run({
                 return lv.kind === 'none' ? { ok: false, text: lv.text } : { ok: true, text: line };
             }
             if (kind === 'music') {
-                const ms = musicState();
-                if (ms.cluster === 'off') return { ok: false, text: "G's Music's Cluster is Off" };
-                if (ms.error) return { ok: false, text: "Open G's Music once" };
+                // 0.17.0: G's Music draws when Music is picked, whatever its own Cluster setting
+                if (musicState().error) return { ok: false, text: "Open G's Music once" };
                 return { ok: true, text: line };
             }
             const mv = cmap.view(), mn = cmap.mapNow();
@@ -1548,9 +1580,10 @@ mgu.run({
                 if (mn.state === 'none' || mv.kind === 'none') return { ok: false, text: 'Needs Waze on cluster' };
                 if (mv.on === false) return { ok: false, text: 'Waze on cluster is Off' };
                 if (mn.state === 'showing') return { ok: true, text: line };
-                return { ok: false, text: mn.state === 'idle' ? 'No Waze map now' : mn.state === 'frozen' ? 'Waze map froze' : 'Waze map not running' };
+                return { ok: false, text: mn.state === 'idle' ? 'No Waze map now' : mn.state === 'frozen' ? 'Waze map froze' : mn.state === 'off' ? (wctl.view().can ? 'Switching it on' : 'Waze map off on the cluster') : 'Waze map not running' };
             }
-            if (mn.state === 'showing') return { ok: false, text: "Waze's map covers it" };
+            // 0.17.0: Stock switches Waze's map off (waze_ctl.js); only a Waze on cluster that cannot be switched covers it
+            if (mn.state === 'showing' && !wctl.view().can) return { ok: false, text: "Waze's map covers it" };
             return { ok: true, text: line };
         }
         // 0.13.9: the confirmed centre and Waze's map state in the log (and the ring) whenever they change
@@ -1576,16 +1609,20 @@ mgu.run({
                 r.sub = "G's Dash is off on the cluster and HUD: the car shows its own (G's Music stays out too)";
                 if (c.key === 'waze') { r.tone = 'wait'; notes.push([wazeOff, 'warn']); }
             } else if (src === 'stock') {
-                r.sub = "Stock: none of G's apps draw there. The car shows what iDrive > Instrument cluster > Central display area is set to (Off leaves it empty).";
-                if (c.key === 'waze') { r.tone = 'wait'; notes.push([wazeOff, 'warn']); }
+                const wv = wctl.view();
+                r.sub = "Stock: none of G's apps draw there, and Waze's map is switched off. The car shows what iDrive > Instrument cluster > Central display area is set to (Off leaves it empty).";
+                if (c.key === 'waze') {
+                    r.tone = 'wait';
+                    notes.push(wv.can ? [wv.text || "Switching Waze's map off", 'dim'] : [wv.text + '. ' + wazeOff, 'warn']);
+                }
             } else if (src === 'map') {
                 const why = wazeWhy(mv, mn);
-                r.sub = "Map: Waze's map whenever CarPlay sends it; G's Dash and G's Music stay out.";
+                r.sub = "Waze: Waze's map whenever CarPlay sends it (switched on); G's Dash and G's Music stay out.";
                 if (why && c.key !== 'directions') { r.tone = 'wait'; notes.push([why + ". Until then the car's own display shows.", 'warn']); }
             } else {
-                r.sub = src === 'auto' ? "Auto: G's Music while a track plays, else the logo while G's Dash is open"
-                    : src === 'logo' ? "Logo: stays on the logo, also in the background. G's Music stays out."
-                        : 'Music: lyrics / visualizer while a track plays, else the logo';
+                r.sub = src === 'auto' ? "Auto: directions during a route, G's TV when you play it there, G's Music while a track plays, else the logo while G's Dash is open"
+                    : src === 'logo' ? 'Logo: always the logo, also in the background and during route guidance.'
+                        : 'Music: lyrics / visualizer while a track plays, else the logo, also during route guidance.';
                 if (c.key === 'directions') r.sub += '. Back to ' + name + ' when the route ends.';
                 else if (c.key === 'tv') r.sub = "G's TV is on. Back to " + name + ' when it stops.';
                 else if (c.key === 'waiting') r.tone = 'wait';
@@ -1593,8 +1630,7 @@ mgu.run({
                     r.tone = lv.kind === 'error' || lv.kind === 'none' ? 'off' : 'wait';
                     notes.push(['Logo: ' + lv.text + (src === 'auto' && !logoOn() ? ' ("Logo in cluster" is Off in the settings list)' : ''), lv.kind === 'error' || lv.kind === 'none' ? 'warn' : 'dim']);
                 }
-                if (src === 'music' && ms.cluster === 'off') notes.push(["G's Music's own Cluster setting is Off: it stays out (turn it on in G's Music)", 'warn']);
-                else if (src === 'music' && ms.error) notes.push(["G's Music not seen yet: open it once", 'dim']);
+                if (src === 'music' && ms.error) notes.push(["G's Music not seen yet: open it once", 'dim']);
                 if (src === 'logo' || src === 'music') notes.push(['Also in the background while G\'s Dash runs (gone if the head unit ends it)', 'dim']);
             }
             if (srcPub.error) notes.push(["Pick not shared (" + srcPub.text + "): G's Music and G's TV keep their last", 'warn']);
@@ -1669,8 +1705,8 @@ mgu.run({
             cv.strokeRoundRect(x0, sy, LW, sh, u.radius, 1, L.withAlpha('#ffffff', 0.12));
             cv.circle(x0 + 26, sy + 27, 8, tone);
             lbl(fitText(cv, u.upper ? nc.title.toUpperCase() : nc.title, 24, LW - 70, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0 }), x0 + 46, sy + 36, 24, t.text);   // measured as drawn (0.13.9)
-            const RULES = ['Your pick stays put. Route guidance always shows directions, then back to your pick.',
-                "G's TV only after its own Cluster button (parked). Shared with G's Music and G's TV."];
+            const RULES = ['Logo, Music, Waze and Stock always show that pick, also during route guidance.',
+                "Auto decides: directions, G's TV, G's Music or the logo. Shared with G's Music and G's TV."];
             // 0.13.9: the rules at the foot only when the card has room for them below a line of its own
             const rulesFit = sh >= 64 + 26 + RULES.length * 24 + 6;
             const ruleY = rulesFit ? sy + sh - 18 - (RULES.length - 1) * 24 : sy + sh + 30;
@@ -1712,22 +1748,28 @@ mgu.run({
             }
             // your look on the car's displays: one of three
             const rx = x0 + LW + 32, rw = S.x + S.w - rx, dcur = displays();
-            lbl('Your look on the car\'s displays', rx, S.y + 20, 18, t.dim);
-            const oh = 76, og = 10;
+            lbl('Dials & HUD', rx, S.y + 20, 18, t.dim);
+            const oh = 68, og = 8;                              // 0.17.0: four picks (G's Music's lyrics on the HUD)
             PREFS.DISPLAYS.forEach((o, i) => {
                 const oy = top + i * (oh + og), on = ctlOn && dcur === o[0];     // G's Dash off: no pick lit (kept for On)
                 if (on) { cv.roundRect(rx, oy, rw, oh, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(rx, oy, rw, oh, u.radius, 2.5, acc); }
                 else card(cv, t, rx, oy, rw, oh, isDown('disp:' + o[0]));
                 cv.arc(rx + 30, oy + oh / 2, 11, 13, 0, 360, on ? acc : t.dim);
                 if (on) cv.circle(rx + 30, oy + oh / 2, 6, acc);
-                cv.text(fitText(cv, valueText(u, o[1]), u.size + 2, rw - 70, tf), rx + 58, oy + 34, u.size + 2, on ? t.text : t.dim, tf);
-                cv.text(fitText(cv, ctlOn ? o[2] : "Off: G's Dash is off", 16, rw - 70), rx + 58, oy + 60, 16, ctlOn ? t.dim : '#ffb020', { literal: true });
+                cv.text(fitText(cv, valueText(u, o[1]), u.size + 2, rw - 70, tf), rx + 58, oy + 30, u.size + 2, on ? t.text : t.dim, tf);
+                cv.text(fitText(cv, ctlOn ? o[2] : "Off: G's Dash is off", 16, rw - 70), rx + 58, oy + 54, 16, ctlOn ? t.dim : '#ffb020', { literal: true });
                 if (!on && ctlOn) cv.target(rx, oy, rw, oh, () => { gDown = Date.now(); downKey = 'disp:' + o[0]; settings.set('displays', o[0]); log.info('displays: ' + o[0]); }, 'disp:' + o[0], u.radius);
             });
-            const st = !ctlOn ? { kind: 'off', text: "The car's own dials and HUD" } : fcTest && dcur !== 'none' ? { kind: 'pending', text: 'Paused (full-screen cluster test)' } : dcur === 'skin' ? cskin.view() : dcur === 'hud' ? hud.view() : null, dy = top + 3 * (oh + og) + 18;
+            const ms = musicState();
+            const st = !ctlOn ? { kind: 'off', text: "The car's own dials and HUD" } : fcTest && (dcur === 'skin' || dcur === 'hud') ? { kind: 'pending', text: 'Paused (full-screen cluster test)' }
+                : dcur === 'skin' ? cskin.view() : dcur === 'hud' ? hud.view()
+                    : dcur === 'music' ? (ms.error ? { kind: 'wait', text: "Open G's Music once" } : { kind: 'info', text: "G's Music: lyrics on the HUD while a track plays" }) : null;
+            const dy = top + PREFS.DISPLAYS.length * (oh + og) + 18;
             if (st) { cv.circle(rx + 7, dy - 6, 6, logoTone(t, st.kind) || t.dim); cv.text(fitText(cv, st.text, 17, rw - 22), rx + 22, dy, 17, t.text, { literal: true }); }
             else cv.text(fitText(cv, "Nothing of ours on the dials or HUD", 17, rw), rx, dy, 17, t.dim, { literal: true });
-            cv.text(fitText(cv, 'One at a time: they share one display layer.', 15, rw), rx, dy + 26, 15, t.dim, { literal: true });
+            // 0.17.0: one owner at a time; Waze's HUD map is switched off while one of ours owns them (waze_ctl.js)
+            const wazeNote = CSRC.wazeHud(dcur) === 0 && ctlOn && wctl.state === 'ok' ? " Waze's HUD map stays off meanwhile." : '';
+            cv.text(fitText(cv, 'One owner at a time: they share one display.' + wazeNote, 15, rw), rx, dy + 26, 15, t.dim, { literal: true });
             linkMini(cv, S, lk, rx, bottom - 64, rw, 64, 'cs:diag', 'Diagnostics', () => { DIAG.reset(); press(3, 'cs:diag'); });
             if (!ask) return;
             // the confirmation, over the page: only its two buttons take taps

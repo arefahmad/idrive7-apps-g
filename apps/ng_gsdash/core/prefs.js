@@ -15,10 +15,13 @@
  */
 
 /* ---------- your look on the car's displays ---------- */
+// 0.17.0: who owns the dials & HUD (they share one scene: one at a time), shared with G's Music and G's TV
+// (cluster_source.js): G's Music's lyrics on the HUD are one of the picks, no longer a race between the apps
 const DISPLAYS = [
     ['skin', 'Cluster dials', 'Your look on the cluster dials'],
-    ['hud', 'HUD', 'Experimental: big gear, tach and shift lights'],
-    ['none', 'Neither', "The car's own dials and HUD"],
+    ['hud', "G's Dash HUD", 'Experimental: big gear, tach and shift lights'],
+    ['music', "G's Music lyrics", 'Lyrics on the HUD while a track plays'],
+    ['none', "Car's own", "The car's own dials and HUD (G's TV may use the HUD)"],
 ];
 const DISPLAY_IDS = DISPLAYS.map((d) => d[0]);
 // 0.13.3: a fresh install starts with Neither (the car's own dials and HUD); a saved pick is kept

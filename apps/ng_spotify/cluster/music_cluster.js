@@ -33,9 +33,12 @@
  * next line rises into the playing line's place growing and lighting up, the old line rises and fades out, and
  * the new next line fades in below. Only then is the text image redrawn faster (ANIM_FPS, its changed bands
  * only, as always); not while paused, nor while the renderer's upload cap is cut (the line just changes).
- * z 60/61: over Waze's map (z 0) and G's Dash's logo (z 50), under G's TV (z 100). Like the logo,
- * the layers hide while G's TV draws on the map and while route guidance runs (debounced
- * GUIDE_ON_MS / GUIDE_OFF_MS), and come back HOLD_MS after G's TV stops.
+ * z 60/61: over Waze's map (z 0) and G's Dash's logo (z 50), under G's TV (z 100, exclusive: ours suspended
+ * while it draws, back in the same flush when it goes; 0.9.0, never hidden for it in the map area). 0.9.0, the
+ * picks (G's Dash's cluster_source.js): route guidance hides the map layers only in Auto (s.guideHides); with
+ * Music picked they draw whatever G's Music's own Cluster setting says (main.js). The HUD's owner is G's Dash's
+ * dials & HUD pick (s.pickNote: who has it instead); with no pick known, G's Music's own HUD setting, hidden
+ * while route guidance runs and while G's TV draws on the HUD, as in 0.8.
  * Both go (dropped, the connection closed) when: the setting is Off, G's Dash's Cluster source pick is
  * not Auto or Music (0.6.1, s.source), no track, paused for more than
  * PAUSE_DROP_MS, the app closes, or the renderer keeps failing them (ERR_RETRIES).
@@ -412,7 +415,7 @@ class MusicCluster {
         this.err = null; this.errAt = -1e15;
         this.guide = { nav: null, carplay: null, aa: null };
         this.rawGuide = false; this.rawSince = this.now(); this.guiding = false;
-        this.s = null; this.want = false; this.reason = 'off'; this.source = 'auto';
+        this.s = null; this.want = false; this.reason = 'off'; this.source = 'auto'; this.guideHides = true; this.pickNote = '';
         this.pausedAt = 0; this.gaveUp = '';
         this.stats = { layers: 0, sends: 0, bytes: 0, textBytes: 0, barsBytes: 0, drops: 0, connects: 0 };
         this.clk = VIZ.clock();                      // the visualizer's clock (viz.js), as main.js's
@@ -456,7 +459,12 @@ class MusicCluster {
         // the Cluster source pick (0.6.1, G's Dash's cluster_source.js): only Auto and Music let it draw
         const source = typeof this.s.source === 'string' ? this.s.source : 'auto';
         this.source = source;
-        if (setting === 'off') why = 'off';
+        // 0.9.0: route guidance hides the layers only when the pick says so (G's Dash's Auto, or no pick for the HUD)
+        this.guideHides = this.s.guideHides !== false;
+        // 0.9.0: the HUD's owner is G's Dash's dials & HUD pick: pickNote says who has it when it is not G's Music
+        this.pickNote = typeof this.s.pickNote === 'string' ? this.s.pickNote : '';
+        if (this.pickNote) why = 'source';
+        else if (setting === 'off') why = 'off';
         else if (!this.hud && source !== 'auto' && source !== 'music') why = 'source';
         else if (!this.s.ok) why = 'nospotify';
         else if (!t || !t.title || t.ad) why = 'notrack';
@@ -464,7 +472,7 @@ class MusicCluster {
         else if (!this.s.playing && now - this.pausedAt > PAUSE_DROP_MS) why = 'paused';
         else if (this.gaveUp && this.gaveUp === t.uri) why = 'failed';
         if (this.gaveUp && t && this.gaveUp !== t.uri) this.gaveUp = '';
-        if (why !== this.reason && why) this.log.info(this.tag + ': ' + ({ off: 'off', nospotify: 'no Spotify', notrack: 'no track', paused: 'paused ' + (PAUSE_DROP_MS / 1000) + ' s - dropped', failed: 'given up for this track', nolyrics: 'no synced lyrics', source: 'G\'s Dash picked ' + source + ' - dropped' })[why]);
+        if (why !== this.reason && why) this.log.info(this.tag + ': ' + ({ off: 'off', nospotify: 'no Spotify', notrack: 'no track', paused: 'paused ' + (PAUSE_DROP_MS / 1000) + ' s - dropped', failed: 'given up for this track', nolyrics: 'no synced lyrics', source: (this.pickNote || 'G\'s Dash picked ' + source) + ' - dropped' })[why]);
         this.reason = why;
         if (why) { if (this.cr) this._off(); this.want = false; return; }
         this.want = true;
@@ -601,8 +609,12 @@ class MusicCluster {
     _apply() {
         if (!this.want || !this.cr || !this.ready || !this.polled) return;
         const now = this.now();
-        const guiding = this._guideTick(now);
-        const vis = !guiding && !this.others.length && now - this.tvAt >= HOLD_MS;
+        const guiding = this._guideTick(now) && this.guideHides;
+        // 0.9.0, the map area: never hidden for G's TV - its layer is exclusive (ours suspended under it, back in the
+        // flush it goes, the slot never let go). 0.8 hid them and showed them HOLD_MS after G's TV stopped, the slot
+        // going to the stock map meanwhile. The HUD still steps aside for G's TV's HUD picture (not exclusive there).
+        const tv = this.hud && (this.others.length > 0 || now - this.tvAt < HOLD_MS);
+        const vis = !guiding && !tv;
         const mode = this._mode();
         if (mode !== this.mode && this.mode) this.log.info(this.tag + ': ' + ({ lyrics: 'synced lyrics', viz: 'visualizer', blank: 'waiting for lyrics' })[mode]);
         this.mode = mode;
@@ -729,24 +741,27 @@ class MusicCluster {
     /** The settings page's line: { kind: 'on' | 'wait' | 'off' | 'none' | 'error', text }. */
     view() {
         const r = this.reason;
-        const PICK = { auto: 'Auto', logo: 'Logo', music: 'Music', map: 'Map', stock: 'Stock' };
+        const PICK = { auto: 'Auto', logo: 'Logo', music: 'Music', map: 'Waze', stock: 'Stock' };
         if (r === 'off') return { kind: 'off', text: !this.hud && this.source === 'music' ? 'Off - G\'s Dash picked Music: turn on here' : 'Off' };
-        if (r === 'source') return { kind: 'off', text: 'Set in G\'s Dash: ' + (PICK[this.source] || this.source) };
+        if (r === 'source') return { kind: 'off', text: this.pickNote || 'Set in G\'s Dash: ' + (PICK[this.source] || this.source) };
         if (this.err) return { kind: 'none', text: ({ missing: 'Needs Cluster renderer (Store)', noclient: 'Update Cluster renderer', untrusted: 'Renderer not trusted', load: 'Renderer failed to load' })[this.err.error] || this.err.text };
         if (r === 'nospotify' || r === 'notrack') return { kind: 'wait', text: 'Shows while a track plays' };
         if (r === 'nolyrics') return { kind: 'wait', text: 'No synced lyrics for this track' };
         if (r === 'paused') return { kind: 'wait', text: 'Paused - comes back on Play' };
         if (r === 'failed') return { kind: 'error', text: 'Renderer refused - next track' };
         if (!this.cr || !this.ready || !this.polled) return { kind: 'wait', text: 'Connecting to renderer' };
-        if (this.guiding) return { kind: 'wait', text: 'Hidden - route guidance' };
-        if (this.others.length || this.now() - this.tvAt < HOLD_MS) return { kind: 'wait', text: 'Hidden - G\'s TV in the ' + (this.hud ? 'HUD' : 'cluster') };
+        if (this.guideHides && this.guiding) return { kind: 'wait', text: 'Hidden - route guidance (Auto)' };
+        if (this.hud && (this.others.length || this.now() - this.tvAt < HOLD_MS)) return { kind: 'wait', text: 'Hidden - G\'s TV in the HUD' };
+        if (!this.hud && this.others.length) return { kind: 'wait', text: 'Under G\'s TV - back when it stops' };
         if (this.hud) {
             // 0.8.0: as G's Dash's HUD line - the target's own state first
             if (!this.text) return { kind: 'wait', text: 'Waiting for lyrics' };
             if (this.text.state === 'shown' || this.tState === 'shown' || this.tState === 'lingering') return { kind: 'on', text: 'Showing lyrics' };
             if (this.tState === 'unavailable') return { kind: 'none', text: 'HUD unavailable' };
             if (/scene id/.test(this.tReason)) return { kind: 'wait', text: 'Waiting - cluster panel in use' };
-            if (this.tState === 'parked' || this.tState === 'waiting') return { kind: 'wait', text: this.tHolder === 'foreign' ? 'Waiting - HUD in use' : 'Needs HUD takeover (renderer)' };
+            // 0.9.0: the car's own content in front: the renderer asks again once it goes (its hud_take_over_stock 1, which
+            // 0.8 pointed to, leaves the HUD out altogether since cluster-render 0.4.0)
+            if (this.tState === 'parked' || this.tState === 'waiting') return { kind: 'wait', text: this.tHolder === 'foreign' ? 'Waiting - HUD in use' : "Waiting - the car's own content is on the HUD" };
             return { kind: 'wait', text: 'Asking for the HUD' };
         }
         return { kind: 'on', text: this.mode === 'lyrics' ? 'Showing lyrics' : 'Showing the visualizer' };

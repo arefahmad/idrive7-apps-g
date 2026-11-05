@@ -245,6 +245,9 @@ class ClusterMap {
         if (!r) return { state: 'down', reason: '' };
         if (f.renderAge > STALE_MS) return { state: 'down', reason: 'status ' + Math.round(f.renderAge / 1000) + ' s old' };
         const st = str(r.state, 20), why = str(r.reason, 100);
+        // G's Dash 0.17.0: the map switched off on the cluster (Waze on cluster 0.9.0's "cluster" 0: Stock picked,
+        // or its own Show on HUD), whatever the stream does
+        if (r.cluster === 0 || r.cluster === '0') return { state: 'off', reason: 'switched off on the cluster' };
         if (['showing', 'idle', 'starting', 'frozen', 'error'].indexOf(st) >= 0) return { state: st, reason: why };
         return { state: 'unknown', reason: st };
     }
