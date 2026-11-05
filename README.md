@@ -71,19 +71,6 @@ The picture shows only in P, at a standstill. Video only, no sound yet.
 
 Updates appear in the Store as well. To remove an app, uninstall it in the Store.
 
-## What's new
-
-Each release is a commit titled with the app and its version (e.g. "G's Dash 0.14.2: …"); see the
-[commit history](https://github.com/nickgcode/idrive7-apps/commits/main).
-
-## Repository layout
-
-- `apps/<id>/`: one folder per app (`app.json` with its screens, settings and signals, plus its code
-  and assets).
-- `kit/`: the shared runtime and the build tools (`kit/tools/build.py`).
-- `mgu-repo.json`: tells the Store where the apps are and how to build them.
-- `docs/`: guides and screenshots.
-
 Nothing here contains BMW's SDK. The Store supplies it when it builds an app on the head unit; a
 local build needs it in `oap-sdk/` (git-ignored). Never publish `dist/`, since builds contain the SDK.
 
