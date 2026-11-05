@@ -126,7 +126,7 @@ const { Net } = require('./tv_net');
 const qrcodegen = require('./qrcodegen');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
-    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space')];
+    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura')];
 // M Style is the default look, and where any other id lands (0.9.0: Simple, Heritage and Flight went)
 const DEFAULT_LOOK = 'm';
 const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id === DEFAULT_LOOK);
@@ -946,8 +946,9 @@ mgu.run({
         function themePage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, cur = lk.id;
             header(cv, S, lk, lbl, card, 'Theme', 1);
-            const x0 = S.x, top = S.y + 34, cols = LOOKS.length > 6 ? 4 : 3, g = 14;     // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0)
-            const TILE_W = cols > 3 ? 170 : 208;
+            // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0); nine or ten: 5 x 2 in the same width (0.19.0)
+            const x0 = S.x, top = S.y + 34, cols = LOOKS.length > 8 ? 5 : LOOKS.length > 6 ? 4 : 3, g = 14;
+            const TILE_W = cols > 4 ? Math.floor((4 * 170 + 3 * g - (cols - 1) * g) / cols) : cols > 3 ? 170 : 208;
             const fl = favs(), ids = LOOKS.map((l) => l.id);
             lbl('Look', x0, S.y + 20, 18, t.dim);
             LOOKS.forEach((l, i) => {
@@ -1024,9 +1025,10 @@ mgu.run({
                 const nm = nu.upper ? l.name.toUpperCase() : l.name, nsz = nu.nameSize || 26, nf = { font: nu.nameFont || nu.txt, spacing: nu.upper ? nu.spacing : 0, literal: true };
                 // the name: at the left, or centred (ui.nameAlign 'center', 0.9.0) on the looks whose swatch is
                 // centred (GT, Sim Racing, Lumen); the chosen card's tick (bottom right) still clears it
-                const mid = nu.nameAlign === 'center', room = mid ? cw - 2 * 48 : cw - 70;
-                const nw = r.textWidth(nm, nsz, nf), fs = nw > room ? Math.max(16, Math.floor(nsz * room / nw)) : nsz;
-                r.text(nm, mid ? cw / 2 : 16, ch - 22, fs, lt.text, mid ? Object.assign({ align: 'center' }, nf) : nf);
+                // narrow cards (five a row, 0.19.0): less room kept for the chosen card's tick, smaller type allowed
+                const narrow = cw < 150, mid = nu.nameAlign === 'center', room = mid ? cw - 2 * (narrow ? 26 : 48) : cw - (narrow ? 52 : 70);
+                const nw = r.textWidth(nm, nsz, nf), fs = nw > room ? Math.max(narrow ? 12 : 16, Math.floor(nsz * room / nw)) : nsz;
+                r.text(nm, mid ? cw / 2 : narrow ? 12 : 16, ch - 22, fs, lt.text, mid ? Object.assign({ align: 'center' }, nf) : nf);
                 const W = Math.min(1024, Math.round(cw * sc)), H = Math.min(1024, Math.round(ch * sc));
                 const c = new Canvas(W, H);
                 record.play(r.words(), c, W / cw);
