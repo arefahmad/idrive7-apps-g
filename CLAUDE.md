@@ -13,6 +13,11 @@
 - **Delete the auto-generated branch name.** `git branch -m` already removes it locally; if you rename before your first push it never reaches GitHub, so there is nothing more to do. If it was already pushed, first make sure everything on it is on the renamed branch and it has no open PR, then delete it with `git push origin --delete <generated-name>`. Cloud sessions can't delete remote branches (the push is refused); if that happens, tell the user the branch name so they can delete it on GitHub.
 - Once changes are complete and tested, open a Pull Request (PR) against `main`. Do not attempt to bypass PR reviews or push straight to protected branches.
 
+## App Versions
+- **Bump an app's `app.json` `"version"` whenever a change alters what that app installs.** That means anything in `apps/<id>/` (its `app.json` included), a file another app shares into it (its `app.json` `"share"` list), or `kit/` (the runtime and build tools go into every app). Otherwise the Store sees new files under the old version and offers the update labelled with a commit hash instead of a version.
+- A change to `kit/` needs a bump for every app, even one whose own code didn't change. Title the commit with each app and its new version (e.g. "G's Dash 0.13.8, G's Music 0.7.8, G's TV 0.4.12: ...").
+- `README.md`, `CLAUDE.md` and `docs/` are not installed, so they need no bump.
+
 ## README and App Descriptions
 - **Only change `README.md` or an app's `app.json` `"description"` when the change affects what a user sees or needs:** a feature added or removed, a new requirement or add-on tool, changed install steps, or a caution (experimental, parked only, off by default). Bug fixes, internal changes and small tweaks need neither.
 - **Describe what the app does now, not its history.** No per-version notes (e.g. "0.14.3: ...") in either file. Release notes go in the commit message, titled with the app and version (e.g. "G's Dash 0.14.3: ...").
