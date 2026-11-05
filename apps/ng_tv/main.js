@@ -88,6 +88,7 @@ const CSRC = require('./cluster_source');
 const Src = require('./tv_sources');
 const { Handoff } = require('./tv_handoff');
 const qrcodegen = require('./qrcodegen');
+const AP = require('./kit/audio_probe');
 
 const NAME = "G's TV";
 let VERSION = '';
@@ -748,6 +749,33 @@ mgu.run({
             label('MORE_INFO', statusLine() + ' | video only, no sound yet' + (ol ? ' | ' + ol : ''));
         }
         labels();
+
+        /*
+         * More > Audio check: what the unit offers an app for sound, so G's TV can find the car's own way to play
+         * it (kit/runtime/audio_probe.js, read-only). app.json asks for BMW's media-player interface, every
+         * instance, so the install shows what an app is given; this reads what it got, what BMW's app manager and
+         * mediaapp say, and whether the generic app player (OapGenericMedia) answers. No method is called: nothing
+         * that plays is touched. Once a run, when More first opens; the report goes to <data>/audio.txt and the log.
+         */
+        let audioDone = false;
+        const audioCheck = () => {
+            if (audioDone) return;
+            audioDone = true;
+            label('AUDIO_INFO', 'Audio check: reading...');
+            const r = { configs: AP.configs(), own: AP.own() };
+            AP.reach('OapGenericMedia', 6000).then((reach) => {
+                r.reach = reach;
+                const txt = AP.text(r), mp = r.own.mediaPlayer, gen = (r.configs.mediaPlayer || []).filter((e) => /OapGeneric/.test(JSON.stringify(e[1]))).length;
+                const sum = 'Audio check: media player ' + (mp ? 'granted (instances ' + JSON.stringify(mp.instances).slice(0, 120) + ')' : 'not granted (' + r.own.mediaPlayerFile + ')') +
+                    '; OapGenericMedia ' + (reach.ok ? (reach.available ? 'answers' : 'does not answer') : 'unreachable: ' + reach.error) +
+                    '; app manager names ' + gen + ' generic player(s); ' + (r.configs.sources || []).length + ' Media sources';
+                try { require('fs').writeFileSync(require('path').join(ctx.dataDir, 'audio.txt'), sum + '\n' + txt); } catch (e) { log.warn('audio check: not saved (' + e.message + ')'); }
+                log.info(sum);
+                // one plain-ASCII line for the HMI's label (line breaks and other characters would take its string-bundle path)
+                label('AUDIO_INFO', (sum + ' | ' + txt.replace(/\n+/g, ' | ')).replace(/[^\x20-\x7e]/g, '?').slice(0, 1800));
+            }, (e) => { log.warn('audio check: ' + e); label('AUDIO_INFO', 'Audio check failed: ' + (e && e.message || e)); });
+        };
+        ui.onVisible((name, on) => { if (name === 'MORE' && on) audioCheck(); });
 
         /* ----- the screen ----- */
         FS.setup(ctx);

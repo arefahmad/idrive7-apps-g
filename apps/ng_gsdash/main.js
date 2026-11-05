@@ -119,6 +119,7 @@ const UNITS = require('./units');
 const TINTS = require('./tints');
 const ANIM = require('./kit/anim');
 const HMIW = require('./kit/hmi_widgets');
+const AP = require('./kit/audio_probe');
 const { AnimatedWidget } = require('./kit/widget_anim');
 const { GifDrop } = require('./kit/gif_drop');
 const { Net } = require('./tv_net');
@@ -1090,7 +1091,21 @@ mgu.run({
             const d = new Date(at), n = new Date(), hm = clock.fmt ? clock.fmt(d) : (d.getHours() % 12 || 12) + ':' + ('0' + d.getMinutes()).slice(-2) + (d.getHours() < 12 ? ' AM' : ' PM');
             return d.toDateString() === n.toDateString() ? hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
         };
-        let diagView = 'cluster';           // Diagnostics: 'cluster', 'car' or 'widgets'
+        let diagView = 'cluster';           // Diagnostics: 'cluster', 'car', 'widgets' or 'audio'
+        /*
+         * Diagnostics > Audio (0.16.2): what the unit offers an app for sound (kit/runtime/audio_probe.js, read-only:
+         * files only), for G's TV's sound: the generic media players BMW's app manager names for apps, the
+         * MediaPlayer / CommandControl interfaces, the interface catalog's MediaPlayer entry and the Media menu's
+         * sources. G's TV's More page has the other half (what its install was granted, whether the player answers).
+         * On a tap; the report goes to <data>/audio.txt.
+         */
+        let au = null;
+        const auRun = () => {
+            const c = AP.configs();
+            au = { c, at: Date.now() };
+            try { fs.writeFileSync(path.join(ctx.dataDir, 'audio.txt'), AP.text({ configs: c })); } catch (e) { log.warn('audio: report not saved (' + e.message + ')'); }
+            log.info('audio: ' + Object.keys(c.files).map((k) => k + ' ' + c.files[k]).join(', ') + '; media players: ' + (c.mediaPlayer || []).map((e) => e[0] + '=' + JSON.stringify(e[1]).slice(0, 60)).join(', ') + '; ' + (c.sources || []).length + ' sources');
+        };
         /*
          * Diagnostics > Widgets (0.16.1): how the HMI builds its home-screen widget layouts, read from the unit
          * (kit/runtime/hmi_widgets.js, read-only). Only on a tap: it reads HmiMain3D (in pages) and the HMI's *.pbw
@@ -1123,19 +1138,55 @@ mgu.run({
             header(cv, S, lk, lbl, cardOf(lk), 'Diagnostics', 1);
             // the view switch, in the header row after the title
             const sx0 = S.x + 210 + 32 + cv.textWidth(u.upper ? 'DIAGNOSTICS' : 'Diagnostics', 30, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0, literal: true }) + 40;
-            [['cluster', 'Cluster'], ['car', 'Car data'], ['widgets', 'Widgets']].forEach((v, i) => {
-                const bw = 180, bx = sx0 + i * (bw + 8), on = diagView === v[0];
+            [['cluster', 'Cluster'], ['car', 'Car data'], ['widgets', 'Widgets'], ['audio', 'Audio']].forEach((v, i) => {
+                const bw = 146, bx = sx0 + i * (bw + 8), on = diagView === v[0];
                 if (on) { cv.roundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, 2, acc); }
                 else cv.roundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, L.withAlpha('#ffffff', 0.06));
                 lbl(v[1], bx + bw / 2, HEAD_Y + HEAD_H / 2 + 8, u.size, on ? t.text : t.dim, { align: 'center' });
                 if (!on) cv.target(bx, HEAD_Y, bw, HEAD_H, () => { diagView = v[0]; }, 'dv:' + v[0], u.radius);
             });
-            if (diagView === 'car') carDiag(cv, S, lk); else if (diagView === 'widgets') widgetsDiag(cv, S, lk); else clusterDiag(cv, S, lk);
+            if (diagView === 'car') carDiag(cv, S, lk); else if (diagView === 'widgets') widgetsDiag(cv, S, lk); else if (diagView === 'audio') audioDiag(cv, S, lk); else clusterDiag(cv, S, lk);
         }
         /**
          * Diagnostics > Widgets: left, what this reads and the Read button; right, the widget layouts that show a
          * picture: plain first (green: the picture without the dark edge), then masked (amber), the cell to write.
          */
+        /**
+         * Diagnostics > Audio: left, BMW's app manager's media players for apps and the interfaces (the Read button
+         * below); right, the Media menu's sources as mediaapp defines them.
+         */
+        function audioDiag(cv, S, lk) {
+            const t = S.t, u = lk.ui, top = S.y, LH = 25, lw = Math.round(S.w * 0.5), rx = S.x + lw + 16, rw = S.x + S.w - rx, c = au && au.c;
+            const put = (x, y, w, s2, col, size) => cv.text(fitText(cv, s2, size || 18, w), x, y, size || 18, col || t.text, { literal: true });
+            diagBox(cv, S.x, top, lw, S.h);
+            let y = top + 32;
+            cv.text('Sound for apps', S.x + 16, y, 21, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 30;
+            const bh = 60, by = top + S.h - bh - 14, room = (yy) => yy < by - 10;
+            if (!c) ['What BMW\'s app manager offers apps for sound, its', 'media-player interface, and the Media menu\'s sources.',
+                'Read-only. G\'s TV > More shows what it was granted.'].forEach((l2) => { put(S.x + 16, y, lw - 32, l2, t.dim, 17); y += LH; });
+            else {
+                const bad = Object.keys(c.files).filter((k) => c.files[k] !== 'ok');
+                if (bad.length) { put(S.x + 16, y, lw - 32, 'Not readable: ' + bad.map((k) => k + ' (' + c.files[k] + ')').join(', '), '#ffb020', 16); y += LH; }
+                put(S.x + 16, y, lw - 32, 'App manager media players:', t.dim, 17); y += LH;
+                (c.mediaPlayer || []).forEach((e) => { if (room(y)) { put(S.x + 28, y, lw - 44, e[0] + ' = ' + (typeof e[1] === 'string' ? e[1] : JSON.stringify(e[1])), /OapGeneric/.test(JSON.stringify(e[1])) ? HUB.GREEN : t.text, 17); y += LH; } });
+                if (!(c.mediaPlayer || []).length && room(y)) { put(S.x + 28, y, lw - 44, 'none found', t.dim, 17); y += LH; }
+                const d = c.mediaPlayerDef;
+                if (d && room(y)) { put(S.x + 16, y, lw - 32, 'MediaPlayer: ' + d.methods.length + ' methods, instances ' + JSON.stringify(d.instances), t.text, 16); y += LH; }
+                if (c.commandControlDef && room(y)) { put(S.x + 16, y, lw - 32, 'CommandControl: ' + c.commandControlDef.methods.join(', '), t.text, 16); y += LH; }
+                if (c.catalogMediaPlayer !== undefined && room(y)) { put(S.x + 16, y, lw - 32, 'Catalog: "OapGeneric" ' + (c.catalogHasOapGeneric ? 'present' : 'absent') + '; MediaPlayer ' + String(c.catalogMediaPlayer).slice(0, 120), t.dim, 16); y += LH; }
+            }
+            cardOf(lk)(cv, t, S.x + 16, by, lw - 32, bh, isDown('au:run'));
+            lblOf(cv, u)(c ? 'Read again' : 'Read the audio setup', S.x + lw / 2, by + bh / 2 + 8, 22, t.text, { align: 'center' });
+            cv.target(S.x + 16, by, lw - 32, bh, () => { gDown = Date.now(); downKey = 'au:run'; auRun(); }, 'au:run', u.radius);
+            diagBox(cv, rx, top, rw, S.h);
+            y = top + 32;
+            cv.text('Media menu sources', rx + 16, y, 21, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 30;
+            if (!c) { put(rx + 16, y, rw - 32, 'Tap Read the audio setup.', t.dim); return; }
+            const src = c.sources || [], rows = Math.floor((top + S.h - 14 - y) / LH);
+            if (!src.length) { put(rx + 16, y, rw - 32, 'None read (mediaapp config not readable?)', t.dim); return; }
+            src.slice(0, src.length > rows ? rows - 1 : rows).forEach((x) => { put(rx + 16, y, rw - 32, x.name + ': ' + (x.am || x.media || '-'), /StreamingFront|OapGeneric/.test(x.name + x.am) ? HUB.GREEN : t.text, 16); y += LH; });
+            if (src.length > rows) put(rx + 16, y, rw - 32, '+ ' + (src.length - rows + 1) + ' more in audio.txt', t.dim, 16);
+        }
         function widgetsDiag(cv, S, lk) {
             const t = S.t, u = lk.ui, top = S.y, LH = 27, lw = Math.round(S.w * 0.36), rx = S.x + lw + 16, rw = S.x + S.w - rx, r = hw.r;
             const put = (x, y, w, s2, c, size) => cv.text(fitText(cv, s2, size || 19, w), x, y, size || 19, c || t.text, { literal: true });
