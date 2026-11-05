@@ -30,25 +30,12 @@
  * (seek to 0); otherwise the track before.
  */
 const https = require('https');
-const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
 const querystring = require('querystring');
-
-/**
- * Optional ca.pem in the data folder: PEM roots to trust instead of Node's bundled ones (as
- * mgu-updater's ca_file). Only a regular file owned by root and not writable by group or others
- * counts: the app's own uid can write its data folder, so a file it (or anything running as it)
- * put there must not be able to replace the TLS roots. Anything else: null, Node's bundled roots.
- */
-function trustedCa(dir) {
-    const file = path.join(dir, 'ca.pem');
-    try {
-        const st = fs.lstatSync(file);
-        if (!st.isFile() || st.uid !== 0 || (st.mode & 0o022)) return null;
-        return fs.readFileSync(file, 'utf8');
-    } catch (e) { return null; }
-}
+// the uplink lease, its DNS servers and the optional root-owned ca.pem, as G's TV uses them
+const uplink = require('./kit/uplink');
+const trustedCa = uplink.trustedCa;
 
 const ACCOUNTS = 'accounts.spotify.com';
 const API = 'api.spotify.com';
@@ -79,7 +66,7 @@ class Spotify {
         this.dead = null;           // the token endpoint refused this sign-in (SpotifyError)
         this.ca = null;
         this.lastDevice = '';       // the id of the device last seen in /me/player (start() prefers it)
-        this._resolver = null; this._dnsKey = '';
+        this._lookupFor = uplink.resolver();     // the lease's DNS servers (_lookup)
     }
 
     /** (Re)read spotify-auth.json when it changed. Returns true when usable. */
@@ -140,32 +127,10 @@ class Spotify {
     }
 
     /** The uplink lease (mgu-uplink), or null while offline. */
-    lease() {
-        const files = [path.join(this.dataDir, 'uplink.json'), '/run/mgu-uplink/lease.json'];
-        for (let i = 0; i < files.length; i++) {
-            try {
-                const l = JSON.parse(fs.readFileSync(files[i], 'utf8'));
-                if (l && l.ip) return l;
-            } catch (e) { /* next */ }
-        }
-        return null;
-    }
+    lease() { return uplink.lease(this.dataDir); }
 
-    _lookup() {
-        const l = this.lease();
-        const servers = l && Array.isArray(l.dns) ? l.dns.filter((s) => typeof s === 'string' && s) : [];
-        if (!servers.length) return undefined;            // system resolver (e.g. a PC)
-        const key = servers.join(',');
-        if (key !== this._dnsKey) { this._resolver = new dns.Resolver(); this._resolver.setServers(servers); this._dnsKey = key; }
-        const resolver = this._resolver;
-        return (hostname, options, cb) => {
-            if (typeof options === 'function') cb = options;
-            resolver.resolve4(hostname, (err, addrs) => {
-                if (err || !addrs || !addrs.length) { cb(err || new Error('no address for ' + hostname)); return; }
-                cb(null, addrs[0], 4);
-            });
-        };
-    }
+    /** http(s).request's lookup through the lease's DNS servers; undefined: the system resolver (e.g. a PC) */
+    _lookup() { return this._lookupFor(this.lease()); }
 
     /** One HTTPS request: resolves { status, headers, body (Buffer) }. */
     request(method, host, pathname, headers, body) {

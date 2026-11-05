@@ -84,55 +84,22 @@
  * once, no fade) and the connection closed; when the app ends its socket closes and the service
  * removes its layers. Never throws, never blocks. Node 8: no ?., ?? or object spread.
  */
-const fs = require('fs');
-const path = require('path');
 const MEM = require('./cluster_memory');
 const CORE = require('./logo_core');
-
-const CLIENT = process.env.NG_CR_CLIENT || '/var/opt/cluster-render/current/cluster_render_client.js';
-const SOCK = process.env.NG_CR_SOCK || '/dev/shm/cluster-render/render.sock';
-const TESTING = !!(process.env.NG_CR_CLIENT || process.env.NG_CR_SOCK);
+// the tool's client and its status text, read as G's Music and G's TV read them (also exported from here)
+const { loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, FRESH_MS } = require('./kit/cluster_render');
 
 const TARGET = 'map', MAP_W = 1088, MAP_H = 480;      // the only target used
 const LOGO_W = 448, LOGO_H = 240, BADGE_H = 184;     // the regular logo, 1:1
 const CELL = 16;                                     // the pixel emblem's cell on the cluster
 const FPS_STILL = 1, FPS_ANIM = 12;                  // the image's write ceiling (fps: writes a second at most)
-const POLL_MS = 1000, HOLD_MS = 3000, FRESH_MS = 2000, YIELD_MS = 3000, LOAD_RETRY_MS = 30000;
+const POLL_MS = 1000, HOLD_MS = 3000, YIELD_MS = 3000, LOAD_RETRY_MS = 30000;
 const NAV_KLASS = 'content', NAV_Z = 50;             // "not navigating": over Waze's map (z 0), under G's TV (z 100)
 const GUIDE_ON_MS = 1000, GUIDE_OFF_MS = 3000;       // guidance on this long: hidden; off this long: back
 const RECONNECT_MS = 8000, REMAKE_MS = 2000, ERR_RETRY_MS = 5000, ERR_RETRIES = 3;
 const ANIM_MS = 80;                                  // the parked animation's step
 const FX_BAD = /compile|link|shader|effect|unsupported|unknown/i;   // a layer error that rules the look's shader out
 const SHINE_EVERY = 4200, SHINE_MS = 700, INTRO_MS = 1100;
-
-/* ----- the client ----- */
-
-function trusted(file) {
-    try {
-        const real = fs.realpathSync(file);
-        const st = fs.statSync(real), dir = fs.statSync(path.dirname(real));
-        return st.isFile() && st.uid === 0 && !(st.mode & 0o022) && dir.uid === 0 && !(dir.mode & 0o022);
-    } catch (e) { return false; }
-}
-const exists = (p) => { try { fs.statSync(p); return true; } catch (e) { return false; } };
-
-/** The tool's client { ClusterRender, sock }, or { error, text }: missing, noclient, untrusted, load. */
-function loadClient(opts) {
-    const o = opts || {};
-    const file = o.client || CLIENT, sock = o.sock || SOCK, testing = o.testing !== undefined ? o.testing : TESTING;
-    if (!exists(file)) {
-        return exists(sock) ? { error: 'noclient', text: 'Cluster renderer client missing - update the tool' }
-            : { error: 'missing', text: 'Cluster renderer not installed (Store)' };
-    }
-    if (!testing && !trusted(file)) return { error: 'untrusted', text: 'Cluster renderer client not trusted' };
-    try {
-        const m = require(file);
-        if (!m || typeof m.ClusterRender !== 'function') return { error: 'load', text: 'Cluster renderer client not recognised' };
-        return { ClusterRender: m.ClusterRender, sock: o.sock || process.env.NG_CR_SOCK || m.DEFAULT_PATH || SOCK };
-    } catch (e) {
-        return { error: 'load', text: 'Cluster renderer client failed to load', detail: e.message };
-    }
-}
 
 /* ----- the images ----- */
 
@@ -179,74 +146,6 @@ function regularImage(Canvas, badge, badgeWidth) {
 function placement(kind, img) {
     const s = kind === 'pixel' ? CELL : 1, w = img.w * s, h = img.h * s;
     return { x: Math.round((MAP_W - w) / 2), y: Math.round((MAP_H - h) / 2), w, h };
-}
-
-/**
- * The other apps' layers on the map in a status text: [{ id, kind, app, klass, z, state, frames }].
- * frames: the layer's own counter from its stats line (video "N sent", image "N writes"), -1 if none.
- */
-function mapLayers(text, ownApp) {
-    const out = [];
-    let last = null;
-    String(text || '').split('\n').forEach((line) => {
-        if (last && /^\s/.test(line)) {
-            const f = /^\s+(\d+) (sent|writes)\b/.exec(line);
-            if (f) last.frames = +f[1];
-            return;
-        }
-        last = null;
-        const m = /^layer (\d+) (\w+) of (\S+) on (\w+), (\w+) z (-?\d+): (\w+)/.exec(line);
-        if (!m || m[4] !== TARGET || m[3] === ownApp) return;
-        last = { id: +m[1], kind: m[2], app: m[3], klass: m[5], z: +m[6], state: m[7], frames: -1 };
-        out.push(last);
-    });
-    return out;
-}
-
-/** Our own layers on the map in the status text: [{ id, state }]. */
-function ownLayers(text, ownApp) {
-    const out = [];
-    String(text || '').split('\n').forEach((line) => {
-        const m = /^layer (\d+) \w+ of (\S+) on (\w+), \w+ z -?\d+: (\w+)/.exec(line);
-        if (m && m[3] === TARGET && m[2] === ownApp) out.push({ id: +m[1], state: m[4] });
-    });
-    return out;
-}
-
-/**
- * Whether a layer from mapLayers is drawing (see the header): shown (a video one with a frame sent),
- * or waiting / suspended with its frame counter advancing. seen: { key -> { frames, at } } from earlier
- * polls, updated here; now: ms.
- */
-function drawing(l, seen, now) {
-    const key = l.app + '#' + l.id, was = seen[key];
-    let at = was ? was.at : -1e15;
-    if (l.frames > 0 && (!was || l.frames !== was.frames)) at = now;   // first seen with frames, or moved
-    seen[key] = { frames: l.frames, at };
-    if (l.state === 'shown') return !(l.kind === 'video' && l.frames === 0);
-    if (l.state === 'waiting' || l.state === 'suspended') return now - at < FRESH_MS;
-    return false;                                                        // stalled, hidden, error
-}
-
-/**
- * A guidance signal's value -> true (guiding), false, or null (not understood). guidingState: the enum
- * GuidingState (INACTIVE 0, CALCULATING_ROUTE 1, ACTIVE 2), by number or name; projectedGuidanceActive:
- * a Bool. A struct is searched for its first such member.
- */
-function guideValue(src, v) {
-    if (v && typeof v === 'object') {
-        const k = Object.keys(v).find((x) => typeof v[x] === 'number' || typeof v[x] === 'boolean' || typeof v[x] === 'string');
-        return k === undefined ? null : guideValue(src, v[k]);
-    }
-    if (src === 'nav') {
-        if (typeof v === 'number') return v === 2;
-        if (typeof v === 'string') return /^(\d+|[A-Z_]+)$/i.test(v) ? (v === '2' || /^active$/i.test(v)) : null;
-        return null;
-    }
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'number') return v !== 0;
-    if (typeof v === 'string') return /^(true|1)$/i.test(v) ? true : /^(false|0)$/i.test(v) ? false : null;
-    return null;
 }
 
 /** A guidance value as routeLine() says it: nav 'inactive' / 'calculating' / 'active', else 'on' / 'off', '?' */

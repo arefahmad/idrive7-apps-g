@@ -225,11 +225,6 @@ function pauseGlyph(cv, x, y, s, c) {
     cv.roundRect(x + s * 0.12, y, s * 0.28, s, 3, c);
     cv.roundRect(x + s * 0.6, y, s * 0.28, s, 3, c);
 }
-function noteGlyph(cv, cx, cy, s, c) {        // a quaver, for the empty artwork box
-    cv.circle(cx - s * 0.18, cy + s * 0.3, s * 0.16, c);
-    cv.fillRect(cx - s * 0.06, cy - s * 0.42, s * 0.08, s * 0.72, c);
-    cv.quad([[cx - s * 0.06, cy - s * 0.42], [cx + s * 0.3, cy - s * 0.26], [cx + s * 0.3, cy - s * 0.12], [cx - s * 0.06, cy - s * 0.28]], c);
-}
 function heart(cv, cx, cy, s, c) {
     const r = s * 0.27;
     cv.circle(cx - r * 0.95, cy - r * 0.35, r, c);
@@ -266,9 +261,6 @@ function repeatGlyph(cv, cx, cy, s, c) {
     cv.strokeRoundRect(x, y, w, h, h * 0.4, 4, c);
     arrowHead(cv, cx + s * 0.12, y, 1, 0, s * 0.2, c);
     arrowHead(cv, cx - s * 0.12, y + h, -1, 0, s * 0.2, c);
-}
-function moreGlyph(cv, cx, cy, s, c) {
-    [-1, 0, 1].forEach((k) => cv.circle(cx + k * s * 0.32, cy, s * 0.1, c));
 }
 /** Placeholder tile when there is no artwork: the album's (or track's) initials. */
 function initials(s) {
@@ -988,7 +980,7 @@ mgu.run({
             ['clusterSize', 'Cluster & HUD size', (v) => ({ small: 'Small', medium: 'Medium', large: 'Large' })[v] || v],
         ];
         function drawSettings(cv, t, A) {
-            const on = t.accent2 || t.accent, hy = A.y, cyH = hy + HEAD_H / 2;
+            const hy = A.y, cyH = hy + HEAD_H / 2;
             // header row: Back (left), the page's name, version and the G lit (right, also back)
             const bw = 220;
             plate(cv, t, A.x, hy, bw, HEAD_H, false, isDown('back'));

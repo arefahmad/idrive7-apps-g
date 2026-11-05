@@ -1,7 +1,7 @@
 'use strict';
 /**
  * gif_drop.js - a GIF from the phone to the car, for an app's home-screen widget (widget_anim.js), end-to-end
- * encrypted through a mailbox, as G's TV's Add source (apps/ng_tv/tv_handoff.js). Node 8, no npm modules.
+ * encrypted through a mailbox, as G's TV's Add source (apps/ng_tv/sources/tv_handoff.js). Node 8, no npm modules.
  *
  *   car                                  phone: the static page web/widget/ (gh-pages /widget/)        mailbox (ntfy.sh)
  *   topic + key (random) ---QR--->       <page>#v=1&s=<topic>.<key>&a=<app name>&w=<px>&h=<px>
@@ -21,7 +21,7 @@
  * protects is a picture the driver sends on purpose and sees on the car before it is used. The mailbox
  * only ever holds ciphertext; ntfy.sh deletes attachments after a few hours.
  *
- * net: an object with request(method, href, headers, body, maxBody) -> { status, body } (apps/ng_tv/tv_net.js:
+ * net: an object with request(method, href, headers, body, maxBody) -> { status, body } (apps/ng_tv/net/tv_net.js:
  * the uplink's DNS, the unit's TLS roots); cfg: { relay (the phone page, https), mailbox, title, w, h }.
  */
 const crypto = require('crypto');

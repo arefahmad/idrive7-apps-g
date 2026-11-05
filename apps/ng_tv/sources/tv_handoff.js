@@ -1,7 +1,7 @@
 'use strict';
 /**
  * tv_handoff.js - a source's name and link from the viewer's phone to the car (Add source, and Rename /
- * new link), end-to-end encrypted through a mailbox, as G's Music's phone sign-in (ng_spotify/signin.js).
+ * new link), end-to-end encrypted through a mailbox, as G's Music's phone sign-in (ng_spotify/spotify/signin.js).
  * Node 8, no npm modules.
  *
  *   car                                     phone (static page, web/tv-source/)          mailbox (ntfy.sh)

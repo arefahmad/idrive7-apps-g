@@ -12,8 +12,20 @@ Produces in dist/:
 The RHMI layout (application.xml + uiDescription.json) is GENERATED from the
 "screens" + "settings" in app.json, using only widget templates that BMW's own
 apps use on this firmware (see reference/rhmi-widget-cells.md).
+
+An app's folder (apps/<id>/) and where its files go in the package (source/javascript/):
+    app.json, icon.png      the manifest and the icon (the Store reads both from here)
+    main.js                 the entry point, installed as app.js
+    <folder>/...            the app's modules (.js) and the files it reads as they are (.wasm,
+                            .png), kept in folders by what they do (cluster/, looks/, images/ ...)
+                            and installed side by side: a module requires another as './<name>'
+                            and finds a file at path.join(__dirname, '<name>') whichever folder
+                            either is kept in, so every file name must be unique in the app
+    LICENSE, NOTICE         the licences of third-party code the app bundles, installed with it
+    data/<folder>/          a data folder: packed into <folder>.pack (pack_data.py), read with
+                            kit/runtime/pack.js; a committed data/<folder>.pack is copied as it is
 """
-import json, os, re, shutil, subprocess, sys, tarfile, tempfile, uuid
+import json, os, re, shutil, sys, tarfile, uuid
 from xml.sax.saxutils import escape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pack_data  # noqa: E402
@@ -313,19 +325,61 @@ def manifest_for(spec):
 
 
 def make_icon(spec, out):
+    # mgu-repo.json names apps/<id>/icon.png as every app's icon: the Store shows the same file
     src = os.path.join(APPS, spec['id'], 'icon.png')
-    if os.path.exists(src):
-        shutil.copy(src, out)
-        return
-    # rendered by the kit's own canvas (node) so no extra tooling is needed; an argument list, no shell,
-    # so a glyph or title with quotes or $ is passed through as-is
-    cmd = ['node', os.path.join(HERE, 'make_icon.js'), str(spec.get('iconGlyph', spec['title'][:2])), out]
-    try:
-        r = subprocess.run(cmd)
-    except OSError as e:
-        sys.exit('%s: cannot render the app icon (%s); is node on PATH?' % (spec['id'], e))
-    if r.returncode != 0 or not os.path.isfile(out):
-        sys.exit('%s: make_icon.js failed (exit %d), no icon written' % (spec['id'], r.returncode))
+    if not os.path.isfile(src):
+        sys.exit('%s: no apps/%s/icon.png (the app icon the Store and the head unit show)' % (spec['id'], spec['id']))
+    shutil.copy(src, out)
+
+
+# what an app's folders hold that is installed (see the top of this file); anything else is not
+INSTALLED_TYPES = ('.js', '.wasm', '.png')
+LICENCES = ('LICENSE', 'NOTICE')
+DATA_DIR = 'data'
+
+
+def app_files(app_id, adir, share):
+    """{installed name: source path} of everything an app installs in source/javascript/: its own
+    files (flat, from every folder), its data folders (a folder path: packed) and the other apps'
+    modules app.json "share" names. Exits when two would be installed under one name."""
+    files = {}
+
+    def add(name, path, why=''):
+        if name in files:
+            sys.exit('%s: %s and %s would both be installed as %s%s' % (
+                app_id, os.path.relpath(files[name], ROOT), os.path.relpath(path, ROOT), name, why))
+        files[name] = path
+
+    for root, dirs, names in os.walk(adir):
+        dirs[:] = sorted(d for d in dirs if not d.startswith('.') and d not in ('__pycache__', 'node_modules'))
+        top = root == adir
+        if top and DATA_DIR in dirs:
+            dirs.remove(DATA_DIR)
+            ddir = os.path.join(adir, DATA_DIR)
+            for f in sorted(os.listdir(ddir)):
+                path = os.path.join(ddir, f)
+                if os.path.isdir(path):
+                    add(f + '.pack', path)
+                elif f.endswith('.pack') and not os.path.isdir(path[:-len('.pack')]):
+                    add(f, path)        # committed; a folder of the same name replaces it
+        for f in sorted(names):
+            path = os.path.join(root, f)
+            if top and f in ('app.json', 'icon.png'):
+                continue
+            if top and f == 'main.js':
+                add('app.js', path)
+            elif f.endswith(INSTALLED_TYPES) or f in LICENCES:
+                add(f, path)
+    # app.json "share": ["<other app>/<path>.js", ...] - another app's modules, copied in as they are
+    # (G's Dash uses G's Music's Spotify client and phone sign-in without a second copy in git)
+    for rel in share:
+        other, _, inner = rel.partition('/')
+        parts = inner.split('/')
+        path = os.path.join(APPS, other, *parts)
+        if not other or '..' in parts or not inner.endswith('.js') or not os.path.isfile(path):
+            sys.exit('%s: app.json share %r: no such app module' % (app_id, rel))
+        add(parts[-1], path, ' (app.json share %r: the app has its own %s)' % (rel, parts[-1]))
+    return files
 
 
 WIDGET_COMPONENT_ID = 501
@@ -469,42 +523,19 @@ def build(app_id, language='en'):
     shutil.copy(os.path.join(KIT, 'platform', 'permissions.json'), os.path.join(src, 'permissions.json'))
     json.dump({'name': app_id, 'version': ver, 'lockfileVersion': 1}, open(os.path.join(src, 'npm-shrinkwrap.json'), 'w', encoding='utf-8', newline='\n'))
     json.dump({'settings': {app_id: spec.get('config', {})}}, open(os.path.join(src, 'config', 'base.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
-    # app code
+    # app code, pictures, licences and data packs, all side by side in javascript/
     adir = os.path.join(APPS, app_id)
     fetch_assets(adir, spec.get('assets', []))
-    for f in os.listdir(adir):
-        if f.endswith('.js'):
-            shutil.copy(os.path.join(adir, f), os.path.join(src, 'javascript', 'app.js' if f == 'main.js' else f))
-        elif f.endswith(('.wasm', '.wad')) or f in ('LICENSE', 'NOTICE') or (f.endswith('.png') and f != 'icon.png'):
-            # (pictures an app draws itself, e.g. ng_gsdash/showcase_*.png: read with kit/runtime/png.js)
-            # files the app reads as they are (doom: the game as WebAssembly, its data, its licences)
-            shutil.copy(os.path.join(adir, f), os.path.join(src, 'javascript', f))
-        elif os.path.isdir(os.path.join(adir, f)):
-            # data folders go along as one compressed file, read with kit/runtime/pack.js
-            # (e.g. dtc_scanner/dtc_db, the fault text database -> dtc_db.pack)
-            raw, size, _ = pack_data.pack(os.path.join(adir, f), os.path.join(src, 'javascript', f + '.pack'))
-            print('  %s/: %.1f MB packed to %.2f MB' % (f, raw / 1e6, size / 1e6))
-        elif f.endswith('.pack') and not os.path.isdir(os.path.join(adir, f[:-5])):
-            # a committed pack (e.g. dtc_scanner/dtc_db.pack); a local folder of the same name replaces it
-            shutil.copy(os.path.join(adir, f), os.path.join(src, 'javascript', f))
-            print('  %s (committed)' % f)
-    # app.json "share": ["<other app>/<file>.js", ...] - another app's modules, copied in as they are
-    # (G's Dash uses G's Music's Spotify client and phone sign-in without a second copy in git)
-    for rel in spec.get('share', []):
-        other, name = rel.split('/', 1)
-        if '/' in name or not name.endswith('.js') or not os.path.isfile(os.path.join(APPS, other, name)):
-            sys.exit('%s: app.json share %r: no such app module' % (app_id, rel))
-        if os.path.exists(os.path.join(adir, name)):
-            sys.exit('%s: app.json share %r: the app has its own %s' % (app_id, rel, name))
-        shutil.copy(os.path.join(APPS, other, name), os.path.join(src, 'javascript', name))
+    for name, path in sorted(app_files(app_id, adir, spec.get('share', [])).items()):
+        out = os.path.join(src, 'javascript', name)
+        if os.path.isdir(path):
+            raw, size, _ = pack_data.pack(path, out)
+            print('  %s/: %.1f MB packed to %.2f MB' % (os.path.relpath(path, adir), raw / 1e6, size / 1e6))
+        else:
+            shutil.copy(path, out)
+            if name.endswith('.pack'):
+                print('  %s (committed)' % os.path.relpath(path, adir))
     # kit runtime
-    if app_id == 'dtc_scanner' and language == 'zh-CN':
-        from build_diagnostic_zh import catalog
-        with tempfile.TemporaryDirectory(prefix='mgu-diagnostic-') as temporary:
-            data = os.path.join(temporary, 'zh-CN.json')
-            with open(data, 'w', encoding='utf-8', newline='\n') as file:
-                json.dump(catalog(), file, ensure_ascii=False, separators=(',', ':'))
-            pack_data.pack(temporary, os.path.join(src, 'javascript', 'diagnostic_i18n.pack'))
     kr = os.path.join(KIT, 'runtime')
     for f in os.listdir(kr):
         p = os.path.join(kr, f)
@@ -513,10 +544,6 @@ def build(app_id, language='en'):
         else:
             shutil.copy(p, os.path.join(src, 'javascript', 'kit', f))
     if language == 'zh-CN':
-        # Diagnostic glyphs are Chinese-only; keep the English runtime atlas intact.
-        if app_id == 'dtc_scanner':
-            shutil.copy(os.path.join(KIT, 'localization', 'fonts', 'diagnostic-zh-CN.json'),
-                        os.path.join(src, 'javascript', 'kit', 'fonts', 'cjk.json'))
         # The translation credit in the installed Chinese entry code, as plain comments.
         entry = os.path.join(src, 'javascript', 'app.js')
         credit = ''.join('// %s\n' % line for line in zh_credit()['comment'])
