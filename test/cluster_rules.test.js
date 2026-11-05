@@ -273,28 +273,38 @@ test('a lost slot (a door, a phone reconnecting): no stepping aside, the rendere
     assert.strictEqual(only(x.cr)[0].visible, true);
     assert.ok(!x.cr.calls.some((k) => k[0] === 'set' && k[2].visible === false));
 });
-test('Logo: My GIF replaces the look\'s G, and new frames go out only while parked', () => {
+test('Logo: My GIF replaces the look\'s G and keeps sending frames while moving', () => {
     const c = clock();
     let n = 0;
     const picture = {
         id: 'gif:1', animate: true,
         frame: (still) => ({ w: 4, h: 2, d: Buffer.from([n, still ? 1 : 2, 0, 255]), stamp: still ? '0' : String(n) }),
     };
-    const x = logo(c, { picture: picture, parked: true, look: 'm' });
+    const x = logo(c, { picture: picture, parked: false, look: 'm' });
     const L = only(x.cr, 'image')[0];
     assert.ok(L, 'an image layer, not the look\'s shader');
     assert.strictEqual(L.iw, 4); assert.strictEqual(L.ih, 2); assert.strictEqual(L.w, 4); assert.strictEqual(L.h, 2);
     assert.strictEqual(L.fps, CL.FPS_ANIM);
+    assert.strictEqual(L.sampling, 'bilinear');
     x.cr.emit('target', 'map', 'shown', '', '');
-    assert.ok(/your GIF/.test(x.lg.view().text), x.lg.view().text);
+    assert.strictEqual(x.lg.view().text, 'Shown - your GIF');
     const before = x.lg.stats.sends;
     n = 1; x.lg._frame();
-    assert.ok(x.lg.stats.sends > before, 'a later frame while parked');
-    const mid = x.lg.stats.sends;
-    x.lg.update({ on: true, look: 'm', parked: false, picture: picture });
-    n = 2; x.lg._frame();
-    assert.strictEqual(x.lg.stats.sends, mid, 'the frame is held while moving');
-    assert.ok(/still while moving/.test(x.lg.view().text));
+    assert.ok(x.lg.stats.sends > before, 'a later frame while moving');
+});
+test('Logo: a widget-sized GIF is fitted to the Pixel emblem\'s on-screen box', () => {
+    const c = clock();
+    const picture = {
+        id: 'gif:big', animate: false,
+        frame: () => ({ w: 384, h: 256, d: Buffer.alloc(384 * 256 * 4, 40), stamp: '0' }),
+    };
+    const x = logo(c, { picture: picture, parked: false, look: 'm' });
+    const L = only(x.cr, 'image')[0];
+    const fit = CL.fitClusterGif({ w: 384, h: 256, d: Buffer.alloc(384 * 256 * 4, 40), stamp: '0' });
+    assert.strictEqual(fit.w, 360); assert.strictEqual(fit.h, 240);
+    assert.strictEqual(fit.d.length, 360 * 240 * 4);
+    assert.strictEqual(L.iw, 360); assert.strictEqual(L.ih, 240);
+    assert.ok(L.iw <= 27 * CL.CELL && L.ih <= 15 * CL.CELL);
 });
 
 /* ----- G's Music ----- */

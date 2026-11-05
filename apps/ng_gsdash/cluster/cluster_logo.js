@@ -75,7 +75,9 @@
  * A look change: to or from an effect, the new layer is made, then the old dropped (an effect holds no
  * pictures, so no two pictures are ever in memory together); picture to picture, the old is dropped first,
  * then a status asked, and the new made only once the renderer answered and FREE_MS passed (0.12.1's gate);
- * a change waits SETTLE_MS so stepping through looks makes one layer. Never animated while driving.
+ * a change waits SETTLE_MS so stepping through looks makes one layer. The Pixel emblem's shine runs
+ * only while the car stands still. A custom GIF uses the same image-layer writes and keeps playing
+ * while the car moves (fitClusterGif: at most the emblem's on-screen 432 x 240).
  *
  * Off at once: hidden, closed, the setting off -> the layer is dropped (the service removes it at
  * once, no fade) and the connection closed; when the app ends its socket closes and the service
@@ -89,6 +91,8 @@ const { loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, FRESH_MS
 const TARGET = 'map', MAP_W = 1088, MAP_H = 480;      // the only target used
 const LOGO_W = 448, LOGO_H = 240, BADGE_H = 184;     // the regular logo, 1:1
 const CELL = 16;                                     // the pixel emblem's cell on the cluster
+const PX_W = 27, PX_H = 15;                          // px.js emblem grid (the animated cluster logo's source)
+const GIF_MAX_W = PX_W * CELL, GIF_MAX_H = PX_H * CELL;   // that emblem on screen: 432 x 240
 const FPS_STILL = 1, FPS_ANIM = 12;                  // the image's write ceiling (fps: writes a second at most)
 const POLL_MS = 1000, HOLD_MS = 3000, YIELD_MS = 3000, LOAD_RETRY_MS = 30000;
 const NAV_KLASS = 'content', NAV_Z = 50;             // "not navigating": over Waze's map (z 0), under G's TV (z 100)
@@ -139,11 +143,36 @@ function regularImage(Canvas, badge, badgeWidth) {
     for (let i = 3; i < d.length; i += 4) d[i] = 255;
     return { w: LOGO_W, h: LOGO_H, d };
 }
-/** A custom picture (the GIF) centred on the map, at its own size until it would pass 640 x 360. */
+/**
+ * A GIF frame as the cluster logo draws it: RGBA, fitted inside the Pixel emblem's on-screen box
+ * (432 x 240). Smaller frames stay their own size. The Pixel emblem itself is uploaded as its 27 x 15
+ * grid and scaled 16x by the GPU; a GIF is already a picture, so it is scaled here and shown 1:1.
+ */
+function fitClusterGif(img) {
+    const sw = img.w | 0, sh = img.h | 0, src = img.d;
+    if (!(sw > 0 && sh > 0 && src && src.length >= sw * sh * 4)) return img;
+    const s = Math.min(1, GIF_MAX_W / sw, GIF_MAX_H / sh);
+    const w = Math.max(1, Math.round(sw * s)), h = Math.max(1, Math.round(sh * s));
+    if (w === sw && h === sh) return img;
+    const d = Buffer.alloc(w * h * 4);
+    for (let y = 0; y < h; y++) {
+        const fy = Math.max(0, Math.min(sh - 1, (y + 0.5) * sh / h - 0.5)), y0 = Math.floor(fy), y1 = Math.min(sh - 1, y0 + 1), wy = fy - y0;
+        for (let x = 0; x < w; x++) {
+            const fx = Math.max(0, Math.min(sw - 1, (x + 0.5) * sw / w - 0.5)), x0 = Math.floor(fx), x1 = Math.min(sw - 1, x0 + 1), wx = fx - x0;
+            const o = (y * w + x) * 4;
+            const a = (y0 * sw + x0) * 4, b = (y0 * sw + x1) * 4, c = (y1 * sw + x0) * 4, e = (y1 * sw + x1) * 4;
+            for (let k = 0; k < 4; k++) {
+                const t = src[a + k] * (1 - wx) + src[b + k] * wx;
+                const u = src[c + k] * (1 - wx) + src[e + k] * wx;
+                d[o + k] = Math.round(t * (1 - wy) + u * wy);
+            }
+        }
+    }
+    return { w: w, h: h, d: d, stamp: img.stamp };
+}
+/** A custom picture (the GIF) centred on the map, 1:1. */
 function customPlacement(img) {
-    const maxW = 640, maxH = 360, s = Math.min(1, maxW / img.w, maxH / img.h);
-    const w = Math.max(1, Math.round(img.w * s)), h = Math.max(1, Math.round(img.h * s));
-    return { x: Math.round((MAP_W - w) / 2), y: Math.round((MAP_H - h) / 2), w: w, h: h };
+    return { x: Math.round((MAP_W - img.w) / 2), y: Math.round((MAP_H - img.h) / 2), w: img.w, h: img.h };
 }
 /** Where an image goes on the map: the logo 1:1, the emblem CELL x, both centred. */
 function placement(kind, img) {
@@ -434,7 +463,7 @@ class ClusterLogo {
             if (!(this._customStill && this._customStill.d && this.key === id)) {
                 let img = null;
                 try { img = this.picture.frame(true); } catch (e) { img = null; }
-                if (img && img.d && img.w && img.h) this._customStill = img;
+                if (img && img.d && img.w && img.h) this._customStill = fitClusterGif(img);
                 else {
                     this.customFail = this.picture.id || '';
                     this._customStill = null;
@@ -500,6 +529,7 @@ class ClusterLogo {
             if (!img || !img.d) {
                 try { img = this.picture && this.picture.frame(true); } catch (e) { img = null; }
             }
+            if (img && img.d) img = fitClusterGif(img);
             if (!img || !img.d || !img.w || !img.h) {
                 this.customFail = (this.picture && this.picture.id) || '';
                 this._customStill = null;
@@ -553,12 +583,15 @@ class ClusterLogo {
     }
 
     /**
-     * Motion only while parked and shown. Pixel: the emblem's slide-in and shine. Custom (My GIF): the GIF's
-     * frames, at most FPS_ANIM. While the car moves, the last frame stays (an image layer keeps its pixels);
-     * a full GIF frame is hundreds of KB, and the cluster logo is not animated while driving.
+     * Pixel: the emblem's slide-in and shine, only while parked (speed under 1 km/h) and shown.
+     * My GIF: the same image-layer updates (pixels(), at most FPS_ANIM), whenever the logo is shown,
+     * parked or moving. Nothing in that path refuses a write while the car moves.
      */
     _motion() {
-        return this.visible && this.want && this.parked && (this.kind === 'pixel' || (this.kind === 'custom' && this.picture && this.picture.animate !== false));
+        if (!(this.visible && this.want)) return false;
+        if (this.kind === 'pixel') return this.parked;
+        if (this.kind === 'custom') return !!(this.picture && this.picture.animate !== false);
+        return false;
     }
     _animate() {
         const run = this._motion();
@@ -577,6 +610,8 @@ class ClusterLogo {
             if (!img || !img.d) return;
             const key = img.stamp != null ? String(img.stamp) : '';
             if (!key || key === this.frameKey) return;
+            img = fitClusterGif(img);
+            if (!img.d || img.w !== (this._customStill && this._customStill.w) || img.h !== (this._customStill && this._customStill.h)) return;
             this.frameKey = key;
             this._customStill = img;
             this._send(this.ref, img);
@@ -631,7 +666,7 @@ class ClusterLogo {
         if ((T.state === 'parked' || T.state === 'waiting') && T.holder === 'stock') return { kind: 'wait', text: 'Taking over the stock map' };
         if (T.state === 'parked' || T.state === 'waiting') return { kind: 'wait', text: 'Map area taken - waiting' };
         if (T.state === 'shown') {
-            if (this.kind === 'custom') return { kind: 'on', text: this.parked ? 'Shown - your GIF' : 'Shown - your GIF, still while moving' };
+            if (this.kind === 'custom') return { kind: 'on', text: 'Shown - your GIF' };
             return { kind: 'on', text: this.routeKnown() ? 'Shown - not navigating' : 'Shown - route detection unavailable' };
         }
         if (T.state === 'unavailable') return { kind: 'error', text: 'Map area unavailable' };
@@ -658,5 +693,5 @@ function motion(t, ew) {
     return { key: 'h' + shine, opts: { shine } };
 }
 
-module.exports = { ClusterLogo, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, appName, pixelImage, regularImage, placement, customPlacement, motion, cellRaster,
+module.exports = { ClusterLogo, loadClient, trusted, mapLayers, ownLayers, drawing, guideValue, appName, pixelImage, regularImage, placement, customPlacement, fitClusterGif, motion, cellRaster,
     FX_BAD, rawText, TARGET, MAP_W, MAP_H, CELL, LOGO_W, LOGO_H, FPS_STILL, FPS_ANIM, POLL_MS, HOLD_MS, YIELD_MS, FRESH_MS, RECONNECT_MS, ERR_RETRY_MS, NAV_KLASS, NAV_Z, GUIDE_ON_MS, GUIDE_OFF_MS };
