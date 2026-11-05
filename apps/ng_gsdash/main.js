@@ -118,6 +118,7 @@ const CLOCK = require('./clock');
 const UNITS = require('./units');
 const TINTS = require('./tints');
 const ANIM = require('./kit/anim');
+const HMIW = require('./kit/hmi_widgets');
 const { AnimatedWidget } = require('./kit/widget_anim');
 const { GifDrop } = require('./kit/gif_drop');
 const { Net } = require('./tv_net');
@@ -1089,7 +1090,27 @@ mgu.run({
             const d = new Date(at), n = new Date(), hm = clock.fmt ? clock.fmt(d) : (d.getHours() % 12 || 12) + ':' + ('0' + d.getMinutes()).slice(-2) + (d.getHours() < 12 ? ' AM' : ' PM');
             return d.toDateString() === n.toDateString() ? hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
         };
-        let diagView = 'cluster';           // Diagnostics: 'cluster' or 'car'
+        let diagView = 'cluster';           // Diagnostics: 'cluster', 'car' or 'widgets'
+        /*
+         * Diagnostics > Widgets (0.16.1): how the HMI builds its home-screen widget layouts, read from the unit
+         * (kit/runtime/hmi_widgets.js, read-only). Only on a tap: it reads HmiMain3D (in pages) and the HMI's *.pbw
+         * files, and says for every widget layout whether it shows a picture an app can write, and whether the HMI
+         * draws that picture through a mask (the dark edge over G's Dash's widget) or a plain image. The full report
+         * goes to <data>/hmi_widgets.txt and a summary line to the log.
+         */
+        const hw = { running: false, progress: '', r: null };
+        const hwRun = () => {
+            if (hw.running) return;
+            hw.running = true; hw.progress = 'Starting...'; hw.r = null;
+            HMIW.scan({ onProgress: (s2) => { hw.progress = s2; } }).then((r) => {
+                hw.running = false; hw.r = r;
+                try { fs.writeFileSync(path.join(ctx.dataDir, 'hmi_widgets.txt'), HMIW.text(r)); } catch (e) { log.warn('hmi widgets: report not saved (' + e.message + ')'); }
+                if (!r.ok) { log.warn('hmi widgets: ' + r.error); return; }
+                const plain = r.layouts.filter((l) => l.verdict === 'plain');
+                log.info('hmi widgets: ' + r.ids + ' identifiers, ' + r.files + ' files, ' + r.layouts.length + ' widget layouts in ' + r.ms + ' ms; a picture without a mask: ' +
+                    (plain.map((l) => l.name + ' (' + Object.keys(l.cells).join(', ') + ')').join('; ') || 'none'));
+            });
+        };
         /**
          * Diagnostics (Options > Diagnostics). Two views, picked at the top. Cluster: the tools and their
          * versions, what the logo / skins / HUD are doing and the renderer's whole refusals, Waze on cluster's
@@ -1102,14 +1123,54 @@ mgu.run({
             header(cv, S, lk, lbl, cardOf(lk), 'Diagnostics', 1);
             // the view switch, in the header row after the title
             const sx0 = S.x + 210 + 32 + cv.textWidth(u.upper ? 'DIAGNOSTICS' : 'Diagnostics', 30, { font: u.lbl || u.txt, spacing: u.upper ? u.spacing : 0, literal: true }) + 40;
-            [['cluster', 'Cluster'], ['car', 'Car data']].forEach((v, i) => {
+            [['cluster', 'Cluster'], ['car', 'Car data'], ['widgets', 'Widgets']].forEach((v, i) => {
                 const bw = 180, bx = sx0 + i * (bw + 8), on = diagView === v[0];
                 if (on) { cv.roundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, 2, acc); }
                 else cv.roundRect(bx, HEAD_Y + 6, bw, HEAD_H - 12, u.radius, L.withAlpha('#ffffff', 0.06));
                 lbl(v[1], bx + bw / 2, HEAD_Y + HEAD_H / 2 + 8, u.size, on ? t.text : t.dim, { align: 'center' });
                 if (!on) cv.target(bx, HEAD_Y, bw, HEAD_H, () => { diagView = v[0]; }, 'dv:' + v[0], u.radius);
             });
-            if (diagView === 'car') carDiag(cv, S, lk); else clusterDiag(cv, S, lk);
+            if (diagView === 'car') carDiag(cv, S, lk); else if (diagView === 'widgets') widgetsDiag(cv, S, lk); else clusterDiag(cv, S, lk);
+        }
+        /**
+         * Diagnostics > Widgets: left, what this reads and the Read button; right, the widget layouts that show a
+         * picture: plain first (green: the picture without the dark edge), then masked (amber), the cell to write.
+         */
+        function widgetsDiag(cv, S, lk) {
+            const t = S.t, u = lk.ui, top = S.y, LH = 27, lw = Math.round(S.w * 0.36), rx = S.x + lw + 16, rw = S.x + S.w - rx, r = hw.r;
+            const put = (x, y, w, s2, c, size) => cv.text(fitText(cv, s2, size || 19, w), x, y, size || 19, c || t.text, { literal: true });
+            diagBox(cv, S.x, top, lw, S.h);
+            let y = top + 32;
+            cv.text('Home-screen widget layouts', S.x + 16, y, 21, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 34;
+            ['Reads the HMI\'s own widget files (read-only)', 'and finds the layouts that show a picture an', 'app can write, and whether the HMI draws it',
+                'with the dark edge (a mask) or plain.'].forEach((l2) => { put(S.x + 16, y, lw - 32, l2, t.dim, 17); y += 25; });
+            y += 8;
+            if (hw.running) put(S.x + 16, y, lw - 32, hw.progress, t.accent2 || t.accent);
+            else if (r && !r.ok) wrapLines(cv, 'Could not read it: ' + r.error, 17, lw - 32, 4).forEach((l2) => { put(S.x + 16, y, lw - 32, l2, '#ffb020', 17); y += 24; });
+            else if (r) {
+                put(S.x + 16, y, lw - 32, r.layouts.length + ' layouts, ' + r.files + ' files, ' + (r.ms / 1000).toFixed(1) + ' s', t.text, 18); y += 26;
+                put(S.x + 16, y, lw - 32, 'Full list: hmi_widgets.txt in the data folder', t.dim, 16);
+            } else put(S.x + 16, y, lw - 32, 'Takes a few seconds. Parked is best.', t.dim, 17);
+            const bh = 64, by = top + S.h - bh - 16;
+            if (!hw.running) {
+                cardOf(lk)(cv, t, S.x + 16, by, lw - 32, bh, isDown('hw:run'));
+                lblOf(cv, u)(r ? 'Read again' : 'Read the widget layouts', S.x + lw / 2, by + bh / 2 + 8, 22, t.text, { align: 'center' });
+                cv.target(S.x + 16, by, lw - 32, bh, () => { gDown = Date.now(); downKey = 'hw:run'; hwRun(); }, 'hw:run', u.radius);
+            }
+            diagBox(cv, rx, top, rw, S.h);
+            y = top + 32;
+            cv.text('Layouts with a picture', rx + 16, y, 21, t.accent2 || t.accent, { font: 'bold', literal: true }); y += 32;
+            if (!r || !r.ok) { put(rx + 16, y, rw - 32, r ? 'Nothing read.' : 'Tap Read the widget layouts.', t.dim); return; }
+            const shown = r.layouts.filter((l) => l.verdict !== 'none'), rows = Math.floor((top + S.h - 16 - y) / LH);
+            if (!shown.length) { put(rx + 16, y, rw - 32, 'No widget layout shows a picture an app can write.', t.dim); return; }
+            shown.slice(0, shown.length > rows ? rows - 1 : rows).forEach((l) => {
+                const plain = l.verdict === 'plain';
+                cv.circle(rx + 24, y - 7, 7, plain ? HUB.GREEN : '#ffb020');
+                const cells = Object.keys(l.cells).filter((c) => !plain || l.cells[c].some((e) => !e.mask)).join(', ');
+                put(rx + 40, y, rw - 56, l.name.replace(/^LT_(Table|Label)_/, '') + '   ' + (plain ? 'plain' : 'mask') + ' \u00b7 cell ' + cells, t.text, 18);
+                y += LH;
+            });
+            if (shown.length > rows) put(rx + 40, y, rw - 56, '+ ' + (shown.length - rows + 1) + ' more in hmi_widgets.txt', t.dim, 17);
         }
         function diagBox(cv, x, y, w, h) { cv.roundRect(x, y, w, h, 8, L.withAlpha('#000000', 0.55)); cv.strokeRoundRect(x, y, w, h, 8, 1, L.withAlpha('#ffffff', 0.16)); }
         /** Long text in lines of width w (at most n), cut at spaces where it can. */
