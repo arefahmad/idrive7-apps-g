@@ -249,7 +249,7 @@ module.exports = {
         const ty = g.bottom - 104;
         tempLine(cv, S, gx + 4, ty, gw - 8, 'OIL', S.oil); tempLine(cv, S, gx + 4, ty + 56, gw - 8, 'COOLANT', S.cool);
         // right: peaks and the g-meter (or Spotify there)
-        if (S.panel === 'spotify') return;
+        if (S.panel && S.panel !== 'g') return;
         const px = g.rx + 20, pw = S.x + S.w - px, ph = g.bottom - S.y - 24 - 84;
         glass(cv, px, S.y + 24, pw, ph, 22, null);
         const r = Math.min(122 + g.ex * 0.15, ph / 2 - 40), gcx = px + 30 + r, gcy = S.y + 24 + ph / 2;

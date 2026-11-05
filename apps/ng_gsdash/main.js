@@ -16,8 +16,9 @@
  *   - looks (setting "look", look_*.js): each its own layout, type, gauges and tab style -
  *     M Style (the default; 0.11.0: Carbon Grid), GT, Digital '84, Sim Racing, Lumen, Pixel (0.7.0). 0.9.0 took Simple, Heritage
  *     and Flight out: a saved one of those opens as M Style (migrated at start)
- *   - setting "panel": Spotify instead of the g-meter (music.js, G's Music's code shared in by the
- *     build): what plays, art, previous / play-pause / next, a bar to tap or drag; its own QR sign-in
+ *   - setting "panel": the right side of Drive. G-meter (the default), Spotify, or the Logo (the same
+ *     picture as the widget and the cluster, including a per-mode GIF). Spotify is music.js (G's Music's
+ *     code shared in by the build): what plays, art, previous / play-pause / next, a bar to tap or drag; its own QR sign-in
  *   - Options > Diagnostics (0.10.0: a plain entry, the 5-tap gesture went): Cluster - the tools'
  *     versions, the logo / skins / HUD state, the renderer's refusals, Waze on cluster's state, Refresh
  *     cluster, the alignment card and Stock redraw, the clock's source; Widgets - the HMI's widget
@@ -33,6 +34,9 @@
  *     phone with a QR code (kit gif_drop.js, the phone page web/widget/). The same choice is the home-screen
  *     widget (widget_logo.js, or the GIF played by kit widget_anim.js) and the cluster graphic (the look's
  *     own G, or that GIF, which keeps playing in the cluster while the car moves).
+ *     Per driving mode (setting "logoPerMode", off by default): Comfort, Sport, Sport+ and any other mode
+ *     the car reports (the same FES badge as the Drive screen, car.js) can each have a GIF. An empty slot
+ *     keeps this Logo. The home widget and the cluster both follow the mode.
  *     The widget uses BMW's BasicWidget layout, whose picture has no mask (docs/animated-widget.md).
  *   - Options > Cluster source (0.8.3, cluster_source.js, setting "clusterSource", default Auto): what the
  *     cluster's centre map area shows - Auto (as before: the logo while G's Dash is open, G's Music over it
@@ -106,6 +110,10 @@ const HS = require('./hud_shift');
 const FCL = require('./fcluster');
 const P = require('./px');
 const PREFS = require('./prefs');
+const LM = require('./logo_modes');
+const { LogoPlayer } = require('./logo_player');
+const STAGES = require('./logo_stages');
+const { containBox } = require('./logo_cache');
 const CLOCK = require('./clock');
 const UNITS = require('./units');
 const TINTS = require('./tints');
@@ -140,7 +148,7 @@ const COLD_RPM = 4000, COLD_F = 104, WARM_REDLINE = 6000, OIL_FULL_F = 180, AUTO
 const HIST_MS = 20000, HIST_N = 80, ENV_N = 48;                  // G-force: last 20 s, the peak envelope
 const SWIPE_START = 40, SWIPE_GO = 110, HOLD_MS = 700, HOLD_SLOP = 24;
 // record.setImage ids (cards: + look index; wprev: the Logo page's preview)
-const IMG = { card: 0x6710, wprev: 0x6720 };
+const IMG = { card: 0x6710, wprev: 0x6720, panel: 0x6730 };
 const toF = (c) => (L.isNum(c) ? c * 9 / 5 + 32 : c);
 
 // content box: full screen from page y BOX_OWN to the page's bottom (G.pageBottom), else BOX_STD + BOX_H.
@@ -325,6 +333,9 @@ mgu.run({
         publishSource('start');
         /** My GIF for the cluster, or null for the look's own G. Filled in once the widget animation exists. */
         let logoPicture = function () { return null; };
+        /** Which GIF plays (the main Logo, or the driving mode's). Filled in with the widget. No work until then. */
+        let logoSync = function () { return false; };
+        let logoIv = null;
         /** The logo per the pick: Auto as before (open and clusterLogo on), Logo / Music also in the background, Map / Stock none. */
         const clogoUpdate = (open) => {
             const d = car.data(), src = srcPick(), on = gsdOn();
@@ -340,6 +351,7 @@ mgu.run({
         if (bgLogo.unref) bgLogo.unref();
         const logoUpdate = (open) => {
             const d = car.data();
+            logoSync();
             clogoUpdate(open);
             const sub = car.subBy ? car.subBy[SPEED_IFACE] : null;
             const speedAvail = !!(sub && sub.available && !sub.error);
@@ -378,7 +390,7 @@ mgu.run({
         settings.onChange((k) => {
             if (k === 'clusterControl') log.info('cluster control: G\'s Dash ' + (gsdOn() ? 'on the cluster & HUD again' : 'off - the cluster and HUD left to the car (everything of ours let go)'));
             if (k === 'clusterSource' || k === 'clusterControl' || k === 'displays') publishSource('change');
-            if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'logo' || k === 'displays' || k === 'look' || k === TINTS.KEY || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
+            if (k === 'clusterSource' || k === 'clusterControl' || k === 'clusterLogo' || k === 'logo' || k === LM.PER_KEY || k === 'displays' || k === 'look' || k === TINTS.KEY || k === 'redline' || k === 'shiftBefore' || k === 'unitSpeed') logoUpdate(ui.isVisible ? ui.isVisible('MAIN') : true);
         });
         // 0.17.0: Waze on cluster's map switched as the picks say (waze_ctl.js): off on the cluster for Stock, on for
         // Waze, off on the HUD while one of ours owns it; what Waze had put back once nothing needs it, and with
@@ -405,7 +417,7 @@ mgu.run({
         const migIv = setInterval(() => { hudMigrate(); if (settings.get(MIGRATED_KEY)) clearInterval(migIv); }, 5000);
         if (migIv.unref) migIv.unref();
         hudMigrate();
-        process.once('exit', () => { ending = true; clearInterval(bgLogo); clearInterval(wazeIv); wctl.close(); clogo.close(); cskin.close(); hud.close(); fcl.close(); });
+        process.once('exit', () => { ending = true; clearInterval(bgLogo); if (logoIv) clearInterval(logoIv); clearInterval(wazeIv); wctl.close(); clogo.close(); cskin.close(); hud.close(); fcl.close(); });
         // route guidance (0.7.4, 0.7.5): the logo steps aside while it runs, and only then (or for G's TV). The stock navigation's guidingState
         // (INACTIVE / CALCULATING_ROUTE / ACTIVE) and the phone's projectedGuidanceActive (CarPlay: Waze
         // or Maps with a route; Android Auto), all app.json "_optional"; read again every GUIDE_POLL_MS
@@ -542,7 +554,7 @@ mgu.run({
                 // a tap on a look's session clock (L.sessionTap): that clock back to 0:00 (the peaks stay), a flash
                 sessionTap: cv.own ? () => { since = Date.now(); sessionAt = since; log.info('session clock reset (tap)'); } : null,
                 sessionFlash: sessionAt && now - sessionAt < SESSION_FLASH_MS ? 1 - (now - sessionAt) / SESSION_FLASH_MS : 0,
-                panel: settings.get('panel') === 'spotify' ? 'spotify' : 'g',
+                panel: PREFS.panelOf(settings.get('panel')),
                 // the drive mode badge: a label only when the car sent a mode we could read (car.js MODE_LABEL)
                 mode: d.driveMode || null, modeTone: L.modeTone(d.driveMode || null),
                 d,
@@ -797,7 +809,7 @@ mgu.run({
             lbl('Theme', tx, hy + 48, Math.round(u.size * 0.8), t.dim);
             cv.text(fitText(cv, valueText(u, lk.name), u.size + 16, mw, tf), tx, hy + 98, u.size + 16, t.text, tf);
             if (lk.tints) tintRow(cv, S, lk, tx, hy + 110, 'opt');
-            else cv.text(fitText(cv, 'Right panel: ' + (panelOn() ? 'Spotify' : 'G-meter'), 20, mw), tx, hy + 138, 20, t.dim, { literal: true });
+            else cv.text(fitText(cv, 'Right panel: ' + PREFS.panelName(settings.get('panel')), 20, mw), tx, hy + 138, 20, t.dim, { literal: true });
             cv.roundRect(tx, hy + hh - 62, 260, 44, u.radius, L.withAlpha(acc, down ? 0.34 : 0.18));
             lbl('Change look', tx + 18, hy + hh - 33, u.size, t.text);
             chevron(cv, tx + 236, hy + hh - 40, 8, t.text);
@@ -965,17 +977,18 @@ mgu.run({
                 cv.target(cx, cy, TILE_W, TILE_H, () => { settings.set('look', l.id); }, 'look:' + l.id, 10);
             });
             // the right panel: two choices, the current one lit
-            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = cols > 3 ? 330 : 400, pw = S.x + S.w - px - fcw - 32, ph = 84;
+            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = cols > 3 ? 330 : 400, pw = S.x + S.w - px - fcw - 32, ph = 72;
             lbl('Right panel on Drive', px, S.y + 20, 18, t.dim);
-            [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Spotify', 'What plays, with touch controls']].forEach((o, i) => {
-                const oy = top + i * (ph + g), on = (panelOn() ? 'spotify' : 'g') === o[0];
+            [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Spotify', 'What plays, with touch controls'], ['logo', 'Logo', 'The same Logo as the widget and cluster']].forEach((o, i) => {
+                const oy = top + i * (ph + g), on = PREFS.panelOf(settings.get('panel')) === o[0];
                 if (on) { cv.roundRect(px, oy, pw, ph, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(px, oy, pw, ph, u.radius, 3, acc); } else card(cv, t, px, oy, pw, ph, false);
-                // a small glyph: rings for the g-meter, three bars for Spotify
-                const gx = px + 48, gy = oy + ph / 2, c = on ? t.text : t.dim;
-                if (o[0] === 'g') { cv.arc(gx, gy, 28, 30, 0, 360, c); cv.arc(gx, gy, 13, 15, 0, 360, c); cv.circle(gx + 9, gy - 6, 6, on ? acc : c); }
-                else [[-14, 34], [0, 50], [14, 26]].forEach((b) => cv.roundRect(gx + b[0] - 4, gy - b[1] / 2, 8, b[1], 4, c));
-                lbl(o[1], px + 96, oy + 40, u.size + 4, t.text);
-                cv.text(fitText(cv, o[2], 17, pw - 112), px + 96, oy + 66, 17, t.dim, { literal: true });
+                // a small glyph: rings for the g-meter, three bars for Spotify, three stripes for the Logo
+                const gx = px + 44, gy = oy + ph / 2, c = on ? t.text : t.dim;
+                if (o[0] === 'g') { cv.arc(gx, gy, 24, 26, 0, 360, c); cv.arc(gx, gy, 11, 13, 0, 360, c); cv.circle(gx + 8, gy - 5, 5, on ? acc : c); }
+                else if (o[0] === 'logo') [0, 1, 2].forEach((k) => cv.roundRect(gx - 16 + k * 12, gy - 16, 8, 32, 2, c));
+                else [[-14, 30], [0, 44], [14, 22]].forEach((b) => cv.roundRect(gx + b[0] - 4, gy - b[1] / 2, 8, b[1], 4, c));
+                lbl(o[1], px + 84, oy + 34, u.size + 2, t.text);
+                cv.text(fitText(cv, o[2], 16, pw - 100), px + 84, oy + 56, 16, t.dim, { literal: true });
                 cv.target(px, oy, pw, ph, () => settings.set('panel', o[0]), 'panel:' + o[0], u.radius);
             });
             // favourite looks: their own column, and Cluster & HUD at its foot
@@ -1629,23 +1642,54 @@ mgu.run({
         function renderWidget() { return logo; }
         const WSIZE = (ctx.spec.startWidget && ctx.spec.startWidget.size) || [384, 256];
         const gifOn = () => settings.get(PREFS.LOGO_KEY) === 'gif';
-        const aw = new AnimatedWidget(ctx, { file: path.join(ctx.dataDir, 'widget_anim.bin'), draw: renderWidget, enabled: gifOn() });
+        const perOn = () => settings.get(LM.PER_KEY) === 'on';
+        const aw = new AnimatedWidget(ctx, { file: path.join(ctx.dataDir, 'widget_anim.bin'), draw: renderWidget, enabled: false });
+        const player = new LogoPlayer(aw, { dir: ctx.dataDir, log: log, Store: ANIM.Store, Clip: ANIM.Clip });
+        let logoBusy = false, logoSig = '';
+        /**
+         * The driving mode (car.data().driveMode, the FES badge) picks the GIF. Off: the main Logo, exactly
+         * as before. On: that mode's slot, or the main Logo when the slot is empty. The home widget and the
+         * cluster read the same clip. Cheap when nothing changed; the 200 ms timer covers the background,
+         * where the screen's loop does not run. Returns true when the picture changed.
+         */
+        logoSync = function () {
+            if (logoBusy) return false;
+            logoBusy = true;
+            let changed = false;
+            try {
+                const per = perOn(), label = car.data().driveMode || null;
+                if (per && label) {
+                    const seen = LM.noteSeen(LM.parseSeen(settings.get(LM.SEEN_KEY)), label);
+                    const ser = LM.serializeSeen(seen);
+                    if (ser !== (settings.get(LM.SEEN_KEY) || '')) settings.set(LM.SEEN_KEY, ser);
+                }
+                const r = LM.resolve(per, label, player.filled());
+                const sig = (per ? '1' : '0') + '|' + r.use + '|' + (r.slot || '') + '|' + (gifOn() ? 'g' : 'l') + '|' + player.rev;
+                if (sig === logoSig) return false;
+                logoSig = sig;
+                changed = true;
+                const mainOn = gifOn() && player.mainReady();
+                if (!per || r.use !== 'slot' || !player.play(r.slot)) { player.showMain(); aw.enable(mainOn); }
+                else aw.enable(true);
+                log.info('logo: ' + (label || 'no mode') + ' -> ' + (!per ? 'one logo' : r.use === 'slot' ? r.slot : 'main (' + r.reason + ')'));
+            } finally { logoBusy = false; }
+            return changed;
+        };
+        logoSync();
         if (ctx.widget) aw.start();
-        settings.onChange((k) => { if (k === PREFS.LOGO_KEY) aw.enable(gifOn()); });
+        logoIv = setInterval(() => { try { if (logoSync()) clogoUpdate(visible()); } catch (e) { log.warn('logo: ' + e); } }, 200);
+        if (logoIv.unref) logoIv.unref();
         let gifPic = null;
         logoPicture = function () {
-            if (!gifOn() || !aw.has()) { gifPic = null; return null; }
-            const id = 'gif:' + aw.gen;
-            if (!gifPic || gifPic.id !== id) {
+            if (!aw.on || !aw.has()) { gifPic = null; return null; }
+            if (!gifPic) {
                 let last = null;
-                const frames = aw.status().frames;
                 gifPic = {
-                    id: id,
-                    animate: frames > 1,
+                    id: 'gif', source: '', animate: true,
                     frame: function (still) {
                         const f = aw.frame(still ? 0 : Date.now());
                         if (!f || !f.rgba) return null;
-                        const stamp = f.gen + ':' + (still ? '0' : f.index);
+                        const stamp = player.source() + ':' + (still ? '0' : f.index);
                         if (last && last.stamp === stamp) return last;
                         const src = f.rgba;
                         last = { w: f.w, h: f.h, d: Buffer.from(src.buffer, src.byteOffset, src.byteLength), stamp: stamp };
@@ -1653,6 +1697,8 @@ mgu.run({
                     },
                 };
             }
+            gifPic.source = player.source();
+            gifPic.animate = !!(aw.clip && aw.clip.count > 1);
             return gifPic;
         };
 
@@ -1662,17 +1708,20 @@ mgu.run({
          * made into the widget's frames here (kit anim.js, a few seconds, the screen keeps drawing) and shown on
          * this page; only Use this GIF keeps it (in the data folder) and puts it on the widget. The phone hears
          * how it ended. Leaving the page cancels whatever is under way.
-         * wg.mode: idle | qr (waiting for the phone; drop.phase says more) | preparing | confirm | error
+         * wg.mode: idle | qr (waiting for the phone; drop.phase says more) | preparing | confirm | error | stages
+         * wg.for: 'main' or a slot id, captured when Send starts, so the GIF lands on the slot that was chosen.
+         * wg.target: the slot the Send / Remove buttons act on while per driving mode is on ('main' is the fallback Logo).
          */
         const WCFG = ctx.spec.config || {};
         const drop = new GifDrop(new Net(ctx.dataDir, log), log, { relay: WCFG.widgetRelay, mailbox: WCFG.widgetMailbox, title: "G's Dash", w: WSIZE[0], h: WSIZE[1] });
-        const wg = { mode: 'idle', got: null, prepared: null, clip: null, clipGen: 0, done: 0, total: 0, why: '', removeAt: 0, prevKey: '' };
+        const wg = { mode: 'idle', got: null, prepared: null, clip: null, clipGen: 0, done: 0, total: 0, why: '', removeAt: 0, stageAt: 0, prevKey: '', target: 'main', for: 'main' };
         const wgReset = () => { drop.cancel(); wg.mode = 'idle'; wg.got = null; wg.prepared = null; wg.clip = null; wg.why = ''; };
         const wgCancel = (why) => {
             if (wg.got && (wg.mode === 'preparing' || wg.mode === 'confirm')) drop.ack({ t: 'done', ok: false, error: why || 'Not used: cancelled on the car.' });
             wgReset();
         };
-        const wgSend = () => { if (drop.configured()) { drop.start(); wg.mode = 'qr'; wg.why = ''; } };
+        const sendTarget = () => (perOn() && wg.target && wg.target !== 'main' ? wg.target : 'main');
+        const wgSend = () => { if (drop.configured()) { wg.for = sendTarget(); drop.start(); wg.mode = 'qr'; wg.why = ''; } };
         /** Left the page (or the screen): anything under way is cancelled, the preview's picture let go. */
         const wgLeave = () => {
             if (wg.mode !== 'idle') { log.info('home widget: left the page while ' + wg.mode + ' - cancelled'); wgCancel('Not used: the page was closed on the car.'); }
@@ -1701,10 +1750,14 @@ mgu.run({
                 });
             }, (e) => log.warn('home widget: ' + e));
         };
-        /** Use this GIF: kept and on the widget (the widget set to My GIF), the phone told. */
+        /** Use this GIF: kept for the main Logo, or for the driving-mode slot Send was started for. The phone is told. */
         const wgUse = () => {
             if (wg.mode !== 'confirm' || !wg.prepared) return;
-            try { aw.replace(wg.prepared, { name: wg.got.name }); } catch (e) {
+            const dest = wg.for || 'main';
+            try {
+                if (dest === 'main') aw.replace(wg.prepared, { name: wg.got.name });
+                else player.save(dest, wg.prepared, { name: wg.got.name });
+            } catch (e) {
                 const why = 'The car could not keep this GIF (' + (e.code || e.message) + ').';
                 log.warn('home widget: ' + why);
                 drop.ack({ t: 'done', ok: false, error: why });
@@ -1712,14 +1765,51 @@ mgu.run({
                 return;
             }
             drop.ack({ t: 'done', ok: true });
-            if (!gifOn()) settings.set(PREFS.LOGO_KEY, 'gif');
+            if (dest === 'main' && !gifOn()) settings.set(PREFS.LOGO_KEY, 'gif');
+            logoSig = '';
+            logoSync();
             wgReset();
+        };
+        /**
+         * Stage 1 / 2 / 3, original pictures generated here, onto Comfort, Sport and Sport+. Turns per driving
+         * mode on. The same prepare path as a GIF from the phone. Leaving the page stops it (wg.mode).
+         */
+        const wgStages = () => {
+            const list = STAGES.stages();
+            wg.mode = 'stages'; wg.done = 0; wg.total = list.length; wg.why = '';
+            const step = (i) => {
+                if (wg.mode !== 'stages') return;
+                if (i >= list.length) {
+                    if (!perOn()) settings.set(LM.PER_KEY, 'on');
+                    logoSig = '';
+                    logoSync();
+                    wgReset();
+                    return;
+                }
+                wg.done = i;
+                ANIM.prepare(list[i].gif, { w: WSIZE[0], h: WSIZE[1], fit: 'contain', onProgress: (d, n) => { wg.done = i + d / Math.max(1, n); wg.total = list.length; } }).then((a) => {
+                    if (wg.mode !== 'stages') return;
+                    try { player.save(list[i].slot, a, { name: list[i].name }); }
+                    catch (e) { wg.mode = 'error'; wg.why = 'The car could not keep the example (' + (e.code || e.message) + ').'; return; }
+                    step(i + 1);
+                }, (e) => { if (wg.mode !== 'stages') return; wg.mode = 'error'; wg.why = 'The example could not be made (' + (e && e.message || e) + ').'; });
+            };
+            step(0);
         };
         /** The Options entry's line. */
         const widgetLine = () => {
+            if (wg.mode === 'stages') return 'Making the stage example...';
             if (wg.mode !== 'idle') return 'Sending a GIF...';
             if (aw.status().templateGone) return "Install G's Dash again";
-            if (!aw.has()) return 'G logo · send a GIF from your phone';
+            if (perOn()) {
+                const label = car.data().driveMode || null;
+                const r = LM.resolve(true, label, player.filled());
+                const slot = r.slot ? LM.slotById(r.slot) : null;
+                const name = slot ? slot.name : (label || 'No mode yet');
+                if (r.use === 'slot') { const meta = player.info(r.slot); return name + ' · ' + (meta && meta.name ? meta.name : 'its GIF'); }
+                return name + ' · main Logo';
+            }
+            if (!player.mainReady()) return 'G logo · send a GIF from your phone';
             if (!gifOn()) return 'G logo (your GIF is kept)';
             const st = aw.status();
             return 'My GIF' + (st.path === 'stream' ? ' · smooth' : st.path === 'hmi' ? ' · ' + Math.round(st.fps) + ' fps' : '');
@@ -1755,7 +1845,7 @@ mgu.run({
             cv.strokeRoundRect(b.x, b.y, b.w, b.h, 18, 1, L.withAlpha('#ffffff', 0.10));
             let src;
             if (clip) { const i = clip.at(now); src = { key: 'new' + wg.clipGen + ':' + i, rgba: clip.rgba(i), w: clip.w, h: clip.h }; }
-            else if (gifOn() && aw.has()) { const f = aw.frame(now); src = { key: 'gif' + f.gen + ':' + f.index, rgba: f.rgba, w: f.w, h: f.h }; }
+            else if (aw.on && aw.has()) { const f = aw.frame(now); src = { key: player.source() + ':' + f.index, rgba: f.rgba, w: f.w, h: f.h }; }
             else src = { key: 'logo', rgba: logo.d, w: logo.w, h: logo.h };
             if (src.key !== wg.prevKey) { record.setImage(IMG.wprev, src.w, src.h, src.rgba); wg.prevKey = src.key; }
             cv.image(IMG.wprev, b.x, b.y, b.w, b.h);
@@ -1780,11 +1870,12 @@ mgu.run({
             const top = S.y + 34, bottom = S.y + S.h, pw = 576, ph = Math.round(pw * WSIZE[1] / WSIZE[0]);
             const waiting = wg.mode === 'qr' && drop.active() && !!drop.s;
             // left: the widget, or the QR code
-            lbl(waiting ? 'Scan with your phone' : wg.mode === 'confirm' ? 'Your GIF on the widget' : 'On the home screen', S.x, S.y + 20, 18, t.dim);
+            const modeNow = car.data().driveMode || null;
+            lbl(waiting ? 'Scan with your phone' : wg.mode === 'confirm' ? 'Your GIF' : perOn() ? ('Now · ' + (modeNow || 'no mode yet')) : 'On the home screen', S.x, S.y + 20, 18, t.dim);
             if (waiting) {
                 drawQr(cv, drop.s.url, { x: S.x + (pw - ph) / 2, y: top, s: ph });
                 if (wg.prevKey) { record.dropImage(IMG.wprev); wg.prevKey = ''; }
-            } else if (wg.mode === 'preparing') {
+            } else if (wg.mode === 'preparing' || wg.mode === 'stages') {
                 cv.roundRect(S.x, top, pw, ph, 18, '#1b1f26');
                 const f = wg.total ? wg.done / wg.total : 0, bw = pw - 120, by = top + ph / 2 + 10;
                 cv.text('Making the frames', S.x + pw / 2, top + ph / 2 - 24, 26, t.text, { align: 'center', literal: true });
@@ -1794,40 +1885,86 @@ mgu.run({
             // right
             const rx = S.x + pw + 40, rw = S.x + S.w - rx, bh = 76, by = bottom - bh, gap = 16, half = (rw - gap) / 2;
             let y = top + 34;
-            const line = (s, size, c, o) => { cv.text(fitText(cv, s, size, rw, o), rx, y, size, c, Object.assign({ literal: true }, o || {})); y += size + 14; };
+            const line = (s, size, c, o) => { if (y > by - 8) return; cv.text(fitText(cv, s, size, rw, o), rx, y, size, c, Object.assign({ literal: true }, o || {})); y += size + 14; };
             const kb = (n) => (n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
             const secs = (ms) => (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
             if (wg.mode === 'idle') {
-                const st = aw.status(), has = st.has;
+                const st = aw.status(), mainHas = player.mainReady(), showH = perOn() ? 64 : 84;
                 lbl('Shows', rx, S.y + 20, 18, t.dim);
-                [['logo', 'The G logo', "G's Dash's mark"], ['gif', 'My GIF', has ? st.name || 'Sent from your phone' : 'Send one first']].forEach((o, i) => {
-                    const ox = rx + i * (half + gap), on = (gifOn() && has ? 'gif' : 'logo') === o[0], can = o[0] === 'logo' || has;
-                    if (on) { cv.roundRect(ox, top, half, 84, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, top, half, 84, u.radius, 3, acc); } else card(cv, t, ox, top, half, 84, isDown('wg:' + o[0]));
-                    cv.text(o[1], ox + 20, top + 38, 24, on ? t.text : can ? t.dim : L.withAlpha(t.dim, 0.5), { literal: true });
-                    cv.text(fitText(cv, o[2], 16, half - 40), ox + 20, top + 64, 16, t.dim, { literal: true });
-                    if (can && !on) cv.target(ox, top, half, 84, () => { gDown = Date.now(); downKey = 'wg:' + o[0]; settings.set(PREFS.LOGO_KEY, o[0]); }, 'wg:' + o[0], u.radius);
+                [['logo', 'The G logo', "G's Dash's mark"], ['gif', 'My GIF', mainHas ? (gifOn() ? st.name || 'Sent from your phone' : 'Kept') : 'Send one first']].forEach((o, i) => {
+                    const ox = rx + i * (half + gap), on = (gifOn() && mainHas ? 'gif' : 'logo') === o[0], can = o[0] === 'logo' || mainHas;
+                    if (on) { cv.roundRect(ox, top, half, showH, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, top, half, showH, u.radius, 3, acc); } else card(cv, t, ox, top, half, showH, isDown('wg:' + o[0]));
+                    cv.text(o[1], ox + 20, top + (perOn() ? 28 : 38), perOn() ? 22 : 24, on ? t.text : can ? t.dim : L.withAlpha(t.dim, 0.5), { literal: true });
+                    cv.text(fitText(cv, o[2], 16, half - 40), ox + 20, top + (perOn() ? 50 : 64), 16, t.dim, { literal: true });
+                    if (can && !on) cv.target(ox, top, half, showH, () => { gDown = Date.now(); downKey = 'wg:' + o[0]; settings.set(PREFS.LOGO_KEY, o[0]); }, 'wg:' + o[0], u.radius);
                 });
-                y = top + 84 + 44;
-                if (has) {
-                    line(st.frames + ' frames · ' + secs(st.duration) + ' loop · ' + (st.fit === 'contain' ? 'Fit' : 'Fill') + (st.source ? ' · from ' + st.source.w + ' x ' + st.source.h + ', ' + st.source.frames + ' frames' : ''), 19, t.text);
-                    if (gifOn()) {
+                y = top + showH + 18;
+                const chipW = 110, chipX = rx + rw - chipW * 2 - 10;
+                cv.text('Per driving mode', rx, y + 22, 20, t.text, { literal: true });
+                [['off', 'Off'], ['on', 'On']].forEach((o, i) => {
+                    const ox = chipX + i * (chipW + 10), on = (perOn() ? 'on' : 'off') === o[0];
+                    if (on) { cv.roundRect(ox, y, chipW, 44, u.radius, L.withAlpha(acc, 0.28)); cv.strokeRoundRect(ox, y, chipW, 44, u.radius, 2.5, acc); }
+                    else card(cv, t, ox, y, chipW, 44, isDown('wg:per:' + o[0]));
+                    cv.text(o[1], ox + chipW / 2, y + 30, 20, on ? t.text : t.dim, { align: 'center', literal: true });
+                    if (!on) cv.target(ox, y, chipW, 44, () => { gDown = Date.now(); downKey = 'wg:per:' + o[0]; settings.set(LM.PER_KEY, o[0]); }, 'wg:per:' + o[0], u.radius);
+                });
+                y += 58;
+                if (perOn()) {
+                    const slots = LM.visibleSlots(LM.parseSeen(settings.get(LM.SEEN_KEY)));
+                    const cells = [{ id: 'main', name: 'Main', sub: gifOn() && mainHas ? 'My GIF' : 'G logo' }].concat(slots.map((s) => {
+                        const meta = player.filled()[s.id] ? player.info(s.id) : null;
+                        return { id: s.id, name: s.name, sub: meta && meta.name ? meta.name : 'Main logo' };
+                    }));
+                    const cols = cells.length > 3 ? 3 : cells.length, cg = 10, cw = (rw - cg * (cols - 1)) / cols, ch = 58;
+                    const nowId = LM.slotForMode(modeNow);
+                    cells.forEach((c, i) => {
+                        const col = i % cols, row = Math.floor(i / cols);
+                        const ox = rx + col * (cw + cg), oy = y + row * (ch + cg);
+                        if (oy + ch > by - 8) return;
+                        const on = (wg.target || 'main') === c.id, live = c.id === nowId || (c.id === 'main' && !nowId);
+                        if (on) { cv.roundRect(ox, oy, cw, ch, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, oy, cw, ch, u.radius, 3, acc); }
+                        else card(cv, t, ox, oy, cw, ch, isDown('wg:slot:' + c.id));
+                        if (live) cv.circle(ox + 16, oy + 20, 5, acc);
+                        cv.text(c.name, ox + (live ? 28 : 14), oy + 26, 18, t.text, { literal: true });
+                        cv.text(fitText(cv, c.sub, 14, cw - 24), ox + 14, oy + 46, 14, t.dim, { literal: true });
+                        if (!on) cv.target(ox, oy, cw, ch, () => { gDown = Date.now(); downKey = 'wg:slot:' + c.id; wg.target = c.id; }, 'wg:slot:' + c.id, u.radius);
+                    });
+                    y += Math.ceil(cells.length / cols) * (ch + cg) + 6;
+                    line('Empty slots use the main Logo. The home widget, the cluster and Drive\'s right panel follow the mode.', 16, t.dim);
+                } else {
+                    if (mainHas && gifOn()) {
+                        line(st.frames + ' frames · ' + secs(st.duration) + ' loop · ' + (st.fit === 'contain' ? 'Fit' : 'Fill'), 19, t.text);
                         const tone = st.path === 'stream' ? HUB.GREEN : st.path === 'hmi' ? '#ffb020' : t.dim;
-                        cv.circle(rx + 7, y - 7, 6, tone);
-                        cv.text(fitText(cv, st.path === 'off' ? "Plays once G's Dash's widget is on the home screen" : 'Playing: ' + st.note + (st.fps ? ' · ' + st.fps.toFixed(1) + ' fps' : ''), 19, rw - 22),
-                            rx + 22, y, 19, t.text, { literal: true });
-                        y += 33;
+                        if (y <= by - 28) { cv.circle(rx + 7, y - 7, 6, tone); cv.text(fitText(cv, st.path === 'off' ? "Plays once the widget is on the home screen" : 'Playing: ' + st.note, 19, rw - 22), rx + 22, y, 19, t.text, { literal: true }); y += 33; }
                     }
+                    line('One Logo for every driving mode: the home widget, the cluster, and Drive\'s right panel when that panel is Logo.', 16, t.dim);
                 }
-                line('The same GIF is the home-screen widget and the cluster logo, and it keeps playing in the cluster while the car moves.', 16, t.dim);
                 if (st.templateGone) line('Install G\'s Dash again in the Store: the widget was made for the renderer\'s stream template, now gone.', 17, '#ffb020');
-                else if (st.template !== 'stream') line('Smooth playback at the GIF\'s own rate needs the Store renderer\'s widget support.', 16, t.dim);
                 if (!drop.configured()) line('Send a GIF is not set up (app.json config widgetRelay).', 17, '#ffb020');
                 if (wg.why) line(wg.why, 17, '#ffb020');
-                if (drop.configured()) wButton(cv, S, lk, 'wg:send', rx, by, has ? half : rw, bh, has ? 'Send another GIF' : 'Send a GIF from your phone', true, wgSend);
-                if (has) {
+                const dest = sendTarget(), destSlot = dest === 'main' ? null : LM.slotById(dest);
+                const sendLabel = destSlot ? 'Send for ' + destSlot.name : (mainHas ? 'Send another GIF' : 'Send a GIF');
+                const removeId = destSlot && player.filled()[dest] ? dest : (mainHas ? 'main' : '');
+                const nBtn = (drop.configured() ? 1 : 0) + (removeId ? 1 : 0) + (perOn() ? 1 : 0);
+                const bw = nBtn > 1 ? (rw - gap * (nBtn - 1)) / nBtn : rw;
+                let bx = rx;
+                if (drop.configured()) { wButton(cv, S, lk, 'wg:send', bx, by, bw, bh, sendLabel, true, wgSend); bx += bw + gap; }
+                if (removeId) {
                     const armed = now - wg.removeAt < 5000;
-                    wButton(cv, S, lk, 'wg:remove', rx + half + gap, by, half, bh, armed ? 'Tap again to remove' : 'Remove GIF', false, () => {
-                        if (Date.now() - wg.removeAt < 5000) { wg.removeAt = 0; aw.remove(); settings.set(PREFS.LOGO_KEY, 'logo'); } else wg.removeAt = Date.now();
+                    wButton(cv, S, lk, 'wg:remove', bx, by, bw, bh, armed ? 'Tap again to remove' : 'Remove', false, () => {
+                        if (Date.now() - wg.removeAt >= 5000) { wg.removeAt = Date.now(); return; }
+                        wg.removeAt = 0;
+                        if (removeId === 'main') { aw.remove(); settings.set(PREFS.LOGO_KEY, 'logo'); }
+                        else player.remove(removeId);
+                        logoSig = '';
+                        logoSync();
+                    });
+                    bx += bw + gap;
+                }
+                if (perOn()) {
+                    const armed = now - wg.stageAt < 5000;
+                    wButton(cv, S, lk, 'wg:stages', bx, by, bw, bh, armed ? 'Tap again' : 'Stage example', false, () => {
+                        if (Date.now() - wg.stageAt < 5000) { wg.stageAt = 0; wgStages(); } else wg.stageAt = Date.now();
                     });
                 }
             } else if (wg.mode === 'qr') {
@@ -1854,22 +1991,29 @@ mgu.run({
                 }
                 wButton(cv, S, lk, 'wg:new', rx, by, half, bh, 'New code', drop.phase === 'error', wgSend);
                 wButton(cv, S, lk, 'wg:cancel', rx + half + gap, by, half, bh, 'Cancel', false, () => wgCancel());
-            } else if (wg.mode === 'preparing') {
-                lbl('Send a GIF', rx, S.y + 20, 18, t.dim);
+            } else if (wg.mode === 'preparing' || wg.mode === 'stages') {
+                lbl(wg.mode === 'stages' ? 'Stage example' : 'Send a GIF', rx, S.y + 20, 18, t.dim);
                 y = top + 30;
-                line('Got it from your phone', 30, t.text, { font: 'bold' });
-                if (wg.got && wg.got.name) line(wg.got.name, 20, t.dim);
-                line(wg.total ? 'Making the frames: ' + wg.done + ' of ' + wg.total : 'Reading the GIF...', 20, acc);
+                if (wg.mode === 'stages') {
+                    line('Stage 1, 2 and 3', 30, t.text, { font: 'bold' });
+                    line('Comfort, Sport and Sport+, an original figure. Your GIFs in those slots are replaced.', 18, t.dim);
+                    line('Making them: ' + Math.min(wg.total, Math.floor(wg.done) + 1) + ' of ' + wg.total, 20, acc);
+                } else {
+                    line('Got it from your phone', 30, t.text, { font: 'bold' });
+                    if (wg.got && wg.got.name) line(wg.got.name, 20, t.dim);
+                    line(wg.total ? 'Making the frames: ' + wg.done + ' of ' + wg.total : 'Reading the GIF...', 20, acc);
+                }
                 wButton(cv, S, lk, 'wg:cancel', rx + half + gap, by, half, bh, 'Cancel', false, () => wgCancel());
             } else if (wg.mode === 'confirm') {
-                const a = wg.prepared, src = a.source;
+                const a = wg.prepared, src = a.source, dest = wg.for && wg.for !== 'main' ? LM.slotById(wg.for) : null;
                 lbl('Send a GIF', rx, S.y + 20, 18, t.dim);
                 y = top + 30;
-                line('Put this GIF on the widget?', 30, t.text, { font: 'bold' });
+                line(dest ? 'Use this GIF for ' + dest.name + '?' : 'Put this GIF on the widget?', 30, t.text, { font: 'bold' });
                 if (wg.got.name) line(wg.got.name, 20, t.dim);
                 line((a.fit === 'contain' ? 'Fit' : 'Fill') + ' · ' + a.frames.length + ' frames · ' + secs(a.duration) + ' loop · ' + kb(a.frames.reduce((n, f) => n + f.png.length, 0)), 20, t.text);
                 line('From ' + src.w + ' x ' + src.h + ', ' + src.frames + ' frames, ' + kb(src.bytes) + (src.frames > a.frames.length ? ' (frames merged, the same pace)' : ''), 17, t.dim);
-                if (aw.has()) line('It takes the place of ' + (aw.status().name || 'your current GIF') + '.', 17, t.dim);
+                if (dest) line('Other modes keep their own GIF, or the main Logo when that slot is empty.', 17, t.dim);
+                else if (player.mainReady()) line('It takes the place of the main Logo GIF.', 17, t.dim);
                 wButton(cv, S, lk, 'wg:use', rx, by, half, bh, 'Use this GIF', true, wgUse);
                 wButton(cv, S, lk, 'wg:cancel', rx + half + gap, by, half, bh, 'Cancel', false, () => wgCancel());
             } else {
@@ -1881,6 +2025,32 @@ mgu.run({
                 wButton(cv, S, lk, 'wg:new', rx, by, half, bh, 'Try again', true, wgSend);
                 wButton(cv, S, lk, 'wg:back', rx + half + gap, by, half, bh, 'Back', false, () => { wgReset(); });
             }
+        }
+
+        /**
+         * Drive's right panel when it is Logo: the same picture as the home widget and the cluster
+         * (the G, My GIF, or the driving mode's GIF), contained in the look's panel place. The frame
+         * is uploaded only when it changes, so a GIF keeps its pace while the car moves.
+         */
+        let panelStamp = '';
+        function driveLogo(cv, lk, S) {
+            const r = lk.panelRect ? lk.panelRect(S) : null;
+            if (!r || !(r.w > 16 && r.h > 16)) return;
+            if (typeof lk.panelPlate === 'function') lk.panelPlate(cv, S.t, r.x, r.y, r.w, r.h);
+            else cv.roundRect(r.x, r.y, r.w, r.h, (lk.ui && lk.ui.radius) || 12, '#101216');
+            const pad = 18, bw = Math.max(1, r.w - pad * 2), bh = Math.max(1, r.h - pad * 2);
+            let sw, sh, rgba, stamp;
+            if (aw.on && aw.has()) {
+                const f = aw.frame(S.now || Date.now());
+                if (!f || !f.rgba) return;
+                sw = f.w; sh = f.h; rgba = f.rgba; stamp = player.source() + ':' + f.index;
+            } else { sw = logo.w; sh = logo.h; rgba = logo.d; stamp = 'g'; }
+            if (stamp !== panelStamp) {
+                record.setImage(IMG.panel, sw, sh, Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+                panelStamp = stamp;
+            }
+            const box = containBox(sw, sh, bw, bh);
+            cv.image(IMG.panel, r.x + pad + box.x, r.y + pad + box.y, box.w, box.h);
         }
 
         ctx.loop('MAIN', 10, () => {
@@ -1922,11 +2092,12 @@ mgu.run({
                     S.zones = null;
                     lk.draw(cv, S);
                     if (S.panel === 'spotify') music.panel(cv, S, lk, lk.panelRect(S), HUB.dotsBox(gr, HUB.SCREENS.length));
+                    else if (S.panel === 'logo') driveLogo(cv, lk, S);
                     if (cv.own) favDrive(cv, S, lk);
                 } else if (id === 'warmup') HUB.warmup(cv, st, Object.assign({}, S, { redline: WARM_REDLINE, maxRpm: Math.max(7000, S.maxRpm) }), warmModel(S));
                 else if (id === 'gforce') HUB.gforce(cv, st, S, gModel(S));
                 else if (id === 'tires') HUB.tires(cv, st, S, tireModel(S));
-                HUB.dots(cv, st, gr, scr, HUB.SCREENS.length, id === 'drive' && !!lk.dotsAbove && S.panel !== 'spotify');
+                HUB.dots(cv, st, gr, scr, HUB.SCREENS.length, id === 'drive' && !!lk.dotsAbove && S.panel === 'g');
                 if (toastMsg) {
                     const age = Date.now() - toastMsg.at;
                     if (age > 2600) toastMsg = null;

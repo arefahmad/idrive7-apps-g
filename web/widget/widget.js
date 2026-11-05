@@ -1,5 +1,6 @@
 /*
- * Logo: send an animated GIF from the phone to G's Dash (the home-screen widget and the cluster). Static, no secrets. The
+ * Logo: send an animated GIF from the phone to G's Dash (the home-screen widget, the cluster, and a
+ * driving-mode slot when the car's Logo page was on one). Static, no secrets. The
  * car's side is kit/runtime/gif_drop.js (it says the whole exchange); this page:
  *
  *   <this page>#v=1&s=<topic>.<key>&a=<app name>&w=<px>&h=<px>   from the car's QR code
@@ -188,7 +189,7 @@
             if (!p || p.from !== 'car' || p.s !== st.topic) continue;
             if (p.t === 'got' && !got) {
               got = true;
-              busy('Check the car’s screen', 'The car has the GIF and is getting it ready. Tap Use on the car to put it on the widget.');
+              busy('Check the car’s screen', 'The car has the GIF and is getting it ready. Tap Use on the car to keep it for the Logo.');
             }
             if (p.t === 'done') {
               if (p.ok) show('done');

@@ -292,6 +292,22 @@ test('Logo: My GIF replaces the look\'s G and keeps sending frames while moving'
     n = 1; x.lg._frame();
     assert.ok(x.lg.stats.sends > before, 'a later frame while moving');
 });
+test('Logo: a driving-mode change keeps the layer and writes the new GIF in place', () => {
+    const c = clock();
+    let stamp = 'comfort@1:0', byte = 1;
+    const picture = {
+        id: 'gif', source: 'comfort@1', animate: true,
+        frame: () => ({ w: 4, h: 2, d: Buffer.from([byte, 0, 0, 255]), stamp: stamp }),
+    };
+    const x = logo(c, { picture: picture, parked: false, look: 'm' });
+    const made = x.lg.stats.layers, sends = x.lg.stats.sends, drops = x.lg.stats.drops;
+    picture.source = 'sport@1'; byte = 9; stamp = 'sport@1:0';
+    x.lg.update({ on: true, look: 'm', picture: picture, parked: false });
+    assert.strictEqual(x.lg.stats.layers, made, 'the layer is not built again');
+    assert.strictEqual(x.lg.stats.drops, drops, 'the old picture is not dropped');
+    assert.ok(x.lg.stats.sends > sends, 'the new frame is sent');
+    assert.strictEqual(only(x.cr, 'image').length, 1);
+});
 test('Logo: a widget-sized GIF is fitted to the Pixel emblem\'s on-screen box', () => {
     const c = clock();
     const picture = {

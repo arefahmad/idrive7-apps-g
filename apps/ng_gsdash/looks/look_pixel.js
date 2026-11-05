@@ -307,7 +307,7 @@ module.exports = {
         stat(cv, S, gx + 300, by, 300, 'OIL', S.oil); stat(cv, S, gx + 660, by, 300, 'COOLANT', S.cool);
 
         // ---- right: the g radar and the peaks (Spotify takes this place when chosen)
-        if (S.panel === 'spotify') return;
+        if (S.panel && S.panel !== 'g') return;
         const px = x0 + 1060, py = top + 104, s = Math.min(bottom - py - 96, 300);
         radar(cv, S, px, py, s);
         const kx = x0 + S.w - 20;

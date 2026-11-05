@@ -100,6 +100,10 @@ const inRect = (r, x, y) => !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <
  * before this could read it.
  */
 const LOGO_KEY = 'logo', LOGO_OLD = 'widget';
+/* Drive's right panel (setting "panel"): the g-meter, Spotify, or the Logo. Anything else is the g-meter, the default. */
+const PANEL_NAME = { g: 'G-meter', spotify: 'Spotify', logo: 'Logo' };
+function panelOf(v) { return v === 'spotify' || v === 'logo' ? v : 'g'; }
+const panelName = (v) => PANEL_NAME[panelOf(v)];
 function migrateLogo(values) {
     const v = values || {};
     const has = Object.prototype.hasOwnProperty.call(v, LOGO_OLD);
@@ -109,7 +113,7 @@ function migrateLogo(values) {
 }
 
 module.exports = {
-    LOGO_KEY, LOGO_OLD, migrateLogo,
+    LOGO_KEY, LOGO_OLD, migrateLogo, PANEL_NAME, panelOf, panelName,
     DISPLAYS, DISPLAY_IDS, DEFAULT_DISPLAY, OLD_KEYS, validDisplay, displayName, displayFrom, migrateDisplays,
     FAV_KEY, FAV_MIN, TOAST_MS, HINT, parseFavs, serializeFavs, toggleFav, nextFav, favToast,
     TAP_SLOP, stillTap, nearShift, overlaps, inRect,

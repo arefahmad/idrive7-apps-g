@@ -1,8 +1,8 @@
 {
   "id": "ng_gsdash",
   "title": "G's Dash",
-  "description": "Driver display in eight looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space). Swipe between Drive (shift lights, gear, rpm, speed, g-meter, oil and coolant), Warm-up, G-force and Tires, with an optional Spotify panel. Logo is the G mark by default, or a GIF from your phone, on the home-screen widget and in the cluster. With the Cluster renderer tool, one tap picks the cluster's centre (logo, G's Music, Waze, stock, Auto) and dials & HUD (your look, the HUD, G's Music's lyrics). CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium and mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
-  "version": "0.18.1",
+  "description": "Driver display in eight looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space). Swipe between Drive, Warm-up, G-force and Tires, with an optional Spotify panel. Logo is the G mark by default, or a GIF from your phone, on the home widget, in the cluster, and on Drive's right panel when that panel is Logo. Per driving mode (off by default) gives each reported mode its own GIF; an empty slot keeps the main Logo. With the Cluster renderer tool, one tap picks the cluster's centre and dials & HUD. CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium and mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
+  "version": "0.18.2",
   "vendor": "ng",
   "loggingId": "OAN1",
   "iconGlyph": "gauge",
@@ -25,7 +25,7 @@
       "DataPowerTrain2": "s"
     },
     "de.bmw.infotainment.drivingexcitement.FES": {
-      "_optional": "the drive mode badge: statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience (enum ActualValueModeDrivingExperience2, by name or number); its pop-up request flags mark a change",
+      "_optional": "the drive mode badge, and which per-mode Logo plays: statusFESVehicleDynamicSwitchHMI.actualValueModeDrivingExperience (enum ActualValueModeDrivingExperience2, by name or number); its pop-up request flags mark a change",
       "statusFESVehicleDynamicSwitchHMI": "rs"
     },
     "de.bmw.infotainment.misc.MDrive": {
@@ -108,7 +108,7 @@
      "steps": [160, 165, 170, 175, 180, 185, 190, 194, 200]},
     {"key": "gScale", "label": "G-meter size", "type": "number", "unit": "g", "default": 1.5, "steps": [1.0, 1.5, 2.0]},
     {"key": "panel", "label": "Right panel", "type": "choice", "default": "g",
-     "options": [["g", "G-meter and peaks"], ["spotify", "Spotify (touch controls)"]]},
+     "options": [["g", "G-meter and peaks"], ["spotify", "Spotify (touch controls)"], ["logo", "Logo"]]},
     {"key": "clusterControl", "label": "G's Dash on the cluster & HUD", "type": "choice", "default": "on",
      "options": [["on", "On"], ["off", "Off - the car stock"]]},
     {"key": "clusterSource", "label": "Cluster source (map area)", "type": "choice", "default": "auto",
@@ -120,7 +120,9 @@
     {"key": "unitSpeed", "label": "Speed unit", "type": "choice", "default": "mph", "options": [["mph", "mph"], ["kmh", "km/h"]]},
     {"key": "unitTemp", "label": "Temperature unit", "type": "choice", "default": "f", "options": [["f", "\u00b0F"], ["c", "\u00b0C"]]},
     {"key": "unitPress", "label": "Pressure unit", "type": "choice", "default": "psi", "options": [["psi", "psi"], ["bar", "bar"], ["kpa", "kPa"]]},
-    {"key": "logo", "label": "Logo", "type": "choice", "default": "logo", "options": [["logo", "The G logo"], ["gif", "My GIF"]]}
+    {"key": "logo", "label": "Logo", "type": "choice", "default": "logo", "options": [["logo", "The G logo"], ["gif", "My GIF"]]},
+    {"key": "logoPerMode", "label": "Logo per driving mode", "type": "choice", "default": "off",
+     "options": [["off", "Off"], ["on", "On"]]}
   ],
   "retiredSettings": ["demo", "layout", "renderer", "speedUnit", "spotifyPoll", "showBadge", "lights", "theme", "bars", "showcase", "showcaseBg"]
 }

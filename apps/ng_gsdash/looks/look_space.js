@@ -345,7 +345,7 @@ module.exports = {
             speed: { x: g.tx - 150, y: g.ty - 50, w: 300, h: 160 }, gear: { x: gx - R, y: gy - R, w: 2 * R, h: 2 * R },
             toast: { x: g.tx, y: g.ty + 40 }, chip: { x: gx + R - 6, y: gy - R + 16 }, star: { x: gx + 46, y: g.top + 34 },
         };
-        if (S.panel === 'spotify') return;
+        if (S.panel && S.panel !== 'g') return;
         // right: the star chart and the peaks
         const px = g.px, pw = S.x + S.w - px, r = 112, cx = px + 24 + r, cy = g.top + 32 + r + 14;
         lbl(cv, 'G-FORCE', px + 4, g.top + 34);

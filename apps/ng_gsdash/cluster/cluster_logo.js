@@ -215,7 +215,7 @@ class ClusterLogo {
         this.T = o.timers || { setInterval, clearInterval };
         this.images = o.images;
         this.want = false; this.pixel = false; this.look = ''; this.guideHides = true; this.exclusive = false;
-        this.picture = null; this._customStill = null; this.customFail = '';
+        this.picture = null; this.pictureSource = ''; this._customStill = null; this.customFail = '';
         this.fxBad = {}; this.bakedBad = {};               // looks whose shader / baked picture failed (this run)
         this.gate = new MEM.FreeGate(this.now); this.asked = 0; this.answered = 0; this.lookAt = -1e15; this.wantKey = ''; this.parked = false; this.enabled = true;
         this._reset();
@@ -258,10 +258,22 @@ class ClusterLogo {
         this.look = (s && typeof s.look === 'string') ? s.look : '';
         this.pixel = !!(s && s.pixel) || this.look === 'pixel';
         this.parked = !!(s && s.parked);
-        // Logo > My GIF: the same frames as the home-screen widget. null: the look's own G
+        // Logo > My GIF: the same frames as the home-screen widget. null: the look's own G.
+        // A driving-mode change keeps the same picture id and sets picture.source (slot@rev). The pixels
+        // are replaced in place, so the layer is not dropped and the map does not flicker.
         const pic = s && s.picture;
         const picId = pic && pic.id || '';
-        if (picId !== (this.picture && this.picture.id || '')) { this._customStill = null; if (picId !== this.customFail) this.customFail = ''; }
+        const prevId = this.picture && this.picture.id || '';
+        const src = pic && pic.source || '';
+        if (picId !== prevId) {
+            this._customStill = null;
+            if (picId !== this.customFail) this.customFail = '';
+            this.pictureSource = src;
+        } else if (src && src !== this.pictureSource && this.ref && this.kind === 'custom' && pic && typeof pic.frame === 'function') {
+            this.pictureSource = src;
+            this.customFail = '';
+            this._pushPicture(pic);
+        }
         this.picture = pic || null;
         if (!on) { if (this.want || this.cr) this._off(); this.want = false; return; }
         this.want = true;
@@ -480,6 +492,28 @@ class ClusterLogo {
             if (!this.bakedBad[look] && this.images && typeof this.images.baked === 'function') return { kind: 'baked', look, key: 'baked:' + look };
         }
         return { kind: 'regular', look: '', key: 'regular' };
+    }
+
+    /**
+     * The GIF changed (another driving mode) but the layer can stay: write the frame due now. A different
+     * fitted size clears the layer key so _apply builds it again. The old picture stays until that happens.
+     */
+    _pushPicture(pic) {
+        let img = null;
+        try { img = pic.frame(false); } catch (e) { img = null; }
+        if (!img || !img.d || !img.w || !img.h) return;
+        const stamp = img.stamp != null ? String(img.stamp) : '';
+        img = fitClusterGif(img);
+        if (!img || !img.d) return;
+        if (this._customStill && (img.w !== this._customStill.w || img.h !== this._customStill.h)) {
+            this._customStill = null;
+            this.key = '';
+            return;
+        }
+        this._customStill = img;
+        if (!stamp || stamp === this.frameKey || !this.cr || !this.ref) return;
+        this.frameKey = stamp;
+        this._send(this.ref, img);
     }
 
     /** Shown or not, the image for the look, the parked animation. */

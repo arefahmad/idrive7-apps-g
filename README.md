@@ -17,6 +17,9 @@ A driver display and car hub for the centre screen.
 - **Spotify panel:** optional, with its own sign-in by QR code.
 - **Logo:** the G mark by default, on the home-screen widget and in the instrument cluster. Send your own
   GIF from your phone; it plays on the widget and in the cluster, including while the car is moving.
+  Per driving mode (Logo, off by default) gives Comfort, Sport, Sport+ and any other mode the car reports
+  its own GIF; an empty slot keeps the main Logo. Drive's right panel can show that same Logo instead of
+  the G-meter or Spotify. A built-in Stage 1 / 2 / 3 example is original art; use your own GIFs for anything else.
 - **On the car's other displays** (optional), two picks on Options > Cluster & HUD, one tap each, shared
   with G's Music and G's TV:
   - **The cluster's centre:** Auto, the G's Dash logo, G's Music, Waze's map or the car's own. Every

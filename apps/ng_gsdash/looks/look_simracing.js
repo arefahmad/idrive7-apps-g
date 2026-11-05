@@ -231,7 +231,7 @@ module.exports = {
         deltaBar(cv, S, g.cx, ry + 34, 560);
 
         // ---- right: friction circle and session bests (purple), the Spotify panel's place
-        if (S.panel === 'spotify') return;
+        if (S.panel && S.panel !== 'g') return;
         const rx = g.rx, avail = bottom - top;
         const r = Math.round(clamp(avail / 2 - 34, 90, 150 + ex * 0.15)), ccx = rx + 22 + r, ccy = top + 8 + r;
         circle(cv, S, ccx, ccy, r);
