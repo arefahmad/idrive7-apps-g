@@ -11,7 +11,7 @@ const pack = require('./kit/pack');
 const { withAlpha, mix, clamp, isNum } = G;
 const RAD = Math.PI / 180;
 
-/* ---------------- fonts: apps/ng_gsdash/fonts (fonts.pack in a build), tools/bake_gsdash_fonts.py ---------------- */
+/* ---------------- fonts: apps/ng_gsdash/data/fonts (fonts.pack in a build), tools/bake_gsdash_fonts.py ---------------- */
 const FAMILIES = ['gs_m_num', 'gs_m_gear', 'gs_m_txt', 'gs_m_lt', 'gs_gt_num', 'gs_gt_gear', 'gs_gt_txt',
     'gs_h_txt', 'gs_d_seg', 'gs_d_txt', 'gs_s_gear', 'gs_s_num', 'gs_s_txt', 'gs_p_px',
     'gs_v_num', 'gs_v_gear'];

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """pack_data.py <folder> [out.pack] - pack an app's data folder into one compressed file.
 
-kit/tools/build.py runs this for every folder in an app (apps/<app>/<folder>/ -> <folder>.pack
+kit/tools/build.py runs this for every data folder of an app (apps/<app>/data/<folder>/ -> <folder>.pack
 next to the app's code); the app reads it with kit/runtime/pack.js. Can also be run by hand to
 see the sizes.
 

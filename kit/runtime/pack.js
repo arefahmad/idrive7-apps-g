@@ -1,7 +1,7 @@
 'use strict';
 /*
  * pack.js - read an app's data folder from the one compressed file the build makes of it
- * (kit/tools/build.py packs apps/<app>/<folder>/ into <folder>.pack, see kit/tools/pack_data.py).
+ * (kit/tools/build.py packs apps/<app>/data/<folder>/ into <folder>.pack, see kit/tools/pack_data.py).
  *
  *   const db = require('./kit/pack').open(path.join(__dirname, 'dtc_db'));
  *   db.json('sgbd_index.json')            // a whole (small) file, {} when missing

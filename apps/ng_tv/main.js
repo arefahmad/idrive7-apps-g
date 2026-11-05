@@ -558,7 +558,6 @@ mgu.run({
             cluster: { name: 'Cluster' },
             hud: { name: 'HUD', needsTool: true },
         };
-        let okKey = '';
         /** Why an output can't be turned on: the Cluster renderer tool missing or broken (its own words); '' if it can. */
         function noTool() {
             const c = loadClient();
@@ -572,8 +571,7 @@ mgu.run({
             }
             toast = null;
             const was = Object.keys(OUT).filter((o) => o !== k && settings.get(o))[0];
-            okKey = k;
-            try { settings.set(k, true); } finally { okKey = ''; }
+            settings.set(k, true);
             if (was) say(OUT[was].name + ' off - ' + OUT[k].name + ' on (one at a time, parked only)', 3500);
             else say(OUT[k].name + ': on (parked only)');
         }
@@ -987,7 +985,6 @@ mgu.run({
 
         /** The watching view: CH column (left), the picture, the top controls and the banner over it; or fullscreen. */
         function drawWatch(cv, t, A) {
-            const on = t.accent2 || t.accent;
             const spel = !!src && src.kind === 'spelunkr', custom = !!src && src.kind === 'custom';
             const fs = full && cv.own;
             const V = fs ? fullRect(cv, A) : cv.own ? { x: A.x + RAIL_W + GAP, y: A.y, w: A.right - (A.x + RAIL_W + GAP), h: A.h } : { x: A.x, y: A.y, w: Math.round(A.w * 0.62), h: A.h };

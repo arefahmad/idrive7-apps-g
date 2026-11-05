@@ -55,7 +55,6 @@ const MEM_FULL = MEM.MEM_FULL, memoryUsers = MEM.memoryUsers, memoryNote = MEM.m
 const mib = (b) => (b / 1048576).toFixed(1) + ' MiB';
 
 const TARGET = 'panel', KLASS = 'content', SKIN_Z = 90;
-const SPEED_IFACE = 'de.bmw.infotainment.vehicle.Vehicle2';
 // the cluster layout the geometry was measured on (the M / Sport layout); 0.8.4: in every drive mode,
 // as the car is coded to show that layout in all of them - the drive mode no longer gates the skins
 const LAYOUT = 'SPORT';
