@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src https://ntfy.sh; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<title>Home widget: send a GIF</title>
+<link rel="stylesheet" href="widget.css">
+</head>
+<body>
+<main>
+  <h1><span class="dot"></span> <span id="app">Home widget</span></h1>
+
+  <section id="code" hidden>
+    <h2>Enter the code from the car</h2>
+    <p>The app shows a 6-digit code under the QR code (<b>Home widget</b>, <b>Send a GIF</b>).</p>
+    <label for="digits">Code</label>
+    <input id="digits" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123 456">
+    <button id="code-go">Continue</button>
+    <p id="code-err" class="err" hidden></p>
+  </section>
+
+  <section id="form" hidden>
+    <h2>Send a GIF to your home screen</h2>
+    <p>Pick an animated GIF. The car shows it to you before it goes on the widget.</p>
+    <label class="pick" for="file"><span id="pick-text">Choose a GIF</span>
+      <input id="file" type="file" accept="image/gif"></label>
+    <div id="preview" class="preview fill" hidden><img id="img" alt="The GIF as it will fill the widget"></div>
+    <p id="info" class="small" hidden></p>
+    <div id="fit" class="seg" role="radiogroup" aria-label="How it fits the widget" hidden>
+      <button type="button" id="fit-cover" class="on" role="radio" aria-checked="true">Fill<small>no borders, edges cut</small></button>
+      <button type="button" id="fit-contain" role="radio" aria-checked="false">Fit<small>whole GIF, clear borders</small></button>
+    </div>
+    <button id="send" disabled>Send to the car</button>
+    <p id="form-err" class="err" hidden></p>
+  </section>
+
+  <section id="busy" hidden>
+    <h2 id="busy-title">Encrypting…</h2>
+    <p id="busy-text">Keep this page open until the car has it.</p>
+    <div class="spinner"></div>
+  </section>
+
+  <section id="done" hidden>
+    <h2>✓ On your home screen</h2>
+    <p>The car is playing it on the widget. You can close this page.</p>
+  </section>
+
+  <section id="fail" hidden>
+    <h2>Not sent</h2>
+    <p id="fail-text"></p>
+    <p class="small">On the car, tap <b>Send a GIF</b> for a new code and try again.</p>
+  </section>
+
+  <footer>Static page, no server part: the GIF goes end-to-end encrypted to your car's mailbox on ntfy.sh,
+    the only server this page talks to, which deletes it after a few hours. Nothing is kept on this page.</footer>
+</main>
+<script src="widget.js"></script>
+</body>
+</html>
