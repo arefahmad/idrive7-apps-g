@@ -18,6 +18,14 @@
  * recorded (Doom connects without opts.native); on mgu-render/1 they go as the native picture
  * (message 10, premultiplied RGBA, sides 1..1024) and each frame's op 18 is rewritten to the native
  * layout `x y w h r id` (mgu-store native/mgu-render/PROTOCOL.md, "Where the dialects differ").
+ *
+ * opts.mode 'widget' (mgu-render/1 only; docs/animated-widget.md): the connection draws into the home-screen
+ * widget's stream surface instead of a layer over the screen. mgu-renderd-hmi binds that surface into the
+ * stream widget template it mounts for HmiMain3D, so the HMI itself composites the frames inside the
+ * widget (scrolling with the home screen, under popups, no vignette). Asked for with MODE 3 once the
+ * renderer says it can (X_READY caps bit 32); PLACE's w and h are the surface's size in pixels (x and y
+ * ignored), SHOW 1 / 0 starts and stops drawing there. A renderer without it (or an upstream one) gets
+ * no MODE at all: the client emits 'unsupported' instead of 'ready' and the caller closes it.
  */
 const net = require('net');
 const fs = require('fs');
@@ -39,6 +47,9 @@ const CLAIM = 9, TOUCH = 105, CLOSED = 106;
 // mgu-render/1 (mgu-store native/mgu-render/PROTOCOL.md)
 const X = { MODE: 0x4d520001, GRAB: 0x4d520002, READY: 0x4d520101, STATE: 0x4d520102, CCU: 0x4d520103 };
 const X_MODE_LAYER = 1;
+// MODE 2 is the renderer's in-page drawing ("embed"); 3 the home-screen widget's stream surface (caps bit 32)
+const X_MODE_WIDGET = 3;
+const CAP_WIDGET = 32;
 
 // mgu-render/1 (iterio numbering): message 10 is IMAGE, op 18 is `x y w h r id`
 const NATIVE_IMAGE = 10;
@@ -134,6 +145,8 @@ class RenderClient extends EventEmitter {
         this.info = null;            // X_READY: { touch, controller, frontGate, video }
         this.videos = new Map();     // video id -> its frame file (/dev/shm/mgu-video-*), sent again after PLACE
         this.onScreen = null;        // X_STATE: the renderer shows us (null: not told)
+        this.widget = this.opts.mode === 'widget';
+        this.unsupported = false;    // widget mode asked for, and this renderer has none ('unsupported' emitted)
     }
 
     /** Socket exists (the renderer is installed and running)? */
@@ -144,7 +157,7 @@ class RenderClient extends EventEmitter {
             this.fd = fs.openSync(this.opts.file, 'w');
             this.connected = this.ready = true;
             this._write(msg(M.HELLO, this._hello()));
-            if (this.opts.native) { this.native = true; this._write(this._u32msg(X.MODE, [X_MODE_LAYER])); }
+            if (this.opts.native) { this.native = true; this._write(this._u32msg(X.MODE, [this.widget ? X_MODE_WIDGET : X_MODE_LAYER])); }
             setImmediate(() => this.emit('ready', this.screen));
             return this;
         }
@@ -162,10 +175,13 @@ class RenderClient extends EventEmitter {
             this.native = false; this.info = null; this.onScreen = null;
             this.claimed = null;
             this._write(msg(M.HELLO, this._hello()));
-            // upstream renderers take these before READY; they are sent again once READY came
-            if (this.placement) this._sendPlace();
-            if (this.visible) this._write(this._u32msg(M.SHOW, [1]));
-            if (this.grabbing && !this.opts.native) this._write(this._u32msg(M.GRAB, [1]));
+            // upstream renderers take these before READY; they are sent again once READY came (never for a
+            // widget connection: those wait for the renderer to say it has the widget surface)
+            if (!this.widget) {
+                if (this.placement) this._sendPlace();
+                if (this.visible) this._write(this._u32msg(M.SHOW, [1]));
+                if (this.grabbing && !this.opts.native) this._write(this._u32msg(M.GRAB, [1]));
+            }
         });
         s.on('data', (d) => this._data(d));
         s.on('error', (e) => {
@@ -244,14 +260,23 @@ class RenderClient extends EventEmitter {
             if (type === X.READY && p.length >= 12) {
                 const caps = p.readUInt32LE(8);
                 this.native = true;
-                this.info = { touch: !!(caps & 1), controller: !!(caps & 2), frontGate: !!(caps & 4), video: !!(caps & 16) };
+                this.info = { touch: !!(caps & 1), controller: !!(caps & 2), frontGate: !!(caps & 4), video: !!(caps & 16), widget: !!(caps & CAP_WIDGET) };
             } else if (type === E.READY) {
+                if (this.widget && !(this.native && this.info && this.info.widget)) {
+                    // no widget surface on this renderer: nothing is sent, the caller closes this connection
+                    if (!this.unsupported) {
+                        this.unsupported = true;
+                        this.log.info('renderd: no home-screen widget surface on this renderer (' + (this.native ? 'mgu-render/1 ' + JSON.stringify(this.info) : 'upstream dialect') + ')');
+                        this.emit('unsupported', this.info);
+                    }
+                    continue;
+                }
                 this.ready = true; this.errLogged = false;
                 this.screen = { w: p.readUInt32LE(4), h: p.readUInt32LE(8) };
                 this.touch = p.length >= 16 && p.readUInt32LE(12) !== 0;
                 this.log.info('renderd: connected, screen ' + this.screen.w + 'x' + this.screen.h +
                     (this.native ? ', mgu-render/1 ' + JSON.stringify(this.info) : this.opts.native ? ', upstream dialect (no mgu-render/1)' : ''));
-                if (this.native) this._write(this._u32msg(X.MODE, [X_MODE_LAYER]));
+                if (this.native) this._write(this._u32msg(X.MODE, [this.widget ? X_MODE_WIDGET : X_MODE_LAYER]));
                 else if (this.grabbing && this.opts.native) this._write(this._u32msg(M.GRAB, [1]));
                 this.emit('ready', this.screen);
                 // after the app's placement (sent in 'ready'): SHOW again. A SHOW sent before the renderer
@@ -447,4 +472,4 @@ class RenderClient extends EventEmitter {
     }
 }
 
-module.exports = { RenderClient, SOCKET, SOCKETS };
+module.exports = { RenderClient, SOCKET, SOCKETS, X_MODE_WIDGET, CAP_WIDGET };

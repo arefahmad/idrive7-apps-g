@@ -30,7 +30,11 @@
  *     renderer's shared glyph texture) and the right panel. Shift lights always in the Race colours
  *     (0.6.0 took that setting out). The Drive page's bottom bars are oil and coolant (0.9.0 took the
  *     fuel choice out: no reliable fuel signal for now). No demo data.
- *   - a home-screen widget (app.json startWidget): the G logo, large and centred (widget_logo.js).
+ *   - a home-screen widget (app.json startWidget): the G logo, large and centred (widget_logo.js), or (0.15.0,
+ *     Options > Home widget, setting "widget") an animated GIF sent from the phone with a QR code (kit gif_drop.js,
+ *     the phone page web/widget/), made into widget-sized frames on the car (kit anim.js) and played by kit
+ *     widget_anim.js: drawn by the Store's renderer inside the widget where the unit has its stream widget
+ *     template (docs/animated-widget.md), else through the widget's own picture at up to 12 fps.
  *   - Options > Cluster source (0.8.3, cluster_source.js, setting "clusterSource", default Auto): what the
  *     cluster's centre map area shows - Auto (as before: the logo while G's Dash is open, G's Music over it
  *     while a track plays), Logo (also while G's Dash runs in the background), Music (G's Music's lyrics /
@@ -113,6 +117,11 @@ const PREFS = require('./prefs');
 const CLOCK = require('./clock');
 const UNITS = require('./units');
 const TINTS = require('./tints');
+const ANIM = require('./kit/anim');
+const { AnimatedWidget } = require('./kit/widget_anim');
+const { GifDrop } = require('./kit/gif_drop');
+const { Net } = require('./tv_net');
+const qrcodegen = require('./qrcodegen');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
     require('./look_lumen'), require('./look_pixel'), require('./look_vector')];
@@ -136,7 +145,8 @@ const VERSION = (() => {
 const COLD_RPM = 4000, COLD_F = 104, WARM_REDLINE = 6000, OIL_FULL_F = 180, AUTO_MS = 5000;
 const HIST_MS = 20000, HIST_N = 80, ENV_N = 48;                  // G-force: last 20 s, the peak envelope
 const SWIPE_START = 40, SWIPE_GO = 110, HOLD_MS = 700, HOLD_SLOP = 24;
-const IMG = { car: 0x6701, logo: 0x6702, card: 0x6710, wave: 0x6740 };   // record.setImage ids (cards: + look index; wave: Showcase)
+// record.setImage ids (cards: + look index; wave: Showcase; wprev: the Home widget page's preview)
+const IMG = { car: 0x6701, logo: 0x6702, card: 0x6710, wprev: 0x6720, wave: 0x6740 };
 const toF = (c) => (L.isNum(c) ? c * 9 / 5 + 32 : c);
 
 // content box: full screen from page y BOX_OWN to the page's bottom (G.pageBottom), else BOX_STD + BOX_H.
@@ -702,6 +712,11 @@ mgu.run({
                 cv.line(cx - 20, cy - 16, cx + 20, cy - 16, 3, acc); cv.line(cx + 20, cy - 16, cx + 12, cy - 23, 3, acc);
                 cv.line(cx - 20, cy - 8, cx + 20, cy - 8, 3, acc); cv.line(cx - 20, cy - 8, cx - 12, cy - 1, 3, acc);
             }
+            else if (kind === 'widget') {
+                // 0.15.0: a widget tile with a play mark
+                cv.strokeRoundRect(cx - 25, cy - 17, 50, 34, 7, 2.5, c);
+                cv.quad([[cx - 6, cy - 10], [cx - 6, cy + 10], [cx + 10, cy], [cx + 10, cy]], acc);
+            }
             else if (kind === 'spotify') [[-12, 30], [0, 44], [12, 22]].forEach((b) => cv.roundRect(cx + b[0] - 4, cy - b[1] / 2, 8, b[1], 4, c));
             else if (kind === 'diag') { cv.arc(cx, cy, 13, 15.5, 0, 360, c); cv.roundRect(cx - 1.5, cy - 7, 3, 9, 1.5, c); cv.circle(cx, cy + 6, 2, c); }
         }
@@ -755,10 +770,12 @@ mgu.run({
             chevron(cv, tx + 236, hy + hh - 40, 8, t.text);
             chevron(cv, hx + hw - 28, hy + hh / 2, 10, t.dim);
             cv.target(hx, hy, hw, hh, () => press(5, 'opt:theme'), 'opt:theme', u.radius);
-            // Cluster & HUD: the source and your look on the car's displays (amber: something needs attention)
-            const cy = hy + hh + 14, ch = bottom - 14 - cy;
-            entry(cv, S, lk, hx, cy, hw, ch, 'opt:cluster', 'cluster', 'Cluster & HUD', gsdOn() ? 'Source ' + CSRC.NAMES[srcPick()] + ' \u00b7 ' + displaysLine() : "G's Dash off: the car is stock", 4,
+            // Cluster & HUD: the source and your look on the car's displays (amber: something needs attention); beside it
+            // (0.15.0) Home widget: what the home-screen widget shows
+            const cy = hy + hh + 14, ch = bottom - 14 - cy, ew = Math.floor((hw - 14) / 2);
+            entry(cv, S, lk, hx, cy, ew, ch, 'opt:cluster', 'cluster', 'Cluster & HUD', gsdOn() ? 'Source ' + CSRC.NAMES[srcPick()] + ' \u00b7 ' + displaysLine() : "G's Dash off: the car is stock", 4,
                 clusterTrouble() ? '#ffb020' : null);
+            entry(cv, S, lk, hx + ew + 14, cy, hw - ew - 14, ch, 'opt:widget', 'widget', 'Home widget', widgetLine(), 8);
             // right: Driving, Music, Diagnostics
             const rx = x0 + lw + gap, rw = S.x + S.w - rx, eh = 100, eg = 16, dh = 56;
             lbl('Driving', rx, S.y + 20, 18, t.dim);
@@ -1680,6 +1697,264 @@ mgu.run({
         }
         log.info(clock.line() + ' (Showcase, 12-hour H:MM)');
 
+        /* ---------- home-screen widget (app.json startWidget) ----------
+         * The G logo, large and centred, or (0.15.0, setting "widget" My GIF) an animation sent from the phone, played
+         * by kit/runtime/widget_anim.js: drawn by the Store's renderer inside the widget where this build has the
+         * stream widget template (docs/animated-widget.md), else through the layout's own picture at up to 12 fps.
+         * The logo (widget_logo.js, drawn by tools/make_g_icon.py at the big widget's picture size, transparent so
+         * the HMI's own widget tile shows through) goes into the layout's image cell; with no animation (or the
+         * logo picked) it is pushed when a widget is placed, shown or resized and again only every few seconds
+         * (unchanged pixels are skipped). Every text line and the progress bar stay empty (startWidget.cells). The
+         * small widget does not show pictures on this firmware (upstream's eDrive finding: images pushed, nothing
+         * on screen), so the layout's title carries the name there; on the big one it is empty. */
+        const logo = new Canvas(LOGO.w, LOGO.h);
+        logo.d.set(zlib.inflateSync(Buffer.from(LOGO.rgba, 'base64')));
+        const wtitle = {};
+        function renderWidget(inst) {
+            if (inst) {
+                const title = inst.big ? '' : "G's Dash";
+                if (wtitle[inst.spawnId] !== title) { wtitle[inst.spawnId] = title; ctx.widget.set(inst.spawnId, 'Title', title, 'Text'); }
+            }
+            return logo;
+        }
+        const WSIZE = (ctx.spec.startWidget && ctx.spec.startWidget.size) || [384, 256];
+        const gifOn = () => settings.get('widget') === 'gif';
+        const aw = new AnimatedWidget(ctx, { file: path.join(ctx.dataDir, 'widget_anim.bin'), draw: renderWidget, enabled: gifOn() });
+        if (ctx.widget) {
+            aw.start();
+            ctx.widget.onChange((why) => { if (why === 'resized' || why === 'placed' || why === 'shown') Object.keys(wtitle).forEach((k) => delete wtitle[k]); });
+        }
+        settings.onChange((k) => { if (k === 'widget') aw.enable(gifOn()); });
+
+        /*
+         * Options > Home widget > Send a GIF (0.15.0): a QR code and a 6-digit code (kit gif_drop.js) for the phone
+         * page (app.json config widgetRelay); the phone sends the GIF end-to-end encrypted through the mailbox, it is
+         * made into the widget's frames here (kit anim.js, a few seconds, the screen keeps drawing) and shown on
+         * this page; only Use this GIF keeps it (in the data folder) and puts it on the widget. The phone hears
+         * how it ended. Leaving the page cancels whatever is under way.
+         * wg.mode: idle | qr (waiting for the phone; drop.phase says more) | preparing | confirm | error
+         */
+        const WCFG = ctx.spec.config || {};
+        const drop = new GifDrop(new Net(ctx.dataDir, log), log, { relay: WCFG.widgetRelay, mailbox: WCFG.widgetMailbox, title: "G's Dash", w: WSIZE[0], h: WSIZE[1] });
+        const wg = { mode: 'idle', got: null, prepared: null, clip: null, clipGen: 0, done: 0, total: 0, why: '', removeAt: 0, prevKey: '' };
+        const wgReset = () => { drop.cancel(); wg.mode = 'idle'; wg.got = null; wg.prepared = null; wg.clip = null; wg.why = ''; };
+        const wgCancel = (why) => {
+            if (wg.got && (wg.mode === 'preparing' || wg.mode === 'confirm')) drop.ack({ t: 'done', ok: false, error: why || 'Not used: cancelled on the car.' });
+            wgReset();
+        };
+        const wgSend = () => { if (drop.configured()) { drop.start(); wg.mode = 'qr'; wg.why = ''; } };
+        /** Left the page (or the screen): anything under way is cancelled, the preview's picture let go. */
+        const wgLeave = () => {
+            if (wg.mode !== 'idle') { log.info('home widget: left the page while ' + wg.mode + ' - cancelled'); wgCancel('Not used: the page was closed on the car.'); }
+            if (wg.prevKey) { record.dropImage(IMG.wprev); wg.prevKey = ''; }
+        };
+        if (ui.onVisible) ui.onVisible((st, on) => { if (st === 'MAIN' && !on) wgLeave(); });
+        /** While the code shows: the mailbox polled (gif_drop.js paces it), a new code when it runs out. */
+        const wgTick = () => {
+            if (wg.mode !== 'qr' || drop.phase !== 'waiting') return;
+            if (drop.expired()) { drop.start(); return; }
+            drop.tick().then((got) => {
+                if (!got || wg.mode !== 'qr') return;
+                wg.mode = 'preparing'; wg.got = got; wg.done = 0; wg.total = 0;
+                const t0 = Date.now();
+                ANIM.prepare(got.gif, { w: WSIZE[0], h: WSIZE[1], fit: got.fit, onProgress: (d, n) => { wg.done = d; wg.total = n; } }).then((a) => {
+                    if (wg.got !== got) return;
+                    got.gif = null;                 // the frames are made: the file itself is let go
+                    wg.prepared = a; wg.clip = new ANIM.Clip(a.frames, a.w, a.h); wg.clipGen++; wg.mode = 'confirm';
+                    log.info('home widget: ' + (got.name || 'a GIF') + ' prepared, ' + a.source.frames + ' -> ' + a.frames.length + ' frames in ' + (Date.now() - t0) + ' ms');
+                }, (e) => {
+                    if (wg.got !== got) return;
+                    const why = e && e.code === 'GIF' ? 'This GIF cannot be played: ' + e.message + '.' : 'This GIF could not be made into frames (' + (e && e.message || e) + ').';
+                    log.warn('home widget: ' + why);
+                    drop.ack({ t: 'done', ok: false, error: why });
+                    drop.cancel(); wg.mode = 'error'; wg.why = why; wg.got = null;
+                });
+            }, (e) => log.warn('home widget: ' + e));
+        };
+        /** Use this GIF: kept and on the widget (the widget set to My GIF), the phone told. */
+        const wgUse = () => {
+            if (wg.mode !== 'confirm' || !wg.prepared) return;
+            try { aw.replace(wg.prepared, { name: wg.got.name }); } catch (e) {
+                const why = 'The car could not keep this GIF (' + (e.code || e.message) + ').';
+                log.warn('home widget: ' + why);
+                drop.ack({ t: 'done', ok: false, error: why });
+                drop.cancel(); wg.mode = 'error'; wg.why = why; wg.got = null; wg.prepared = null; wg.clip = null;
+                return;
+            }
+            drop.ack({ t: 'done', ok: true });
+            if (!gifOn()) settings.set('widget', 'gif');
+            wgReset();
+        };
+        /** The Options entry's line. */
+        const widgetLine = () => {
+            if (wg.mode !== 'idle') return 'Sending a GIF...';
+            if (aw.status().templateGone) return "Install G's Dash again";
+            if (!aw.has()) return 'G logo · send a GIF from your phone';
+            if (!gifOn()) return 'G logo (your GIF is kept)';
+            const st = aw.status();
+            return 'My GIF' + (st.path === 'stream' ? ' · smooth' : st.path === 'hmi' ? ' · ' + Math.round(st.fps) + ' fps' : '');
+        };
+        /** The QR code in box b (whole device pixels a module, so it scans crisply at any scale), as G's Music's. */
+        let wqr = null;
+        function drawQr(cv, url, b) {
+            if (!wqr || wqr.url !== url) wqr = { url, qr: qrcodegen.QrCode.encodeText(url, qrcodegen.QrCode.Ecc.MEDIUM) };
+            const qr = wqr.qr, n = qr.size + 8, pl = cv.place, k = pl ? pl.scale : 1;
+            const dev = { x: b.x * k + (pl ? pl.ox : 0), y: b.y * k + (pl ? pl.oy : 0), s: b.s * k };
+            const m = Math.max(2, Math.floor(dev.s / n)), sd = n * m;
+            cv.roundRect(b.x, b.y, b.s, b.s, 12, '#ffffff');
+            if (pl) cv.xf(1, 0, 0);
+            const ux = pl ? Math.round(dev.x + (dev.s - sd) / 2) : Math.round(b.x + (b.s - sd) / 2), uy = pl ? Math.round(dev.y + (dev.s - sd) / 2) : Math.round(b.y + (b.s - sd) / 2);
+            for (let yy = 0; yy < qr.size; yy++) {
+                let run = -1;
+                for (let xx = 0; xx <= qr.size; xx++) {
+                    const dark = xx < qr.size && qr.getModule(xx, yy);
+                    if (dark && run < 0) run = xx;
+                    if (!dark && run >= 0) { cv.fillRect(ux + (4 + run) * m, uy + (4 + yy) * m, (xx - run) * m, m, '#000000'); run = -1; }
+                }
+            }
+            if (pl) cv.xf();
+        }
+        /**
+         * The widget as the home screen shows it, in box b (the widget's shape, on the HMI's dark tile): the new GIF
+         * while it waits for Use (clip), else what the widget plays now (My GIF's frame due, or the logo). One
+         * picture id, set again only when the frame changes.
+         */
+        function widgetPreview(cv, b, clip) {
+            const now = Date.now();
+            cv.roundRect(b.x, b.y, b.w, b.h, 18, '#1b1f26');
+            cv.strokeRoundRect(b.x, b.y, b.w, b.h, 18, 1, L.withAlpha('#ffffff', 0.10));
+            let src;
+            if (clip) { const i = clip.at(now); src = { key: 'new' + wg.clipGen + ':' + i, rgba: clip.rgba(i), w: clip.w, h: clip.h }; }
+            else if (gifOn() && aw.has()) { const f = aw.frame(now); src = { key: 'gif' + f.gen + ':' + f.index, rgba: f.rgba, w: f.w, h: f.h }; }
+            else src = { key: 'logo', rgba: logo.d, w: logo.w, h: logo.h };
+            if (src.key !== wg.prevKey) { record.setImage(IMG.wprev, src.w, src.h, src.rgba); wg.prevKey = src.key; }
+            cv.image(IMG.wprev, b.x, b.y, b.w, b.h);
+        }
+        /** A button: the look's card (primary: lit in the accent), its label centred; a tap runs fn. */
+        function wButton(cv, S, lk, key, x, y, w, h, text, primary, fn) {
+            const t = S.t, u = lk.ui, acc = t.sel || t.accent, down = isDown(key);
+            if (primary) { cv.roundRect(x, y, w, h, u.radius, L.withAlpha(acc, down ? 0.45 : 0.28)); cv.strokeRoundRect(x, y, w, h, u.radius, 2.5, acc); }
+            else cardOf(lk)(cv, t, x, y, w, h, down);
+            lblOf(cv, u)(fitText(cv, u.upper ? text.toUpperCase() : text, 22, w - 24, { font: u.lbl || u.txt }), x + w / 2, y + h / 2 + 8, 22, t.text, { align: 'center' });
+            cv.target(x, y, w, h, () => { gDown = Date.now(); downKey = key; fn(); }, key, u.radius);
+        }
+        /**
+         * Home widget (Options, 0.15.0). Left: the widget as the home screen shows it (the QR code while the phone is
+         * awaited). Right: what it shows (the G logo or My GIF), how the GIF plays, and Send a GIF / Remove; or the
+         * steps of sending one, its preparation, and Use this GIF / Cancel.
+         */
+        function widgetPage(cv, S, lk) {
+            const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, now = Date.now();
+            header(cv, S, lk, lbl, card, 'Home widget', 1);
+            wgTick();
+            const top = S.y + 34, bottom = S.y + S.h, pw = 576, ph = Math.round(pw * WSIZE[1] / WSIZE[0]);
+            const waiting = wg.mode === 'qr' && drop.active() && !!drop.s;
+            // left: the widget, or the QR code
+            lbl(waiting ? 'Scan with your phone' : wg.mode === 'confirm' ? 'Your GIF on the widget' : 'On the home screen', S.x, S.y + 20, 18, t.dim);
+            if (waiting) {
+                drawQr(cv, drop.s.url, { x: S.x + (pw - ph) / 2, y: top, s: ph });
+                if (wg.prevKey) { record.dropImage(IMG.wprev); wg.prevKey = ''; }
+            } else if (wg.mode === 'preparing') {
+                cv.roundRect(S.x, top, pw, ph, 18, '#1b1f26');
+                const f = wg.total ? wg.done / wg.total : 0, bw = pw - 120, by = top + ph / 2 + 10;
+                cv.text('Making the frames', S.x + pw / 2, top + ph / 2 - 24, 26, t.text, { align: 'center', literal: true });
+                cv.roundRect(S.x + 60, by, bw, 10, 5, L.withAlpha('#ffffff', 0.15));
+                if (f > 0) cv.roundRect(S.x + 60, by, Math.max(10, bw * f), 10, 5, acc);
+            } else widgetPreview(cv, { x: S.x, y: top, w: pw, h: ph }, wg.mode === 'confirm' ? wg.clip : null);
+            // right
+            const rx = S.x + pw + 40, rw = S.x + S.w - rx, bh = 76, by = bottom - bh, gap = 16, half = (rw - gap) / 2;
+            let y = top + 34;
+            const line = (s, size, c, o) => { cv.text(fitText(cv, s, size, rw, o), rx, y, size, c, Object.assign({ literal: true }, o || {})); y += size + 14; };
+            const kb = (n) => (n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
+            const secs = (ms) => (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
+            if (wg.mode === 'idle') {
+                const st = aw.status(), has = st.has;
+                lbl('Shows', rx, S.y + 20, 18, t.dim);
+                [['logo', 'The G logo', "G's Dash's mark"], ['gif', 'My GIF', has ? st.name || 'Sent from your phone' : 'Send one first']].forEach((o, i) => {
+                    const ox = rx + i * (half + gap), on = (gifOn() && has ? 'gif' : 'logo') === o[0], can = o[0] === 'logo' || has;
+                    if (on) { cv.roundRect(ox, top, half, 84, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(ox, top, half, 84, u.radius, 3, acc); } else card(cv, t, ox, top, half, 84, isDown('wg:' + o[0]));
+                    cv.text(o[1], ox + 20, top + 38, 24, on ? t.text : can ? t.dim : L.withAlpha(t.dim, 0.5), { literal: true });
+                    cv.text(fitText(cv, o[2], 16, half - 40), ox + 20, top + 64, 16, t.dim, { literal: true });
+                    if (can && !on) cv.target(ox, top, half, 84, () => { gDown = Date.now(); downKey = 'wg:' + o[0]; settings.set('widget', o[0]); }, 'wg:' + o[0], u.radius);
+                });
+                y = top + 84 + 44;
+                if (has) {
+                    line(st.frames + ' frames · ' + secs(st.duration) + ' loop · ' + (st.fit === 'contain' ? 'Fit' : 'Fill') + (st.source ? ' · from ' + st.source.w + ' x ' + st.source.h + ', ' + st.source.frames + ' frames' : ''), 19, t.text);
+                    if (gifOn()) {
+                        const tone = st.path === 'stream' ? HUB.GREEN : st.path === 'hmi' ? '#ffb020' : t.dim;
+                        cv.circle(rx + 7, y - 7, 6, tone);
+                        cv.text(fitText(cv, st.path === 'off' ? "Plays once G's Dash's widget is on the home screen" : 'Playing: ' + st.note + (st.fps ? ' · ' + st.fps.toFixed(1) + ' fps' : ''), 19, rw - 22),
+                            rx + 22, y, 19, t.text, { literal: true });
+                        y += 33;
+                    }
+                }
+                if (st.templateGone) line('Install G\'s Dash again in the Store: the widget was made for the renderer\'s stream template, now gone.', 17, '#ffb020');
+                else if (st.template !== 'stream') {
+                    line('Smooth playback at the GIF\'s own rate, without the dark edge, comes with the Store\'s', 16, t.dim);
+                    line('renderer and its stream widget; reinstall G\'s Dash after installing it.', 16, t.dim);
+                }
+                if (!drop.configured()) line('Send a GIF is not set up (app.json config widgetRelay).', 17, '#ffb020');
+                if (wg.why) line(wg.why, 17, '#ffb020');
+                if (drop.configured()) wButton(cv, S, lk, 'wg:send', rx, by, has ? half : rw, bh, has ? 'Send another GIF' : 'Send a GIF from your phone', true, wgSend);
+                if (has) {
+                    const armed = now - wg.removeAt < 5000;
+                    wButton(cv, S, lk, 'wg:remove', rx + half + gap, by, half, bh, armed ? 'Tap again to remove' : 'Remove GIF', false, () => {
+                        if (Date.now() - wg.removeAt < 5000) { wg.removeAt = 0; aw.remove(); settings.set('widget', 'logo'); } else wg.removeAt = Date.now();
+                    });
+                }
+            } else if (wg.mode === 'qr') {
+                lbl('Send a GIF', rx, S.y + 20, 18, t.dim);
+                y = top + 30;
+                const step = (num, s) => {
+                    cv.circle(rx + 16, y - 8, 16, L.withAlpha(acc, 0.2));
+                    cv.text(num, rx + 16, y, 20, acc, { align: 'center', font: 'bold', literal: true });
+                    cv.text(fitText(cv, s, 22, rw - 48), rx + 46, y, 22, t.text, { literal: true });
+                    y += 44;
+                };
+                step('1', 'Scan the code with your phone\'s camera.');
+                step('2', 'Pick an animated GIF, Fill or Fit, and Send.');
+                step('3', 'It shows here: tap Use this GIF.');
+                y += 6;
+                if (drop.phase === 'error') line(drop.message.charAt(0).toUpperCase() + drop.message.slice(1) + '.', 20, '#ffb020');
+                else if (drop.phase === 'downloading') line('Downloading your GIF (' + kb(drop.size) + ')...', 20, acc);
+                else {
+                    const left = drop.left(), mm = Math.floor(left / 60000), ss = Math.floor(left / 1000) % 60;
+                    line('No camera? Open ' + String(WCFG.widgetRelay || '').replace(/^https:\/\//, '').replace(/\/$/, '') + ' and type', 18, t.dim);
+                    cv.text(drop.codeText(), rx, y + 18, 44, t.text, { font: u.num || 'bold', literal: true });
+                    y += 72;
+                    line('Waiting for the phone' + (drop.message ? ' (' + drop.message + ')' : '') + ' · new code in ' + mm + ':' + (ss < 10 ? '0' : '') + ss, 18, t.dim);
+                }
+                wButton(cv, S, lk, 'wg:new', rx, by, half, bh, 'New code', drop.phase === 'error', wgSend);
+                wButton(cv, S, lk, 'wg:cancel', rx + half + gap, by, half, bh, 'Cancel', false, () => wgCancel());
+            } else if (wg.mode === 'preparing') {
+                lbl('Send a GIF', rx, S.y + 20, 18, t.dim);
+                y = top + 30;
+                line('Got it from your phone', 30, t.text, { font: 'bold' });
+                if (wg.got && wg.got.name) line(wg.got.name, 20, t.dim);
+                line(wg.total ? 'Making the frames: ' + wg.done + ' of ' + wg.total : 'Reading the GIF...', 20, acc);
+                wButton(cv, S, lk, 'wg:cancel', rx + half + gap, by, half, bh, 'Cancel', false, () => wgCancel());
+            } else if (wg.mode === 'confirm') {
+                const a = wg.prepared, src = a.source;
+                lbl('Send a GIF', rx, S.y + 20, 18, t.dim);
+                y = top + 30;
+                line('Put this GIF on the widget?', 30, t.text, { font: 'bold' });
+                if (wg.got.name) line(wg.got.name, 20, t.dim);
+                line((a.fit === 'contain' ? 'Fit' : 'Fill') + ' · ' + a.frames.length + ' frames · ' + secs(a.duration) + ' loop · ' + kb(a.frames.reduce((n, f) => n + f.png.length, 0)), 20, t.text);
+                line('From ' + src.w + ' x ' + src.h + ', ' + src.frames + ' frames, ' + kb(src.bytes) + (src.frames > a.frames.length ? ' (frames merged, the same pace)' : ''), 17, t.dim);
+                if (aw.has()) line('It takes the place of ' + (aw.status().name || 'your current GIF') + '.', 17, t.dim);
+                wButton(cv, S, lk, 'wg:use', rx, by, half, bh, 'Use this GIF', true, wgUse);
+                wButton(cv, S, lk, 'wg:cancel', rx + half + gap, by, half, bh, 'Cancel', false, () => wgCancel());
+            } else {
+                lbl('Send a GIF', rx, S.y + 20, 18, t.dim);
+                y = top + 30;
+                line('Not used', 30, t.text, { font: 'bold' });
+                line(wg.why, 20, '#ffb020');
+                line('A GIF up to 8 MB and 2048 px a side works.', 18, t.dim);
+                wButton(cv, S, lk, 'wg:new', rx, by, half, bh, 'Try again', true, wgSend);
+                wButton(cv, S, lk, 'wg:back', rx + half + gap, by, half, bh, 'Back', false, () => { wgReset(); });
+            }
+        }
+
         ctx.loop('MAIN', 10, () => {
             const lk = look(), t = palette();
             const cv = ctx.canvas(1600, 520);
@@ -1692,6 +1967,7 @@ mgu.run({
             ownNow = !!cv.own;
             logoUpdate(visible());
             if (!cv.own) page = 0;
+            if (page !== 8) wgLeave();
             autoStep(S);
             const P = Object.assign({}, S, { y: SET_Y, h: reach - SET_Y - 6 });
             // the patch service's socket: open only while Cluster & HUD or Diagnostics is on screen
@@ -1703,6 +1979,7 @@ mgu.run({
             else if (page === 3) diagPage(cv, P, lk);
             else if (page === 6) drivingPage(cv, P, lk);
             else if (page === 7) unitsPage(cv, P, lk);
+            else if (page === 8) widgetPage(cv, P, lk);
             else {
                 const id = HUB.SCREENS[scr][0];
                 // the G: the settings button, in the look's corner on Drive, bottom right elsewhere
@@ -1733,29 +2010,5 @@ mgu.run({
             }
             return ui.image('MAIN_GFX', cv);
         });
-
-        /* ---------- home-screen widget (app.json startWidget) ----------
-         * Just the G logo, large and centred, on both sizes: no live data, nothing written over it.
-         * The picture (widget_logo.js, drawn by tools/make_g_icon.py at the big widget's picture size,
-         * transparent so the HMI's own widget tile shows through) goes into the layout's image cell.
-         * Every text line and the progress bar stay empty (startWidget.cells). The small widget does
-         * not show pictures on this firmware (upstream's eDrive finding: images pushed, nothing on
-         * screen), so the layout's title carries the name there; on the big one it is empty. */
-        const logo = new Canvas(LOGO.w, LOGO.h);
-        logo.d.set(zlib.inflateSync(Buffer.from(LOGO.rgba, 'base64')));
-        const wtitle = {};
-        function renderWidget(inst) {
-            if (inst) {
-                const title = inst.big ? '' : "G's Dash";
-                if (wtitle[inst.spawnId] !== title) { wtitle[inst.spawnId] = title; ctx.widget.set(inst.spawnId, 'Title', title, 'Text'); }
-            }
-            return logo;
-        }
-        if (ctx.widget) {
-            // the same picture every time: the kit pushes it when a widget is placed, shown or
-            // resized, and again only every few seconds (unchanged pixels are skipped)
-            ctx.widget.loop(1, renderWidget);
-            ctx.widget.onChange((why) => { if (why === 'resized' || why === 'placed' || why === 'shown') Object.keys(wtitle).forEach((k) => delete wtitle[k]); });
-        }
     },
 });

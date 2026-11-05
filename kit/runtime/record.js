@@ -89,6 +89,8 @@ function setImage(id, w, h, data) {
     imageById.set(id, im);
     return im;
 }
+/** Forget pixel image `id` (its pixels are let go; frames drawing it draw nothing until it is set again). */
+function dropImage(id) { imageById.delete(id); }
 
 // cached layers (static parts of widgets): drawn once, used by id
 let layerSeq = 0;
@@ -438,4 +440,4 @@ function play(words, real, sc) {
     return real;
 }
 
-module.exports = { Recorder, OP, pack, unpack, rampId, rampList, atlasId, atlasList, atlasById, markBadAtlas, badAtlas, makeLayer, dropLayer, layerById, play, softLayer, setImage, imageById };
+module.exports = { Recorder, OP, pack, unpack, rampId, rampList, atlasId, atlasList, atlasById, markBadAtlas, badAtlas, makeLayer, dropLayer, layerById, play, softLayer, setImage, dropImage, imageById };
