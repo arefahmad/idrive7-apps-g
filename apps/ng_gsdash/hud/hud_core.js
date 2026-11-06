@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'desktop', 'pocket', 'heist', 'arcade', 'pod'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'desktop', 'pocket', 'heist', 'arcade', 'pod'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -63,9 +63,6 @@ const LOOKS = {
     pixel: Object.assign({ n: 20, slant: 0, gap: 4, inset: 2, pq: 2, solid: true }, require('./tints').VARIANTS.pixel[0].c.hud),
     // Vector: many thin segments, little glow; colours from its default variant (tints.js)
     vector: Object.assign({ n: 48, slant: 0, gap: 2, inset: 5, glow: [1, 0.18] }, require('./tints').VARIANTS.vector[0].c.hud),
-    // Space: round beads with a soft glow, cyan to the shift lights, violet flashes; Vector's glyphs (the same Saira)
-    space: { n: 30, shape: 'bead', beadR: 4.5, base: '#4fe3ff', zones: ['#9b6bff', '#ffb547', '#ff4d6a'], flash: '#ff4d6a', flash2: '#d65cff',
-        dim: '#151a3a', redDim: '#2e0f19', tick: '#5b6aa8', tickRed: '#ff4d6a', gear: '#eef3ff', gear2: '#9b6bff', pre: '#4fe3ff', pre2: '#5b8cff', glow: [4, 0.75] },
     // Desktop '98: progress-bar blocks in bright system colours, hard edges; the Pixel look's glyphs (the G's Dash pixel font)
     desktop: { n: 22, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#1084d0', zones: ['#ffff00', '#ff8000', '#ff2020'], flash: '#ffffff',
         dim: '#1c2a3a', redDim: '#401010', tick: '#c0c0c0', tickRed: '#ff2020', gear: '#ffffff', pre: '#c0c0c0', glow: [1, 0.2] },
@@ -82,8 +79,8 @@ const LOOKS = {
     pod: { n: 30, slant: 0, gap: 3, inset: 3, base: '#c9d3da', zones: ['#6fb1f0', '#ff9f2e', '#ff3b30'], flash: '#ff3b30', flash2: '#ffffff',
         dim: '#1e252c', redDim: '#3a1210', tick: '#8a96a0', tickRed: '#ff3b30', gear: '#f3f6f8', gear2: '#3d8ae0', pre: '#6fb1f0', pre2: '#2f73cc', glow: [3, 0.45] },
 };
-/* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
-const ATLAS_LOOK = { space: 'vector', desktop: 'pixel', pocket: 'pixel', heist: 'simracing', arcade: 'pixel', pod: 'simracing' };
+/* a look drawn with another's glyph atlas (an alpha mask, so any colours): Heist uses Sim Racing's */
+const ATLAS_LOOK = { desktop: 'pixel', pocket: 'pixel', heist: 'simracing', arcade: 'pixel', pod: 'simracing' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {

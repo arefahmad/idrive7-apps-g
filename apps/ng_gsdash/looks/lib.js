@@ -28,7 +28,6 @@ const LOOK_FONTS = {
     lumen: ['gs_h_txt', 'gs_s_gear', 'gs_s_num'],
     pixel: ['gs_p_px'],
     vector: ['gs_v_num', 'gs_v_gear'],
-    space: ['gs_v_num', 'gs_v_gear', 'gs_h_txt'],
     desktop: ['gs_p_px'],
     pocket: ['gs_p_px'],
     heist: ['gs_s_gear', 'gs_s_num', 'gs_s_txt'],
