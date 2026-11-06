@@ -21,6 +21,9 @@
  *              screen, the badge on it in 6 px dots (original art)
  *   nextgen    a games-console home screen: a glossy white G with a soft blue glow over deep blue with
  *              flowing bands of light, white / ice / blue stripes, a light bar under it (original art)
+ *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
+ *              a skyline with lit windows, a palm - pink / orange / yellow stripes, three "wanted" stars
+ *              (original art)
  * Pixel keeps its pixel-art emblem (px.js, an image), any other look the regular logo (an image).
  * The same looks baked into pictures, logo_<look>.png (tools/bake_gsdash_logos.js, the CPU mirror
  * tools/gsdash_logo_emu.js), are the fallback for a renderer without effect layers or refusing the shader.
@@ -64,13 +67,15 @@ const LOOKS = {
         shadow: '#808080', title0: '#000080', title1: '#1084d0' },
     pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
     nextgen: { stripes: ['#ffffff', '#9fdcff', '#2f7bff'], sky0: '#00031f', sky1: '#001052', sky2: '#0a3a9e', band: '#3d8bff', band2: '#8fd0ff', glow: '#9fdcff', bar: '#9fdcff' },
+    heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
+        city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -114,6 +119,11 @@ const COMMON = [
     'float curB(float r) { if (r < 0.5) return 1.0; if (r < 1.5) return 3.0; if (r < 2.5) return 5.0; if (r < 3.5) return 9.0; if (r < 4.5) return 17.0; if (r < 5.5) return 33.0; if (r < 6.5) return 65.0; if (r < 7.5) return 129.0; if (r < 8.5) return 257.0; if (r < 9.5) return 513.0; if (r < 10.5) return 1985.0; if (r < 11.5) return 73.0; if (r < 12.5) return 149.0; if (r < 13.5) return 147.0; if (r < 14.5) return 289.0; if (r < 15.5) return 288.0; if (r < 16.5) return 192.0; return 0.0; }',
     'float curW(float r) { if (r < 0.5) return 0.0; if (r < 1.5) return 0.0; if (r < 2.5) return 2.0; if (r < 3.5) return 6.0; if (r < 4.5) return 14.0; if (r < 5.5) return 30.0; if (r < 6.5) return 62.0; if (r < 7.5) return 126.0; if (r < 8.5) return 254.0; if (r < 9.5) return 510.0; if (r < 10.5) return 62.0; if (r < 11.5) return 54.0; if (r < 12.5) return 98.0; if (r < 13.5) return 96.0; if (r < 14.5) return 192.0; if (r < 15.5) return 192.0; if (r < 16.5) return 0.0; return 0.0; }',
     'float bit(float v, float i) { return mod(floor(v / exp2(i)), 2.0); }',
+    '/* a five-point star of radius r (point up on screen), rf the inner ratio: the distance (after Inigo Quilez) */',
+    'float sdStar5(vec2 p, float r, float rf) { p.y = -p.y; const vec2 k1 = vec2(0.809017, -0.587785); const vec2 k2 = vec2(-0.809017, -0.587785);',
+    '    p.x = abs(p.x); p -= 2.0 * max(dot(k1, p), 0.0) * k1; p -= 2.0 * max(dot(k2, p), 0.0) * k2; p.x = abs(p.x); p.y -= r;',
+    '    vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0); float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);',
+    '    return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y); }',
 ];
 const gD = () => ['    float g = 100000.0;'].concat(GPARTS.map((b) => '    g = min(g, sdBox(q, ' + v4(b) + '));'));
 const stripes = (S) => STRIPES.map((b, i) => '    c = paint(c, cov(sdBox(q, ' + v4(b) + ')), ' + v3(S.stripes[i]) + ');');
@@ -335,6 +345,44 @@ const BODY = {
             // the light bar under the badge
             '    { float lb = sdBox(p, vec4(' + f1(BX + 30) + ', ' + f1(BY + 18) + ', ' + f1(BW - 60) + ', 3.0));',
             '      c = min(c + ' + v3(S.bar) + ' * (0.5 * soft(lb, 6.0)), vec3(1.0)); c = paint(c, cov(lb), ' + v3(S.bar) + '); }',
+        ]);
+    },
+    heist(S) {
+        const sx = 300, sy = 150, sr = 84;
+        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = paint(c, cov(s - 4.0), vec3(0.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + '); }');
+        return gD().concat([
+            // the sky at sunset: violet above, coral and amber down to the horizon
+            '    float yy = p.y / SZ.y;',
+            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', smoothstep(0.0, 0.4, yy));',
+            '    c = mix(c, ' + v3(S.sky2) + ', smoothstep(0.35, 0.75, yy));',
+            '    c = mix(c, ' + v3(S.sky3) + ', smoothstep(0.7, 0.95, yy));',
+            // the sun: a soft halo, the disc, its lower half cut by bands of sky that widen downwards
+            '    { float d = length(p - vec2(' + f1(sx) + ', ' + f1(sy) + ')) - ' + f1(sr) + ';',
+            '      c = min(c + ' + v3(S.sun) + ' * 0.25 * soft(d, 16.0), vec3(1.0));',
+            '      float by = p.y - ' + f1(sy + 6) + ', band = by > 0.0 && mod(by, 16.0) < 2.0 + by * 0.09 ? 1.0 : 0.0;',
+            '      c = paint(c, cov(d) * (1.0 - band), mix(' + v3(S.sun) + ', ' + v3(S.stripes[0]) + ', smoothstep(' + f1(sy - sr) + ', ' + f1(sy + sr) + ', p.y) * 0.55)); }',
+            // the skyline: blocks of varied height along the bottom, lit windows in a few of them
+            '    { float bw = 22.0, bi = floor(p.x / bw), bh = 22.0 + 46.0 * hash(vec2(bi, 3.0)), top = SZ.y - bh;',
+            '      if (hash(vec2(bi, 5.0)) < 0.3 && abs(mod(p.x, bw) - bw * 0.5) < 1.5) top -= 10.0;',
+            '      if (p.y > top) { c = ' + v3(S.city) + ';',
+            '        vec2 w = vec2(mod(p.x, bw), p.y - top); vec2 wc = floor(vec2(w.x - 4.0, w.y - 5.0) / vec2(6.0, 8.0));',
+            '        if (w.x > 4.0 && w.x < bw - 4.0 && w.y > 5.0 && mod(w.x - 4.0, 6.0) < 3.0 && mod(w.y - 5.0, 8.0) < 4.0 && hash(wc + bi * 13.0) < 0.3) c = ' + v3(S.win) + '; } }',
+            // a palm on the left: a leaning trunk and drooping fronds (distance to a few curves)
+            '    { vec2 tp = vec2(26.0, 70.0); float pd = 1000.0;',
+            '      pd = min(pd, sdLine(p, vec2(14.0, SZ.y), vec2(20.0, 150.0)) - 5.0);',
+            '      pd = min(pd, sdLine(p, vec2(20.0, 150.0), tp) - 4.0);',
+            '      for (int k = 0; k < 8; k++) { float fk = float(k), an = -3.05 + fk * 0.43, sg = an < -1.57 ? -1.0 : 1.0;',
+            '        vec2 m = tp + vec2(cos(an), sin(an)) * 24.0, e = tp + vec2(cos(an + sg * 0.6), sin(an + sg * 0.6)) * 46.0 + vec2(0.0, 12.0);',
+            '        pd = min(pd, min(sdLine(p, tp, m) - 5.0, sdLine(p, m, e) - 3.0 + 2.0 * clamp(length(p - m) / 30.0, 0.0, 1.0))); }',
+            '      pd = min(pd, length(p - tp) - 6.0);',
+            '      c = paint(c, cov(pd), ' + v3(S.palm) + '); }',
+            // three wanted stars above the badge's right end
+            '    for (int k = 0; k < 3; k++) { float d = sdStar5(p - vec2(' + f1(352) + ' + float(k) * 30.0, 15.0), 12.0, 0.45);',
+            '      c = paint(c, cov(d - 2.5), vec3(0.0)); c = paint(c, cov(d), vec3(1.0)); }',
+        ], SC, [
+            // the G: white with a thick black outline, as a game's HUD draws its type
+            '    c = paint(c, cov(g - 5.0), vec3(0.0));',
+            '    c = paint(c, cov(g), mix(vec3(1.0), vec3(0.93, 0.9, 0.96), smoothstep(0.5, 1.0, q.y / BH)));',
         ]);
     },
 };

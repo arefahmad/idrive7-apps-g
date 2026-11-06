@@ -1,5 +1,22 @@
 # Changelog
 
+## G's Dash 0.23.0
+
+- New look: Heist, the dash as an open-world crime game's HUD, in original art (no game's name, logo,
+  font, characters or catchphrases). A posterized sunset city behind it: a banded sun, a skyline of lit
+  windows, palm trees.
+- A round radar in the corner: streets scroll past your car's arrow as you drive, with blips, and the
+  revs as a ring round it (green, yellow over the shift lights, red past the shift point).
+- The speed in big outlined type, with a five-star wanted level that climbs with the speed (one star
+  from 35 mph, five from 95). From three stars searchlights sweep the sky and the stars flash; from
+  four, red and blue lights pulse at the edges of the screen.
+- The gear in a box, oil and coolant as bars, a STATS card of the g-force peaks, and mission-style
+  subtitles at the bottom ("Shift up!", "Lose the heat.").
+- Its cluster logo is a white G with a thick black outline over a sunset with a skyline, a palm and three
+  stars (a shader, with logo_heist.png as the fallback). The HUD uses green / yellow / red bars with red
+  and blue flashes on Sim Racing's glyphs; the cluster dials use Sim Racing's.
+- Theme shows thirteen looks, seven a row.
+
 ## G's Dash 0.22.0
 
 - New look: Next Gen, the dash in the style of a current games console's home screen, in original art
