@@ -30,6 +30,7 @@ const LOOK_FONTS = {
     vector: ['gs_v_num', 'gs_v_gear'],
     space: ['gs_v_num', 'gs_v_gear', 'gs_h_txt'],
     aura: ['gs_m_num', 'gs_m_gear', 'gs_gt_txt'],
+    desktop: ['gs_p_px'],
 };
 const fontsLoaded = [];
 let fontSrc = null;
