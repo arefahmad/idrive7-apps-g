@@ -24,6 +24,8 @@
  *   arcade     an 80s coin-op cabinet: the badge in big pixels (6 px cells), a yellow G and red / yellow / cyan
  *              stripes with a red drop shadow, on a starry night inside a cyan neon frame, CRT scanlines
  *              (original art)
+ *   player     a mid-2000s pocket music player: a charcoal G and blue stripes on its glossy white front,
+ *              a touch wheel's rings behind them (original art)
  *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
  *              a skyline with lit windows, a palm - pink / orange / yellow stripes, three "wanted" stars
  *              (original art)
@@ -72,6 +74,7 @@ const LOOKS = {
     nextgen: { stripes: ['#ffffff', '#9fdcff', '#2f7bff'], sky0: '#00031f', sky1: '#001052', sky2: '#0a3a9e', band: '#3d8bff', band2: '#8fd0ff', glow: '#9fdcff', bar: '#9fdcff' },
     heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
         city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
+    player: { stripes: ['#6fb1f0', '#3d8ae0', '#2f73cc'], g: '#2b2d31', g2: '#4a4e55', body0: '#fbfbf9', body1: '#d9dad7', ring: '#c9cbc8', wheel: '#ecedeb' },
     arcade: { stripes: ['#ff3030', '#ffd800', '#22e4ff'], g: '#ffd800', shadow: '#7a0a3a', sky0: '#05001a', sky1: '#1a0640', frame: '#22e4ff' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
@@ -79,7 +82,7 @@ const LOOKS = {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade', 'player'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -349,6 +352,26 @@ const BODY = {
             // the light bar under the badge
             '    { float lb = sdBox(p, vec4(' + f1(BX + 30) + ', ' + f1(BY + 18) + ', ' + f1(BW - 60) + ', 3.0));',
             '      c = min(c + ' + v3(S.bar) + ' * (0.5 * soft(lb, 6.0)), vec3(1.0)); c = paint(c, cov(lb), ' + v3(S.bar) + '); }',
+        ]);
+    },
+    player(S) {
+        const wx = 300, wy = 120, R = 112;
+        return gD().concat([
+            // the glossy white front: light at the top, a soft sheen across it
+            '    c = mix(' + v3(S.body0) + ', ' + v3(S.body1) + ', smoothstep(0.0, 1.0, p.y / SZ.y));',
+            '    c = min(c + vec3(0.05) * (1.0 - smoothstep(0.0, 0.25, p.y / SZ.y)), vec3(1.0));',
+            // the touch wheel behind the G: its ring, its face, the centre button
+            '    { float d = length(p - vec2(' + f1(wx) + ', ' + f1(wy) + '));',
+            '      c = mix(c, vec3(0.0), 0.08 * soft(d - ' + f1(R + 4) + ', 6.0));',
+            '      c = paint(c, cov(d - ' + f1(R) + '), ' + v3(S.ring) + ');',
+            '      c = paint(c, cov(d - ' + f1(R - 3) + '), ' + v3(S.wheel) + ');',
+            '      c = paint(c, cov(d - ' + f1(R * 0.38 + 3) + '), ' + v3(S.ring) + ');',
+            '      c = paint(c, cov(d - ' + f1(R * 0.38) + '), ' + v3(S.body0) + '); }',
+            // a soft shadow under the badge
+            '    c = mix(c, vec3(0.0), 0.12 * soft(g - 3.0, 8.0));',
+        ], STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = mix(c, vec3(0.0), 0.12 * soft(s - 3.0, 8.0)); c = paint(c, cov(s), mix(' + v3(S.stripes[i]) + ' * 1.12, ' + v3(S.stripes[i]) + ' * 0.85, clamp(q.y / BH, 0.0, 1.0))); }'), [
+            // the G: charcoal, a little lighter at the top (gloss)
+            '    c = paint(c, cov(g), mix(' + v3(S.g2) + ', ' + v3(S.g) + ', smoothstep(0.0, 0.5, q.y / BH)));',
         ]);
     },
     arcade(S) {

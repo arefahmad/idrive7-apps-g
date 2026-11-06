@@ -1,5 +1,20 @@
 # Changelog
 
+## G's Dash 0.26.0
+
+- New look: Player '04, the dash as a mid-2000s pocket music player, in original art (no maker's name,
+  logo, font or icons). A glossy white front with a backlit blue-grey screen and a touch wheel.
+- The screen plays your drive as Now Playing: the gear as the track number, the speed as the title, the
+  drive mode as the artist, the session as the album, and the revs as the progress bar - rpm elapsed on
+  the left, rpm still to go to the shift point on the right - turning amber then red at the shift point
+  ("Shift Up!" in the title bar). Play or pause in the title bar as you move or stop; oil and coolant as
+  level bars. Beside it a menu list of the g-force peaks, its top row highlighted.
+- On the wheel the revs fill round its ring, the gear sits on the centre button, and a fingertip dot
+  moves with the g-force.
+- Its cluster logo is a charcoal G with blue stripes on the white front over a touch wheel (a shader,
+  with logo_player.png as the fallback). The HUD uses blue bars on Sim Racing's glyphs; the cluster
+  dials use Lumen's.
+
 ## G's Dash 0.25.0
 
 - New look: Arcade, the dash as an 80s coin-op racing cabinet, in original art (no game's name, logo,

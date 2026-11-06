@@ -35,6 +35,7 @@ const LOOK_FONTS = {
     nextgen: ['gs_v_num', 'gs_v_gear', 'gs_h_txt'],
     heist: ['gs_s_gear', 'gs_s_num', 'gs_s_txt'],
     arcade: ['gs_p_px'],
+    player: ['gs_h_txt', 'gs_s_gear', 'gs_s_num', 'gs_s_txt'],
 };
 const fontsLoaded = [];
 let fontSrc = null;
