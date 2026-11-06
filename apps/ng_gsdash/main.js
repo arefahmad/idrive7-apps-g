@@ -126,7 +126,7 @@ const { Net } = require('./tv_net');
 const qrcodegen = require('./qrcodegen');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
-    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura'), require('./look_desktop')];
+    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura'), require('./look_desktop'), require('./look_pocket')];
 // M Style is the default look, and where any other id lands (0.9.0: Simple, Heritage and Flight went)
 const DEFAULT_LOOK = 'm';
 const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id === DEFAULT_LOOK);
@@ -946,9 +946,10 @@ mgu.run({
         function themePage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, cur = lk.id;
             header(cv, S, lk, lbl, card, 'Theme', 1);
-            // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0); nine or ten: 5 x 2 in the same width (0.19.0)
-            const x0 = S.x, top = S.y + 34, cols = LOOKS.length > 8 ? 5 : LOOKS.length > 6 ? 4 : 3, g = 14;
-            const TILE_W = cols > 4 ? Math.floor((4 * 170 + 3 * g - (cols - 1) * g) / cols) : cols > 3 ? 170 : 208;
+            // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0); nine or ten: 5 x 2 in the same width (0.19.0);
+            // eleven or twelve: 6 x 2, the same narrow cards (the right panel's column gets narrower) (0.21.0)
+            const x0 = S.x, top = S.y + 34, cols = LOOKS.length > 10 ? 6 : LOOKS.length > 8 ? 5 : LOOKS.length > 6 ? 4 : 3, g = 14;
+            const TILE_W = cols > 4 ? Math.floor((4 * 170 + 3 * g - 4 * g) / 5) : cols > 3 ? 170 : 208;
             const fl = favs(), ids = LOOKS.map((l) => l.id);
             lbl('Look', x0, S.y + 20, 18, t.dim);
             LOOKS.forEach((l, i) => {

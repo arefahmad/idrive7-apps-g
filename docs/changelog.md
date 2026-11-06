@@ -1,5 +1,18 @@
 # Changelog
 
+## G's Dash 0.21.0
+
+- New look: Pocket, the dash as a late-80s pocket game console in original art (no maker's name, logo
+  or artwork). A light grey body, a slate bezel with a red power light round a four-shade green
+  dot-matrix screen, a cross pad, two round buttons, select and start. On the screen, as a game would
+  draw it: the rpm as a block bar ("SHIFT!" blinking past the shift point), the speed in big pixel
+  numerals, the gear in a box, oil and coolant bars, a g-meter target with the peaks and TIME, and a
+  little car driving along a road under scrolling hills, faster with the car's speed.
+- Its cluster logo is the badge in green dots on the console's screen (a shader, with logo_pocket.png
+  as the fallback). The HUD uses dot-matrix green blocks on the Pixel look's glyphs; the cluster dials
+  use Pixel's Handheld colours.
+- Theme shows eleven looks as six a row.
+
 ## G's Dash 0.20.0
 
 - New look: Desktop '98, the dash as a late-90s desktop in original art (no maker's name, logo or

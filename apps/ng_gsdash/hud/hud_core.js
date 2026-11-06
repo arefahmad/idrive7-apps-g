@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop', 'pocket'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -72,9 +72,12 @@ const LOOKS = {
     // Desktop '98: progress-bar blocks in bright system colours, hard edges; the Pixel look's glyphs (the G's Dash pixel font)
     desktop: { n: 22, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#1084d0', zones: ['#ffff00', '#ff8000', '#ff2020'], flash: '#ffffff',
         dim: '#1c2a3a', redDim: '#401010', tick: '#c0c0c0', tickRed: '#ff2020', gear: '#ffffff', pre: '#c0c0c0', glow: [1, 0.2] },
+    // Pocket: dot-matrix greens, hard blocks, the shift lights brightening to near white; the Pixel look's glyphs
+    pocket: { n: 20, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#8bac0f', zones: ['#9bbc0f', '#c8e858', '#f0ffc0'], flash: '#ffffff',
+        dim: '#1c2e10', redDim: '#304818', tick: '#8bac0f', tickRed: '#c8e858', gear: '#9bbc0f', pre: '#8bac0f', glow: [2, 0.3] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
-const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel' };
+const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel', pocket: 'pixel' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {
