@@ -19,6 +19,8 @@
  *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
  *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
  *              screen, the badge on it in 6 px dots (original art)
+ *   nextgen    a games-console home screen: a glossy white G with a soft blue glow over deep blue with
+ *              flowing bands of light, white / ice / blue stripes, a light bar under it (original art)
  * Pixel keeps its pixel-art emblem (px.js, an image), any other look the regular logo (an image).
  * The same looks baked into pictures, logo_<look>.png (tools/bake_gsdash_logos.js, the CPU mirror
  * tools/gsdash_logo_emu.js), are the fallback for a renderer without effect layers or refusing the shader.
@@ -61,13 +63,14 @@ const LOOKS = {
     desktop: { stripes: ['#0000a8', '#00a8a8', '#a80000'], g: '#000000', desk: '#008080', face: '#c0c0c0', hi: '#ffffff', light: '#dfdfdf',
         shadow: '#808080', title0: '#000080', title1: '#1084d0' },
     pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
+    nextgen: { stripes: ['#ffffff', '#9fdcff', '#2f7bff'], sky0: '#00031f', sky1: '#001052', sky2: '#0a3a9e', band: '#3d8bff', band2: '#8fd0ff', glow: '#9fdcff', bar: '#9fdcff' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -306,6 +309,32 @@ const BODY = {
         ].concat(gD().map((l) => '    ' + l), STRIPES.map((b, i) => '            if (dot && sdBox(q, ' + v4(b) + ') < 0.0) c = ' + v3(S.stripes[i]) + ';'), [
             '        if (dot && g < 0.0) c = ' + v3(S.g) + ';',
             '    }',
+        ]);
+    },
+    nextgen(S) {
+        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.3 * soft(s, 8.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + '); }');
+        return gD().concat([
+            // the sky: deep blue, lighter low down, a glow behind the badge
+            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', clamp(p.y / SZ.y * 1.3, 0.0, 1.0));',
+            '    c = mix(c, ' + v3(S.sky2) + ', smoothstep(0.55, 1.0, p.y / SZ.y) * 0.8);',
+            // three flowing bands of light (still): thin bright cores in soft halos
+            '    for (int k = 0; k < 3; k++) {',
+            '        float fk = float(k);',
+            '        float yb = SZ.y * (0.42 + 0.17 * fk) + sin(p.x * (0.012 + 0.004 * fk) + fk * 1.9) * (22.0 + 8.0 * fk) + sin(p.x * 0.031 - fk) * 7.0;',
+            '        float d = abs(p.y - yb);',
+            '        vec3 bc = mod(fk, 2.0) < 0.5 ? ' + v3(S.band) + ' : ' + v3(S.band2) + ';',
+            '        c = min(c + bc * (0.22 * soft(d - 1.0, 9.0) + 0.35 * soft(d - 0.5, 1.5)), vec3(1.0));',
+            '    }',
+            // the G: glossy white, a faint blue towards its foot, a soft glow round it
+            '    c = min(c + ' + v3(S.glow) + ' * 0.45 * soft(g, 10.0), vec3(1.0));',
+        ], SC, [
+            '    float gy = clamp(q.y / BH, 0.0, 1.0);',
+            '    vec3 gw = mix(vec3(1.0), vec3(0.82, 0.9, 1.0), smoothstep(0.45, 1.0, gy));',
+            '    gw += vec3(0.06) * (1.0 - smoothstep(0.0, 0.18, gy));',
+            '    c = paint(c, cov(g), min(gw, vec3(1.0)));',
+            // the light bar under the badge
+            '    { float lb = sdBox(p, vec4(' + f1(BX + 30) + ', ' + f1(BY + 18) + ', ' + f1(BW - 60) + ', 3.0));',
+            '      c = min(c + ' + v3(S.bar) + ' * (0.5 * soft(lb, 6.0)), vec3(1.0)); c = paint(c, cov(lb), ' + v3(S.bar) + '); }',
         ]);
     },
 };

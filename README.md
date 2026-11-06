@@ -9,10 +9,11 @@ robertn_store, which builds each app on the head unit from this repository.
 
 A driver display and car hub for the centre screen.
 
-- **Eleven looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space (drifting
+- **Twelve looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space (drifting
   stars that sway with the g-force), Aura (anime battle energy: an aura that powers up with the
-  revs), Desktop '98 (a late-90s desktop of grey windows and progress bars) and Pocket (a pocket
-  game console's green dot-matrix screen), some with a choice of colours. Star your favourites and tap the gear on Drive to switch between them.
+  revs), Desktop '98 (a late-90s desktop of grey windows and progress bars), Pocket (a pocket game
+  console's green dot-matrix screen) and Next Gen (a games-console home screen with flowing light and
+  achievements), some with a choice of colours. Star your favourites and tap the gear on Drive to switch between them.
 - **Pages:** swipe between Drive (shift lights, gear, rpm, speed, g-meter, drive mode, oil and coolant
   temperatures), Warm-up, G-force and Tires (tire pressures and temperatures).
 - **Units:** mph or km/h, °F or °C, psi, bar or kPa.
