@@ -1,5 +1,20 @@
 # Changelog
 
+## G's Dash 0.25.0
+
+- New look: Arcade, the dash as an 80s coin-op racing cabinet, in original art (no game's name, logo,
+  characters or sprites). A night road in pseudo-3D runs to a blocky skyline under a pixel moon; its
+  rumble strips and lane dashes rush past with your speed, it bends against the cornering g, and a pixel
+  car drawn for G's Dash drifts with it, tail lights flaring when you brake. CRT scanlines over it all.
+- The cabinet's HUD: 1UP with a score that counts up as you drive, HI-SCORE (beat 050000 and it follows
+  you, with NEW HI-SCORE!), 2UP with INSERT COIN blinking, CREDIT 00. The speed in big pixel numerals,
+  the gear as the STAGE, the revs as a POWER bar of blocks, oil and coolant as block bars, a BONUS card
+  of the g-force peaks. Standing still, PLAYER 1 / PRESS START blinks over the road; at the shift point,
+  SHIFT UP!.
+- Its cluster logo is the badge in big pixels with a drop shadow in a neon frame, with scanlines (a
+  shader, with logo_arcade.png as the fallback). The HUD uses chunky pixel blocks on Pixel's glyphs; the
+  cluster dials use Pixel's.
+
 ## G's Dash 0.24.0
 
 - Theme's gallery scrolls: four looks a row at full size (170 px cards again, not seven narrow ones),
