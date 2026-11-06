@@ -16,7 +16,7 @@
  *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
  *              screen, the badge on it in 6 px dots (original art)
  *   ccc        the first iDrive's start screen: the badge in brushed silver with blue / green / red stripes
- *              (its chevrons' colours) on a raised taupe tile between ribbed ones, on black (redrawn)
+ *              (its chevrons' colours) on a raised mauve-grey tile between ribbed ones, on black (redrawn)
  *   pod        a mid-2000s pocket music player: a charcoal G and blue stripes on its glossy white front,
  *              a touch wheel's rings behind them (original art)
  *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
@@ -62,7 +62,7 @@ const LOOKS = {
     pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
     heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
         city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
-    ccc: { stripes: ['#3d9be0', '#2eaa58', '#d0303a'], face0: '#8e857f', face1: '#625a55', rib0: '#887d77', rib1: '#5a514c', hi: '#b8afa9', g0: '#f2f2f2', g1: '#9a9a9a' },
+    ccc: { stripes: ['#20a2fd', '#38b087', '#e62d4b'], face0: '#8a8188', face1: '#776f75', rib0: '#857b80', rib1: '#625b60', hi: '#c5cffe', g0: '#e9eff2', g1: '#9ea9bb' },
     pod: { stripes: ['#6fb1f0', '#3d8ae0', '#2f73cc'], g: '#2b2d31', g2: '#4a4e55', body0: '#fbfbf9', body1: '#d9dad7', ring: '#c9cbc8', wheel: '#ecedeb' },
     arcade: { stripes: ['#ff3030', '#ffd800', '#22e4ff'], g: '#ffd800', shadow: '#7a0a3a', sky0: '#05001a', sky1: '#1a0640', frame: '#22e4ff' },
 };

@@ -21,18 +21,21 @@ const CLOCK = new (require('./clock').Clock)();
 
 const { withAlpha, clamp, isNum } = L;
 const TXT = 'gs_c_txt', REG = 'gs_c_reg', SER = 'gs_c_ser';
+/* the screen's colours, measured off a photo of one (away from its glare): cool mauve-grey tiles, the
+   middle column a shade lighter, mauve-grey ribs, a blue-tinted silver button, near-white type */
 const C = {
-    bg: '#000000', face: '#6e655f', faceHi: '#8e857f', faceLo: '#625a55', rib0: '#887d77', rib1: '#5a514c',
-    line: '#2e2826', hi: '#b8afa9', text: '#ffffff', shadow: '#2a2422', bar: '#000000', sep: '#6a6a6a',
-    silver0: '#eeeeee', silver1: '#a9a9a9', groove: '#7d7d7d', blue: '#3d9be0', green: '#2eaa58', red: '#d0303a', orange: '#e8a050',
-    amber: '#e8a050', crit: '#e0342c',
+    bg: '#000000', face: '#776e74', mid: '#7f777d', top0: '#8a8188', top1: '#776f75', bot0: '#8a8188', bot1: '#776f75',
+    rib: ['#857b80', '#80767b', '#786f74', '#6c6469', '#625b60', '#685f65', '#71686d', '#7c7277'],
+    line: '#2f2e3d', hi: '#c5cffe', text: '#f8fcfd', shadow: '#2a2a38', bar: '#030403', sep: '#505468',
+    groove: '#8a93a3', rim: '#4c5262', blue: '#20a2fd', green: '#38b087', red: '#e62d4b', orange: '#f5ab7a',
+    amber: '#f5ab7a', crit: '#e62d4b',
 };
 const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), {
     name: 'iDrive CCC',
-    bg: C.bg, panelTop: '#7a716b', panelBottom: '#5e5650', panelEdge: C.hi,
-    track: '#4a4340', tick: '#8e857f', text: C.text, dim: '#cfc6c0',
+    bg: C.bg, panelTop: C.top0, panelBottom: C.face, panelEdge: C.hi,
+    track: '#4e474c', tick: '#8a8188', text: C.text, dim: '#ddd8dc',
     accent: C.blue, accent2: C.orange, ok: C.green, warn: C.orange, crit: C.red, cold: C.blue,
-    stripes: [C.blue, C.green, C.red], sel: '#d9d0ca', selText: '#2a2422', marker: C.orange,
+    stripes: [C.blue, C.green, C.red], sel: '#dfe6ff', selText: '#2a2a38', marker: C.orange,
 });
 /** white type with the screen's soft dark shadow */
 const T = (cv, s, x, y, size, col, font, o) => {
@@ -51,15 +54,16 @@ function geo(S) {
 }
 /** a tile's bevel: a light line top and left, a dark one bottom and right */
 function bevel(c, x, y, w, h) {
-    c.fillRect(x, y, w, 2, withAlpha(C.hi, 0.75)); c.fillRect(x, y, 2, h, withAlpha(C.hi, 0.55));
+    c.fillRect(x, y, w, 2, withAlpha(C.hi, 0.7)); c.fillRect(x, y, 2, h, withAlpha(C.hi, 0.45));
     c.fillRect(x, y + h - 2, w, 2, withAlpha(C.line, 0.9)); c.fillRect(x + w - 2, y, 2, h, withAlpha(C.line, 0.9));
 }
+/** the ribs: a soft light-to-dark wave every 8 px */
 function ribbed(c, x, y, w, h) {
-    for (let yy = 0; yy < h; yy += 4) { c.fillRect(x, y + yy, w, 2, C.rib0); c.fillRect(x, y + yy + 2, w, 2, C.rib1); }
+    for (let yy = 0; yy < h; yy++) c.fillRect(x, y + yy, w, 1, C.rib[yy % 8]);
     c.fillRect(x, y, w, 1, withAlpha('#000000', 0.5)); c.fillRect(x, y + h - 1, w, 1, withAlpha('#000000', 0.5));
 }
-function flat(c, x, y, w, h) { c.fillRect(x, y, w, h, C.face); bevel(c, x, y, w, h); }
-function raised(c, x, y, w, h) { c.gradientRect(x, y, w, h, [[0, C.faceHi], [1, C.faceLo]]); bevel(c, x, y, w, h); }
+function flat(c, x, y, w, h, col) { c.fillRect(x, y, w, h, col || C.face); bevel(c, x, y, w, h); }
+function raised(c, x, y, w, h, a, b) { c.gradientRect(x, y, w, h, [[0, a], [1, b]]); bevel(c, x, y, w, h); }
 /** the tiles (page px relative to the layer at S.x, S.y); right: false leaves the right column to a panel */
 function tiles(c, g, S, right) {
     const X = (v) => v - S.x, Y = (v) => v - S.y, cx = g.cx, ry = g.ry;
@@ -68,8 +72,9 @@ function tiles(c, g, S, right) {
     cols.forEach((col) => [0, 1, 2].forEach((row) => {
         const x = X(cx[col]) + 1, y = Y(ry[row]) + 1, w = cx[col + 1] - cx[col] - 2, h = ry[row + 1] - ry[row] - 2;
         if (col !== 1 && row !== 1) ribbed(c, x, y, w, h);
-        else if (col === 1 && row !== 1) raised(c, x, y, w, h);
-        else flat(c, x, y, w, h);
+        else if (col === 1 && row === 0) raised(c, x, y, w, h, C.top0, C.top1);
+        else if (col === 1 && row === 2) raised(c, x, y, w, h, C.bot0, C.bot1);
+        else flat(c, x, y, w, h, col === 1 ? C.mid : C.face);
     }));
 }
 /** a silver disc lit from above: offset circles, each a little lighter, rising inside the last */
@@ -77,23 +82,23 @@ function disc(c, x, y, R, cols) {
     const steps = [[0, 1], [0.05, 0.95], [0.13, 0.86], [0.24, 0.73], [0.36, 0.58]];
     cols.forEach((col, i) => { const st = steps[i]; c.circle(x, y - st[0] * R, st[1] * R, col); });
 }
-const SILVER = ['#8e8e8e', '#b4b4b4', '#cbcbcb', '#dcdcdc', '#e9e9e9'];
-const SILVER_IN = ['#e2e2e2', '#d0d0d0', '#bdbdbd', '#ababab', '#a2a2a2'];
+const SILVER = ['#9ea9bb', '#b5bfcd', '#c8d0da', '#d9e1e8', '#e9eff2'];
+const SILVER_IN = ['#e2e9ef', '#cbd3dd', '#b6c0cd', '#a6b0c0', '#9ea8b9'];
 /** the silver centre button (its own layer, centre at (o, o)) */
 function button(c, R) {
     const o = R + 6;
     c.circle(o, o + 3, R + 2, withAlpha('#000000', 0.45));
-    c.circle(o, o, R + 1, '#7a7a7a');
+    c.circle(o, o, R + 1, C.rim);
     disc(c, o, o, R, SILVER);
     const r1 = R * 0.74, r2 = R * 0.56;
     // the groove, the raised inner disc (lit from below: it is dished), the ring round the "i"
     c.arc(o, o, r1, r1 + 3, 0, 360, C.groove);
     c.arc(o, o, r1 + 3, r1 + 4.5, 0, 360, withAlpha('#ffffff', 0.5));
-    c.circle(o, o, r1, '#c9c9c9');
-    [[0, 1, '#a9a9a9'], [-0.05, 0.95, '#bababa'], [-0.12, 0.86, '#c8c8c8'], [-0.2, 0.76, '#d2d2d2']].forEach((st) => c.circle(o, o + st[0] * r1 * -1, st[1] * r1, st[2]));
-    c.arc(o, o, r2, r2 + 3, 0, 360, '#8a8a8a');
-    c.arc(o, o, r2 + 3, r2 + 4.5, 0, 360, withAlpha('#ffffff', 0.7));
-    disc(c, o, o, r2, ['#8c8c8c', '#979797', '#a2a2a2', '#ababab', '#b3b3b3']);
+    c.circle(o, o, r1, '#c3cad3');
+    [[0, 1, '#a2abba'], [-0.05, 0.95, '#b3bcc9'], [-0.12, 0.86, '#c3cbd5'], [-0.2, 0.76, '#d0d7de']].forEach((st) => c.circle(o, o + st[0] * r1 * -1, st[1] * r1, st[2]));
+    c.arc(o, o, r2, r2 + 3, 0, 360, '#7f8899');
+    c.arc(o, o, r2 + 3, r2 + 4.5, 0, 360, withAlpha('#e6eef4', 0.75));
+    disc(c, o, o, r2, ['#848c9c', '#9099a9', '#9ba4b4', '#a5aebd', '#adb6c4']);
 }
 /** a glossy chevron pointing dir ('u', 'd', 'l', 'r') at (x, y), size s */
 function chevron(cv, x, y, s, dir, col, lit) {
@@ -132,7 +137,7 @@ module.exports = {
 
     background(cv, t, reach) { cv.fillRect(0, 0, 1600, reach, C.bg); },
     card(cv, t, x, y, w, h, on) {
-        cv.gradientRect(x, y, w, h, [[0, on ? '#9a918b' : '#7a716b'], [1, on ? '#776e68' : '#5e5650']]);
+        cv.gradientRect(x, y, w, h, [[0, on ? C.bot0 : C.top0], [1, on ? C.bot1 : C.top1]]);
         cv.fillRect(x, y, w, 2, withAlpha(C.hi, 0.8)); cv.fillRect(x, y, 2, h, withAlpha(C.hi, 0.6));
         cv.fillRect(x, y + h - 2, w, 2, C.line); cv.fillRect(x + w - 2, y, 2, h, C.line);
     },
@@ -142,8 +147,10 @@ module.exports = {
         const tw = w / 3, rh = (h - 54) / 3;
         for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
             const xx = x + i * tw + 1, yy = y + j * rh + 1, ww = tw - 2, hh = rh - 2;
-            if (i !== 1 && j !== 1) for (let k = 0; k < hh; k += 4) { cv.fillRect(xx, yy + k, ww, 2, C.rib0); cv.fillRect(xx, yy + k + 2, ww, Math.min(2, hh - k - 2), C.rib1); }
-            else cv.gradientRect(xx, yy, ww, hh, [[0, i === 1 && j !== 1 ? C.faceHi : C.face], [1, C.faceLo]]);
+            if (i !== 1 && j !== 1) for (let k = 0; k < hh; k++) cv.fillRect(xx, yy + k, ww, 1, C.rib[k % 8]);
+            else if (i === 1 && j === 0) cv.gradientRect(xx, yy, ww, hh, [[0, C.top0], [1, C.top1]]);
+            else if (i === 1 && j === 2) cv.gradientRect(xx, yy, ww, hh, [[0, C.bot0], [1, C.bot1]]);
+            else cv.fillRect(xx, yy, ww, hh, i === 1 ? C.mid : C.face);
         }
     },
     panelPlate(cv, t, x, y, w, h) { cv.fillRect(x, y, w, h, C.face); cv.fillRect(x, y, w, 2, withAlpha(C.hi, 0.75)); cv.fillRect(x, y + h - 2, w, 2, C.line); },
@@ -153,15 +160,18 @@ module.exports = {
         disc(cv, cx, cy, rr, down ? SILVER_IN : SILVER);
         if (lit) cv.arc(cx, cy, rr - 3, rr, 0, 360, C.blue);
         const bh = 20, bw = L.badgeWidth(bh);
-        L.badge(cv, cx - bw / 2, cy + bh / 2, bh, '#3a3a3a');
+        L.badge(cv, cx - bw / 2, cy + bh / 2, bh, '#4c546c');
     },
     /** The gallery card: the button and its four chevrons in the middle of the cross */
     swatch(cv, t, x, y, w, h) {
         const ch = 190, rh = (ch - 54) / 3, cx = x + w / 2, cy = y - 6 + rh * 1.5, R = rh * 0.72;
         cv.circle(cx, cy + 2, R + 1, withAlpha('#000000', 0.45));
         disc(cv, cx, cy, R, SILVER);
-        cv.arc(cx, cy, R * 0.56, R * 0.56 + 2, 0, 360, '#8a8a8a');
-        cv.text('i', cx, cy + R * 0.34, Math.round(R * 1.0), '#f4f4f4', { font: SER, align: 'center', literal: true });
+        disc(cv, cx, cy, R * 0.56, ['#848c9c', '#9099a9', '#9ba4b4', '#a5aebd', '#adb6c4']);
+        cv.arc(cx, cy, R * 0.56, R * 0.56 + 2, 0, 360, '#7f8899');
+        const fi = { font: SER, align: 'center', literal: true }, iy = cy + R * 0.34, isz = Math.round(R * 1.0);
+        [[-1, 0], [1, 0], [0, -1], [0, 1.5]].forEach((d) => cv.text('i', cx + d[0], iy + d[1], isz, withAlpha('#4c5262', 0.85), fi));
+        cv.text('i', cx, iy, isz, '#f3fdfe', fi);
         const s = Math.max(7, R * 0.3);
         chevron(cv, cx, cy - R - s * 0.9, s, 'u', C.blue); chevron(cv, cx, cy + R + s * 0.9, s, 'd', C.orange);
         chevron(cv, cx - R - s * 0.9, cy, s, 'l', C.red); chevron(cv, cx + R + s * 0.9, cy, s, 'r', C.green);
@@ -191,8 +201,8 @@ module.exports = {
         const gs = L.gearFit(cv, gt, Math.round(R * 1.02), R * 1.0, { font: SER, spacing: 0 });
         const gy = g.ccy + gs * 0.33;
         const gf = { font: SER, align: 'center', literal: true };
-        [[-1.5, 0], [1.5, 0], [0, -1.5], [0, 1.5], [1.5, 2.5]].forEach((d) => cv.text(gt, g.ccx + d[0], gy + d[1], gs, withAlpha('#4a4a4a', 0.85), gf));
-        cv.text(gt, g.ccx, gy, gs, flash ? C.crit : '#f6f6f6', { font: SER, align: 'center', literal: true });
+        [[-1.5, 0], [1.5, 0], [0, -1.5], [0, 1.5], [1.5, 2.5]].forEach((d) => cv.text(gt, g.ccx + d[0], gy + d[1], gs, withAlpha('#4c546c', 0.85), gf));
+        cv.text(gt, g.ccx, gy, gs, flash ? C.crit : '#f3fdfe', { font: SER, align: 'center', literal: true });
         // above: the speed
         const sp = isNum(S.speed) ? String(Math.round(S.speed)) : '--', unit = (S.unit || 'mph').toLowerCase();
         const tcx = g.ccx, ty = ry[0] + Math.round((ry[1] - ry[0]) * 0.4), ssz = 46;
@@ -222,10 +232,10 @@ module.exports = {
             L.sessionTap(cv, S, cx[2] + 2, ry[2] + 2, cx[3] - cx[2] - 4, ry[3] - ry[2] - 4, '#ffffff', 0);
         }
         // the status bar: the drive mode, the speaker mark, three dividers, the time, the date
-        const sy = g.sy + g.sh * 0.62, sc = '#ffffff';
+        const sy = g.sy + g.sh * 0.62, sc = '#f2fafd';
         cv.fillRect(S.x, g.sy, S.w, g.sh, C.bar);
         cv.text(cap(S.mode) || 'Comfort', S.x + S.w * 0.015, sy, 32, sc, { font: REG, literal: true });
-        speaker(cv, S.x + S.w * 0.222, sy - 9, '#d8d8d8');
+        speaker(cv, S.x + S.w * 0.222, sy - 9, '#d6eaf6');
         [0.367, 0.48, 0.627].forEach((f) => cv.fillRect(S.x + S.w * f, g.sy + g.sh * 0.18, 2, g.sh * 0.6, C.sep));
         const ck = CLOCK.now(now);
         cv.text(ck.time + ' ' + ck.ampm, S.x + S.w * 0.5535, sy, 32, sc, { font: REG, align: 'center', literal: true });
