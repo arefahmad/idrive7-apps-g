@@ -233,7 +233,7 @@ mgu.run({
         let posAt = 0;
         let warmAt = 0, memAt = 0;          // paused since (the warm state's age), the last memory check
         const say = (text, ms) => { toast = { text, until: Date.now() + (ms || 3000) }; };
-        const watching = () => page === 'watch' || page === 'guide' || (page === 'settings' && (setFrom === 'watch' || setFrom === 'guide'));
+        const watching = () => page === 'watch' || page === 'guide' || ((page === 'settings' || page === 'sound') && (setFrom === 'watch' || setFrom === 'guide'));
 
         /* ----- where the pictures go ----- */
         const gpuOn = () => !!(ctx.display && ctx.display.gpu && ctx.display.active && ctx.display.active('MAIN'));
@@ -526,7 +526,7 @@ mgu.run({
         }
         function go(p) {
             const was = watching();
-            if (p === 'settings') setFrom = page;
+            if (p === 'settings' && page !== 'sound') setFrom = page;
             page = p;
             edit = null;
             if (was && !watching()) leaveWatch(p);
@@ -783,9 +783,13 @@ mgu.run({
          * that plays is touched. Once a run, when More first opens; the report goes to <data>/audio.txt and the log.
          */
         let audioDone = false;
-        const audioCheck = () => {
-            if (audioDone) return;
+        // the Sound check page (Settings > Sound): { running, at, audio: [lines], outputs: [lines], error }
+        const snd = { running: 0, at: 0, audio: null, outputs: null };
+        const audioCheck = (again) => {
+            if (audioDone && !again) return;
+            if (snd.running) return;
             audioDone = true;
+            snd.running = 2; snd.audio = null; snd.outputs = null;
             label('AUDIO_INFO', 'Audio check: reading...');
             const r = { configs: AP.configs(), own: AP.own() };
             AP.reach('OapGenericMedia', 6000).then((reach) => {
@@ -796,9 +800,18 @@ mgu.run({
                     '; app manager names ' + gen + ' generic player(s); ' + (r.configs.sources || []).length + ' Media sources';
                 try { require('fs').writeFileSync(require('path').join(ctx.dataDir, 'audio.txt'), sum + '\n' + txt); } catch (e) { log.warn('audio check: not saved (' + e.message + ')'); }
                 log.info(sum);
+                snd.audio = [
+                    'Media player: ' + (mp ? 'granted, instances ' + JSON.stringify(mp.instances) : 'not granted (' + r.own.mediaPlayerFile + ')'),
+                    'OapGenericMedia: ' + (reach.ok ? (reach.available ? 'answers' : 'does not answer') : 'unreachable (' + reach.error + ')'),
+                    'App manager: ' + gen + ' generic player(s); ' + (r.configs.sources || []).length + ' Media menu sources',
+                    'Catalog: "OapGeneric" ' + (r.configs.catalogHasOapGeneric ? 'present' : r.configs.catalogMediaPlayer === undefined ? 'not read' : 'absent'),
+                ];
+                if (r.configs.mediaPlayerDef) snd.audio.push('MediaPlayer methods: ' + r.configs.mediaPlayerDef.methods.join(', '));
+                if (r.configs.commandControlDef) snd.audio.push('CommandControl methods: ' + r.configs.commandControlDef.methods.join(', '));
+                snd.running--; snd.at = Date.now();
                 // one plain-ASCII line for the HMI's label (line breaks and other characters would take its string-bundle path)
                 label('AUDIO_INFO', (sum + ' | ' + txt.replace(/\n+/g, ' | ')).replace(/[^\x20-\x7e]/g, '?').slice(0, 1800));
-            }, (e) => { log.warn('audio check: ' + e); label('AUDIO_INFO', 'Audio check failed: ' + (e && e.message || e)); });
+            }, (e) => { log.warn('audio check: ' + e); snd.audio = ['Audio check failed: ' + (e && e.message || e)]; snd.running--; label('AUDIO_INFO', 'Audio check failed: ' + (e && e.message || e)); });
             soundCheck(r.configs.sources);
         };
         /*
@@ -813,8 +826,9 @@ mgu.run({
                 const lines = SP.summary(r);
                 try { require('fs').writeFileSync(require('path').join(ctx.dataDir, 'sound.txt'), SP.text(r)); } catch (e) { log.warn('sound check: not saved (' + e.message + ')'); }
                 lines.forEach((l) => log.info('sound check: ' + l));
+                snd.outputs = lines; snd.running--; snd.at = Date.now();
                 label('SOUND_INFO', ('Sound outputs: ' + lines.join(' | ')).replace(/[^\x20-\x7e]/g, '?').slice(0, 1800));
-            }, (e) => { log.warn('sound check: ' + e); label('SOUND_INFO', 'Sound outputs check failed: ' + (e && e.message || e)); });
+            }, (e) => { log.warn('sound check: ' + e); snd.outputs = ['Sound outputs check failed: ' + (e && e.message || e)]; snd.running--; label('SOUND_INFO', 'Sound outputs check failed: ' + (e && e.message || e)); });
         };
         ui.onVisible((name, on) => { if (name === 'MORE' && on) audioCheck(); });
 
@@ -845,6 +859,7 @@ mgu.run({
             if (page === 'add') { handoff.cancel(); go('home'); return true; }
             if (page === 'guide') { go('watch'); return true; }
             if (page === 'settings') { go(setFrom === 'settings' ? 'home' : setFrom); return true; }
+            if (page === 'sound') { go('settings'); return true; }
             go('home');
             return true;
         });
@@ -922,6 +937,7 @@ mgu.run({
             // without the kit's touch screen the picture page only (the HMI's Play / Ch + / Ch - / More do the rest)
             if (!cv.own) drawWatch(cv, t, A);
             else if (page === 'settings') drawSettings(cv, t, A);
+            else if (page === 'sound') drawSound(cv, t, A);
             else if (page === 'home') drawHome(cv, t, A);
             else if (page === 'guide') drawGuide(cv, t, A);
             else if (page === 'add') drawAdd(cv, t, A);
@@ -1523,11 +1539,15 @@ mgu.run({
                 ['Output', pathName()],
                 ['Cluster', settings.get('cluster') ? (guided ? 'Directions (route guidance) - back after the route' : cluster.status(gateOpen, gateOpen && player.state === 'playing').text + ' - after TV: ' + afterTv()) : 'Off (Cluster button)'],
                 ['HUD', settings.get('hud') ? hud.status(gateOpen, gateOpen && player.state === 'playing').text : 'Off (HUD button)'],
-                ['Sound', 'None yet: no verified way for an app to play audio'],
+                ['Sound', 'None yet. Tap for the sound check'],
                 ['Sources', 'Spelunkr: the Internet Archive, no DRM. Mine: ' + store.list().length + ' of ' + Src.MAX_SOURCES],
             ];
             let y = top + 60;
             lines.forEach((l) => {
+                if (l[0] === 'Sound') {
+                    plate(cv, t, A.x - 8, y - 32, colW + 8, 44, false, isDown('sound'));
+                    FS.button(cv, 'sound', A.x - 8, y - 32, colW + 8, 44, () => press('sound', () => { go('sound'); audioCheck(); }), { slop: 2, r: 14 });
+                }
                 cv.text(l[0].toUpperCase(), A.x + 4, y, 15, t.dim, { font: 'bold', spacing: 1.5, literal: true });
                 cv.text(fit(cv, l[1], 22, colW - 150), A.x + 150, y, 22, l[0] === 'Sound' ? on : t.text, { literal: true });
                 y += 46;
@@ -1547,6 +1567,35 @@ mgu.run({
                 cv.text(fit(cv, r[2](settings.get(r[0])), 22, cw - 32, { font: 'bold' }), cx + 16, yy + rh / 2 + 20, 22, t.text, { font: 'bold', literal: true });
                 FS.button(cv, key, cx, yy, cw, rh, () => { downKey = key; downAt = Date.now(); if (OUT[r[0]]) toggleOut(r[0]); else settings.cycle(r[0]); }, { slop: 4, r: 14 });
             });
+        }
+
+        /**
+         * Settings > Sound: the sound check (read-only). Left, what BMW's app manager gives G's TV (the media-player
+         * interface, whether the generic app player answers); right, where the sound itself could go. Check again
+         * runs both again. The full reports are <data>/audio.txt and sound.txt.
+         */
+        function drawSound(cv, t, A) {
+            const on = t.accent2 || t.accent, hy = A.y, cyH = hy + HEAD_H / 2;
+            const bw = backButton(cv, t, A, 'Settings', () => go('settings'));
+            cv.text('SOUND CHECK', A.x + bw + 32, cyH + 11, 30, t.text, { font: 'bold', spacing: 1.5, literal: true });
+            const cb = { w: 260, h: HEAD_H };
+            if (!snd.running) action(cv, t, 'snd:again', A.right - cb.w, hy, cb.w, cb.h, 'Check again', () => press('snd:again', () => audioCheck(true)));
+            else cv.text('Checking...', A.right - 16, cyH + 8, 22, on, { align: 'right', literal: true });
+            const top = hy + HEAD_H + 24, colW = (A.right - A.x - 32) / 2, rx = A.x + colW + 32, LH = 27, bottom = A.bottom - 30;
+            const lbl = (s2, x, yy) => cv.text(s2.toUpperCase(), x, yy, 18, t.dim, { font: 'bold', spacing: 1.5, literal: true });
+            const col = (x, title, lines) => {
+                lbl(title, x, top + 20);
+                let y = top + 56;
+                if (!lines) { cv.text(snd.running ? 'Reading...' : 'Not checked yet', x, y, 21, t.dim, { literal: true }); return; }
+                lines.forEach((l) => {
+                    const good = /granted, |: answers|can run|alsasink yes|writable by this app; app-like: [^n]|is an instance|SmartX plugin yes/.test(l);
+                    wrap(cv, l, 20, colW - 8, 3).forEach((w2) => { if (y < bottom) { cv.text(w2, x, y, 20, good ? on : t.text, { literal: true }); y += LH; } });
+                    y += 6;
+                });
+            };
+            col(A.x, 'What the car gives G\'s TV', snd.audio);
+            col(rx, 'Where the sound could go', snd.outputs);
+            cv.text(fit(cv, 'Read-only: nothing that plays is touched. Full reports: audio.txt and sound.txt in G\'s TV\'s data folder.', 16, A.right - A.x), A.x, A.bottom - 4, 16, t.dim, { literal: true });
         }
 
         // start: the home screen (or, with a test streamUrl in tv.json, that stream); the picture once the gate opens
