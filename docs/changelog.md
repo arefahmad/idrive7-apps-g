@@ -11,6 +11,10 @@
   when hot); right, the g-force now, with the session peaks on the ribbed tiles beside it. The gear sits
   on the button in the serif type of its "i" (the "i" itself with no gear). The status bar shows the
   drive mode, the speaker mark, the time and the date.
+- The screen's glare is part of the look, as in the photo it is matched to: a cool sheen across the
+  middle column (bright on the right of the tile above the button, the left of the one below) and a
+  halo either side of the button.
+- Pod '04: its progress bar (the revs) fills blue again; it was drawn black.
 - New fonts for it: Liberation Sans Bold / Regular and Liberation Serif Bold (SIL OFL 1.1, Arial /
   Times metrics), baked as gs_c_txt, gs_c_reg and gs_c_ser; licence in fonts/LICENSE-Liberation.txt.
 - Its cluster logo is the badge in brushed silver with blue / green / red stripes on a taupe tile

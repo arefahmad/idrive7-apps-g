@@ -24,7 +24,7 @@ const TXT = 'gs_c_txt', REG = 'gs_c_reg', SER = 'gs_c_ser';
 /* the screen's colours, measured off a photo of one (away from its glare): cool lavender-grey tiles, the
    middle column a shade lighter, lavender-grey ribs, a blue-tinted silver button, near-white type */
 const C = {
-    bg: '#000000', face: '#756f79', mid: '#828194', top0: '#8a889e', top1: '#7b7888', bot0: '#8a889e', bot1: '#7b7888',
+    bg: '#000000', face: '#756f79', mid: '#7f7c8c', top0: '#837f8e', top1: '#7a7686', bot0: '#837f8e', bot1: '#7a7686', glare: '#d6e4ff',
     rib: ['#837a82', '#7f767e', '#786f77', '#6d656c', '#645d64', '#6a636a', '#736b73', '#7c747c'],
     line: '#2f2e3d', hi: '#c5cffe', text: '#f8fcfd', shadow: '#2a2a38', bar: '#030403', sep: '#505468',
     groove: '#8a9bb2', rim: '#4c546c', blue: '#20a2fd', green: '#38b087', red: '#e62d4b', orange: '#f5ab7a',
@@ -64,6 +64,28 @@ function ribbed(c, x, y, w, h) {
 }
 function flat(c, x, y, w, h, col) { c.fillRect(x, y, w, h, col || C.face); bevel(c, x, y, w, h); }
 function raised(c, x, y, w, h, a, b) { c.gradientRect(x, y, w, h, [[0, a], [1, b]]); bevel(c, x, y, w, h); }
+/*
+ * The glare: the photo of the screen this look is matched to has a cool sheen across it - bright on the
+ * right of the tile above the button and the left of the one below, a halo either side of the button.
+ * Each tile's share of it across its width, as [position 0..1, strength 0..1] (measured off the photo),
+ * drawn as a fade from side to side in a pale blue.
+ */
+const GLARE = {
+    '1,0': [[0, 0.03], [0.25, 0.24], [0.5, 0.46], [0.8, 0.64], [1, 0.62]],
+    '1,1': [[0, 0.3], [0.2, 0.3], [0.8, 0.25], [1, 0.1]],
+    '1,2': [[0, 0.26], [0.1, 0.44], [0.3, 0.38], [0.45, 0.25], [0.6, 0.12], [0.8, 0.05], [1, 0]],
+    '0,1': [[0, 0], [0.3, 0.06], [0.55, 0.13], [0.77, 0.23], [0.92, 0.32], [1, 0.37]],
+    '2,1': [[0, 0.22], [0.15, 0.15], [0.35, 0.1], [0.6, 0.07], [1, 0]],
+};
+function glareAt(pts, u) {
+    for (let i = 1; i < pts.length; i++) if (u <= pts[i][0]) { const a = pts[i - 1], b = pts[i], t = (u - a[0]) / (b[0] - a[0] || 1); return a[1] + (b[1] - a[1]) * t; }
+    return pts[pts.length - 1][1];
+}
+function glare(c, x, y, w, h, pts) {
+    const N = 13, stops = [];
+    for (let i = 0; i < N; i++) stops.push(withAlpha(C.glare, glareAt(pts, i / (N - 1))));
+    c.rampRect(x, y, w, h, 0, stops, x, w);
+}
 /** the tiles (page px relative to the layer at S.x, S.y); right: false leaves the right column to a panel */
 function tiles(c, g, S, right) {
     const X = (v) => v - S.x, Y = (v) => v - S.y, cx = g.cx, ry = g.ry;
@@ -75,6 +97,8 @@ function tiles(c, g, S, right) {
         else if (col === 1 && row === 0) raised(c, x, y, w, h, C.top0, C.top1);
         else if (col === 1 && row === 2) raised(c, x, y, w, h, C.bot0, C.bot1);
         else flat(c, x, y, w, h, col === 1 ? C.mid : C.face);
+        const gl = GLARE[col + ',' + row];
+        if (gl) glare(c, x + 2, y + 2, w - 4, h - 4, gl);
     }));
 }
 /** a silver disc lit from above: offset circles, each a little lighter, rising inside the last */
