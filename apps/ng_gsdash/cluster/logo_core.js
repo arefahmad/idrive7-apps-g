@@ -13,17 +13,10 @@
  *   digital-purple, digital-red (0.14.0)  Digital's in the variant's colours (tints.js)
  *   space      a nebula-filled G with a glowing cyan rim and its own stars, blue-violet stripes, a tilted
  *              orbit ring passing behind and in front of the badge with a small planet, a starfield
- *   aura       a gold G, white-hot at its core, in rising flames over burst rays at dusk, lightning
- *              crackling past it, blue / gold / orange stripes (anime battle energy; original art)
  *   desktop    a late-90s desktop: a bevelled grey window with a navy gradient title bar on teal, the badge
  *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
  *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
  *              screen, the badge on it in 6 px dots (original art)
- *   nextgen    a games-console home screen: a glossy white G with a soft blue glow over deep blue with
- *              flowing bands of light, white / ice / blue stripes, a light bar under it (original art)
- *   arcade     an 80s coin-op cabinet: the badge in big pixels (6 px cells), a yellow G and red / yellow / cyan
- *              stripes with a red drop shadow, on a starry night inside a cyan neon frame, CRT scanlines
- *              (original art)
  *   pod        a mid-2000s pocket music player: a charcoal G and blue stripes on its glossy white front,
  *              a touch wheel's rings behind them (original art)
  *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
@@ -66,14 +59,9 @@ const LOOKS = {
     lumen: { stripes: ['#7fe3ff', '#2f8bff', '#1b3fd8'], bg0: '#0a1226', deep: '#1b3fd8', blue: '#2f8bff', ice: '#7fe3ff', core: '#e8fbff' },
     space: { stripes: ['#4fe3ff', '#5b8cff', '#9b6bff'], sky0: '#020309', sky1: '#140a2e', neb0: '#1c0f4a', neb1: '#6a2bd0', neb2: '#d65cff',
         rim: '#a8f2ff', glow: '#4fe3ff', ring: '#7fe9ff', planet: '#e8b86a' },
-    aura: { stripes: ['#bfe8ff', '#ffd23f', '#ff9a1f'], sky0: '#07050f', sky1: '#3a1422', dusk: '#a8461f', gold0: '#ffe066', gold1: '#ff9f1a',
-        rim: '#b8360a', flame: '#ffd23f', flame2: '#ff8a1f', bolt: '#bff0ff' },
     desktop: { stripes: ['#0000a8', '#00a8a8', '#a80000'], g: '#000000', desk: '#008080', face: '#c0c0c0', hi: '#ffffff', light: '#dfdfdf',
         shadow: '#808080', title0: '#000080', title1: '#1084d0' },
     pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
-    nextgen: { stripes: ['#ffffff', '#9fdcff', '#2f7bff'], sky0: '#00031f', sky1: '#001052', sky2: '#0a3a9e', band: '#3d8bff', band2: '#8fd0ff', glow: '#9fdcff', bar: '#9fdcff' },
-    heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
-        city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
     pod: { stripes: ['#6fb1f0', '#3d8ae0', '#2f73cc'], g: '#2b2d31', g2: '#4a4e55', body0: '#fbfbf9', body1: '#d9dad7', ring: '#c9cbc8', wheel: '#ecedeb' },
     arcade: { stripes: ['#ff3030', '#ffd800', '#22e4ff'], g: '#ffd800', shadow: '#7a0a3a', sky0: '#05001a', sky1: '#1a0640', frame: '#22e4ff' },
 };
@@ -82,7 +70,7 @@ const LOOKS = {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade', 'pod'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'desktop', 'pocket', 'heist', 'arcade', 'pod'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -233,37 +221,6 @@ const BODY = {
             '    c = paint(c, cov(pl), ' + v3(S.planet) + ' * (0.55 + 0.45 * clamp((pp.y - p.y + 6.0) / 14.0, 0.0, 1.0)));',
         ]);
     },
-    aura(S) {
-        const cx = LOGO_W / 2, cy = LOGO_H / 2;
-        const BOLTS = [[18, 30, 34.4, 36.2], [34.4, 36.2, 50.8, 42.4], [50.8, 42.4, 59.0, 61.1], [59.0, 61.1, 80.3, 59.9], [80.3, 59.9, 89.0, 77.8], [89.0, 77.8, 105.3, 84.1], [105.3, 84.1, 118, 96], [430, 214, 411.1, 214.8], [411.1, 214.8, 401.5, 198.4], [401.5, 198.4, 382.3, 199.8], [382.3, 199.8, 372.2, 184.4], [372.2, 184.4, 354.1, 183.8], [354.1, 183.8, 340.0, 175.6], [340.0, 175.6, 330, 160], [400, 18, 394.1, 26.6], [394.1, 26.6, 380.5, 27.9], [380.5, 27.9, 384.5, 46.0], [384.5, 46.0, 375.8, 51.9], [375.8, 51.9, 362.3, 53.2], [362.3, 53.2, 350.0, 55.7], [350.0, 55.7, 350, 70]];
-        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.45 * soft(s, 7.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + '); }');
-        const L = ['    float bl = 100000.0;'].concat(BOLTS.map((b) => '    bl = min(bl, sdLine(p, vec2(' + f1(b[0]) + ', ' + f1(b[1]) + '), vec2(' + f1(b[2]) + ', ' + f1(b[3]) + ')));'));
-        return gD().concat([
-            // the sky at dusk and the burst's rays from behind the badge
-            '    vec2 d = p - vec2(' + f1(cx) + ', ' + f1(cy) + ');',
-            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', clamp(p.y / SZ.y * 1.2, 0.0, 1.0));',
-            '    c = mix(c, ' + v3(S.dusk) + ', 0.55 * smoothstep(0.65, 1.0, p.y / SZ.y));',
-            '    float ray = step(0.5, fract(atan(d.y, d.x) * 4.4563)) * clamp(1.0 - length(d) / 260.0, 0.0, 1.0);',
-            '    c += ' + v3(S.flame) + ' * 0.07 * ray;',
-            // the aura: flame tongues (noise rising with time frozen) round the G, reaching higher above it
-            '    float n = vnoise(vec2(p.x * 0.07, p.y * 0.045 + 3.0)), n2 = vnoise(vec2(p.x * 0.16 + 9.0, p.y * 0.09));',
-            '    float reach = 7.0 + 30.0 * n * n + 10.0 * n2 + 22.0 * clamp((' + f1(OY + H * 0.4) + ' - p.y) / 120.0, 0.0, 1.0) * n;',
-            '    float fl = soft(g - reach, 5.0), core = soft(g, 6.0);',
-            '    c = mix(c, ' + v3(S.flame2) + ', fl * 0.75);',
-            '    c = min(c + ' + v3(S.flame) + ' * (0.55 * soft(g - reach * 0.55, 4.0) + 0.35 * core), vec3(1.0));',
-        ], SC, [
-            // the G: gold, top to bottom, white-hot towards its middle, an orange rim
-            '    float gy = clamp(q.y / BH, 0.0, 1.0);',
-            '    vec3 gold = mix(' + v3(S.gold0) + ', ' + v3(S.gold1) + ', gy);',
-            '    gold = mix(gold, vec3(1.0, 0.98, 0.85), 0.3 * clamp(-g / 14.0, 0.0, 1.0));',
-            '    c = paint(c, cov(g), gold);',
-            '    c = paint(c, clamp(cov(g) - cov(g + 3.5), 0.0, 1.0), ' + v3(S.rim) + ');',
-        ], L, [
-            // lightning: a white core in a blue glow
-            '    c = min(c + ' + v3(S.bolt) + ' * 0.6 * soft(bl - 1.0, 4.0), vec3(1.0));',
-            '    c = paint(c, cov(bl - 1.0), vec3(0.96, 0.99, 1.0));',
-        ]);
-    },
     desktop(S) {
         // the window (screen px) and the badge scaled into it: sampled k times finer, its centre moved down
         const wx0 = 30, wy0 = 12, wx1 = LOGO_W - 30, wy1 = LOGO_H - 12, k = 1.42, bcx = LOGO_W / 2, bcy = BY - H / 2, ty = 58 + (wy1 - 58) / 2;
@@ -326,32 +283,6 @@ const BODY = {
         ].concat(gD().map((l) => '    ' + l), STRIPES.map((b, i) => '            if (dot && sdBox(q, ' + v4(b) + ') < 0.0) c = ' + v3(S.stripes[i]) + ';'), [
             '        if (dot && g < 0.0) c = ' + v3(S.g) + ';',
             '    }',
-        ]);
-    },
-    nextgen(S) {
-        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.3 * soft(s, 8.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + '); }');
-        return gD().concat([
-            // the sky: deep blue, lighter low down, a glow behind the badge
-            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', clamp(p.y / SZ.y * 1.3, 0.0, 1.0));',
-            '    c = mix(c, ' + v3(S.sky2) + ', smoothstep(0.55, 1.0, p.y / SZ.y) * 0.8);',
-            // three flowing bands of light (still): thin bright cores in soft halos
-            '    for (int k = 0; k < 3; k++) {',
-            '        float fk = float(k);',
-            '        float yb = SZ.y * (0.42 + 0.17 * fk) + sin(p.x * (0.012 + 0.004 * fk) + fk * 1.9) * (22.0 + 8.0 * fk) + sin(p.x * 0.031 - fk) * 7.0;',
-            '        float d = abs(p.y - yb);',
-            '        vec3 bc = mod(fk, 2.0) < 0.5 ? ' + v3(S.band) + ' : ' + v3(S.band2) + ';',
-            '        c = min(c + bc * (0.22 * soft(d - 1.0, 9.0) + 0.35 * soft(d - 0.5, 1.5)), vec3(1.0));',
-            '    }',
-            // the G: glossy white, a faint blue towards its foot, a soft glow round it
-            '    c = min(c + ' + v3(S.glow) + ' * 0.45 * soft(g, 10.0), vec3(1.0));',
-        ], SC, [
-            '    float gy = clamp(q.y / BH, 0.0, 1.0);',
-            '    vec3 gw = mix(vec3(1.0), vec3(0.82, 0.9, 1.0), smoothstep(0.45, 1.0, gy));',
-            '    gw += vec3(0.06) * (1.0 - smoothstep(0.0, 0.18, gy));',
-            '    c = paint(c, cov(g), min(gw, vec3(1.0)));',
-            // the light bar under the badge
-            '    { float lb = sdBox(p, vec4(' + f1(BX + 30) + ', ' + f1(BY + 18) + ', ' + f1(BW - 60) + ', 3.0));',
-            '      c = min(c + ' + v3(S.bar) + ' * (0.5 * soft(lb, 6.0)), vec3(1.0)); c = paint(c, cov(lb), ' + v3(S.bar) + '); }',
         ]);
     },
     pod(S) {

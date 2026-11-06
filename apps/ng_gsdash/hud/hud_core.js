@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade', 'pod'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'desktop', 'pocket', 'heist', 'arcade', 'pod'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -66,18 +66,12 @@ const LOOKS = {
     // Space: round beads with a soft glow, cyan to the shift lights, violet flashes; Vector's glyphs (the same Saira)
     space: { n: 30, shape: 'bead', beadR: 4.5, base: '#4fe3ff', zones: ['#9b6bff', '#ffb547', '#ff4d6a'], flash: '#ff4d6a', flash2: '#d65cff',
         dim: '#151a3a', redDim: '#2e0f19', tick: '#5b6aa8', tickRed: '#ff4d6a', gear: '#eef3ff', gear2: '#9b6bff', pre: '#4fe3ff', pre2: '#5b8cff', glow: [4, 0.75] },
-    // Aura: slanted blazing bars, calm blue to gold, electric blue flashes; M Style's italic glyphs (the same Saira Italic)
-    aura: { n: 26, slant: 3, gap: 2, inset: 0, base: '#ffd23f', zones: ['#ff9a1f', '#ff5a1f', '#ff2a2a'], flash: '#9fe8ff', flash2: '#ffffff',
-        dim: '#2a1a16', redDim: '#3e0b0b', tick: '#c9a988', tickRed: '#ff3b2f', gear: '#fff2c2', gear2: '#ff9a1f', pre: '#ffd23f', pre2: '#ff7a1a', gearFlash: true, glow: [4, 0.8] },
     // Desktop '98: progress-bar blocks in bright system colours, hard edges; the Pixel look's glyphs (the G's Dash pixel font)
     desktop: { n: 22, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#1084d0', zones: ['#ffff00', '#ff8000', '#ff2020'], flash: '#ffffff',
         dim: '#1c2a3a', redDim: '#401010', tick: '#c0c0c0', tickRed: '#ff2020', gear: '#ffffff', pre: '#c0c0c0', glow: [1, 0.2] },
     // Pocket: dot-matrix greens, hard blocks, the shift lights brightening to near white; the Pixel look's glyphs
     pocket: { n: 20, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#8bac0f', zones: ['#9bbc0f', '#c8e858', '#f0ffc0'], flash: '#ffffff',
         dim: '#1c2e10', redDim: '#304818', tick: '#8bac0f', tickRed: '#c8e858', gear: '#9bbc0f', pre: '#8bac0f', glow: [2, 0.3] },
-    // Next Gen: many thin ice-blue segments with a soft glow, amber then red at the shift point; Vector's glyphs (the same Saira)
-    nextgen: { n: 44, slant: 0, gap: 2, inset: 4, base: '#9fdcff', zones: ['#ffffff', '#ffb03a', '#ff4646'], flash: '#ff4646', flash2: '#ffffff',
-        dim: '#14244e', redDim: '#3a1218', tick: '#5b78b8', tickRed: '#ff4646', gear: '#ffffff', gear2: '#2f7bff', pre: '#9fdcff', pre2: '#2f7bff', glow: [3, 0.5] },
     // Heist: bold game-HUD bars, green to yellow to red, red and blue flashes like a patrol car's lights; Sim Racing's glyphs (the same Titillium)
     heist: { n: 24, slant: 0, gap: 3, inset: 1, base: '#5fd068', zones: ['#5fd068', '#ffd23a', '#ff3b3b'], flash: '#ff3b3b', flash2: '#4aa3ff',
         dim: '#221a2e', redDim: '#3e0b10', tick: '#8a7fa0', tickRed: '#ff3b3b', gear: '#ffffff', gear2: '#000000', pre: '#5fd068', glow: [2, 0.4] },
@@ -89,7 +83,7 @@ const LOOKS = {
         dim: '#1e252c', redDim: '#3a1210', tick: '#8a96a0', tickRed: '#ff3b30', gear: '#f3f6f8', gear2: '#3d8ae0', pre: '#6fb1f0', pre2: '#2f73cc', glow: [3, 0.45] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
-const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel', pocket: 'pixel', nextgen: 'vector', heist: 'simracing', arcade: 'pixel', pod: 'simracing' };
+const ATLAS_LOOK = { space: 'vector', desktop: 'pixel', pocket: 'pixel', heist: 'simracing', arcade: 'pixel', pod: 'simracing' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {

@@ -67,7 +67,7 @@ const HOLD_MS = 3000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 
 const REACQ_MS = [0, 1000, 2000, 5000, 10000], REACQ_QUICK_MS = 30000;
 const HANDOVER_MS = 3500;   // as fcluster.js: the panel and the HUD share one scene id
 /** G's Dash's look ids -> the skin's (skin_looks.js) */
-const LOOK_SKIN = { m: 'm', gt: 'gt', digital: 'digital', simracing: 'simracing', lumen: 'lumen', pixel: 'pixel', vector: 'vector', space: 'vector', aura: 'gt', desktop: 'stock', pocket: 'pixel-handheld', nextgen: 'lumen', heist: 'simracing', arcade: 'pixel', pod: 'lumen' };   // Space: Vector's dials (the same Saira, cyan)
+const LOOK_SKIN = { m: 'm', gt: 'gt', digital: 'digital', simracing: 'simracing', lumen: 'lumen', pixel: 'pixel', vector: 'vector', space: 'vector', desktop: 'stock', pocket: 'pixel-handheld', heist: 'simracing', arcade: 'pixel', pod: 'lumen' };   // Space: Vector's dials (the same Saira, cyan)
 
 /** Other apps' layers on the panel or the HUD in a status text (same lines as cluster_logo.js reads). */
 function panelLayers(text, ownApp) {

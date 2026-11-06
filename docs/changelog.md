@@ -1,5 +1,12 @@
 # Changelog
 
+## G's Dash 0.27.0
+
+- Removed two looks: Aura and Next Gen, with their cluster logos (shader and logo_aura.png /
+  logo_nextgen.png), HUD styles and cluster-dial choices. Thirteen looks remain.
+- If one of them was the chosen look it becomes M Style when the app starts; as a favourite it simply
+  drops out of the list.
+
 ## G's Dash 0.26.0
 
 - New look: Pod '04, the dash as a mid-2000s pocket music player, in original art (no maker's name,
