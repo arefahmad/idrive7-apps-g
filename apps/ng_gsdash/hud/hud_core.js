@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade', 'pod'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -84,9 +84,12 @@ const LOOKS = {
     // Arcade: chunky pixel blocks like its POWER bar, green / yellow / red, flashing white and red; the Pixel look's glyphs
     arcade: { n: 22, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#3cff5a', zones: ['#3cff5a', '#ffd800', '#ff3030'], flash: '#ffffff', flash2: '#ff3030',
         dim: '#1a1a26', redDim: '#3a0a10', tick: '#22e4ff', tickRed: '#ff3030', gear: '#ffd800', pre: '#22e4ff', glow: [2, 0.35] },
+    // Pod '04: round-ended bars in the selection blue, amber then red at the shift point, a soft glow; Sim Racing's glyphs (the same Titillium)
+    pod: { n: 30, slant: 0, gap: 3, inset: 3, base: '#c9d3da', zones: ['#6fb1f0', '#ff9f2e', '#ff3b30'], flash: '#ff3b30', flash2: '#ffffff',
+        dim: '#1e252c', redDim: '#3a1210', tick: '#8a96a0', tickRed: '#ff3b30', gear: '#f3f6f8', gear2: '#3d8ae0', pre: '#6fb1f0', pre2: '#2f73cc', glow: [3, 0.45] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
-const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel', pocket: 'pixel', nextgen: 'vector', heist: 'simracing', arcade: 'pixel' };
+const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel', pocket: 'pixel', nextgen: 'vector', heist: 'simracing', arcade: 'pixel', pod: 'simracing' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {
