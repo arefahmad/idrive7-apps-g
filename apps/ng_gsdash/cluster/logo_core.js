@@ -11,19 +11,10 @@
  *   simracing  shift-light stripes, a white G with a purple "session best" bar, timing underline
  *   lumen      an ice-blue neon-tube G with a bloom over a deep-blue body, glowing stripes
  *   digital-purple, digital-red (0.14.0)  Digital's in the variant's colours (tints.js)
- *   space      a nebula-filled G with a glowing cyan rim and its own stars, blue-violet stripes, a tilted
- *              orbit ring passing behind and in front of the badge with a small planet, a starfield
- *   aura       a gold G, white-hot at its core, in rising flames over burst rays at dusk, lightning
- *              crackling past it, blue / gold / orange stripes (anime battle energy; original art)
  *   desktop    a late-90s desktop: a bevelled grey window with a navy gradient title bar on teal, the badge
  *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
  *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
  *              screen, the badge on it in 6 px dots (original art)
- *   nextgen    a games-console home screen: a glossy white G with a soft blue glow over deep blue with
- *              flowing bands of light, white / ice / blue stripes, a light bar under it (original art)
- *   arcade     an 80s coin-op cabinet: the badge in big pixels (6 px cells), a yellow G and red / yellow / cyan
- *              stripes with a red drop shadow, on a starry night inside a cyan neon frame, CRT scanlines
- *              (original art)
  *   pod        a mid-2000s pocket music player: a charcoal G and blue stripes on its glossy white front,
  *              a touch wheel's rings behind them (original art)
  *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
@@ -64,14 +55,9 @@ const LOOKS = {
     digital: { lit: '#41f2cf', acc: '#ffa63a' },
     simracing: { stripes: ['#2fd27a', '#ffc21a', '#ff2a2a'], g: '#f4f6f9', best: '#b45cff', sector: '#2a7dff' },
     lumen: { stripes: ['#7fe3ff', '#2f8bff', '#1b3fd8'], bg0: '#0a1226', deep: '#1b3fd8', blue: '#2f8bff', ice: '#7fe3ff', core: '#e8fbff' },
-    space: { stripes: ['#4fe3ff', '#5b8cff', '#9b6bff'], sky0: '#020309', sky1: '#140a2e', neb0: '#1c0f4a', neb1: '#6a2bd0', neb2: '#d65cff',
-        rim: '#a8f2ff', glow: '#4fe3ff', ring: '#7fe9ff', planet: '#e8b86a' },
-    aura: { stripes: ['#bfe8ff', '#ffd23f', '#ff9a1f'], sky0: '#07050f', sky1: '#3a1422', dusk: '#a8461f', gold0: '#ffe066', gold1: '#ff9f1a',
-        rim: '#b8360a', flame: '#ffd23f', flame2: '#ff8a1f', bolt: '#bff0ff' },
     desktop: { stripes: ['#0000a8', '#00a8a8', '#a80000'], g: '#000000', desk: '#008080', face: '#c0c0c0', hi: '#ffffff', light: '#dfdfdf',
         shadow: '#808080', title0: '#000080', title1: '#1084d0' },
     pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
-    nextgen: { stripes: ['#ffffff', '#9fdcff', '#2f7bff'], sky0: '#00031f', sky1: '#001052', sky2: '#0a3a9e', band: '#3d8bff', band2: '#8fd0ff', glow: '#9fdcff', bar: '#9fdcff' },
     heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
         city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
     pod: { stripes: ['#6fb1f0', '#3d8ae0', '#2f73cc'], g: '#2b2d31', g2: '#4a4e55', body0: '#fbfbf9', body1: '#d9dad7', ring: '#c9cbc8', wheel: '#ecedeb' },
@@ -82,7 +68,7 @@ const LOOKS = {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade', 'pod'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'desktop', 'pocket', 'heist', 'arcade', 'pod'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -114,13 +100,7 @@ const COMMON = [
     'vec3 paint(vec3 c, float a, vec3 k) { return mix(c, k, clamp(a, 0.0, 1.0)); }',
     '/* a hash without sin (steady on mediump GPUs): 0..1 per cell */',
     'float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
-    '/* a sky of still stars: one candidate per s px cell, kept with probability k, a soft dot b bright */',
-    'float stars(vec2 p, float s, float k) { vec2 cl = floor(p / s); float h = hash(cl + 7.0); if (h > k) return 0.0;',
-    '    vec2 at = (cl + 0.2 + 0.6 * vec2(hash(cl + 19.0), hash(cl + 41.0))) * s; float b = 0.35 + 0.65 * hash(cl + 3.0);',
-    '    return b * soft(length(p - at) - 0.45, 0.55); }',
-    '/* smooth value noise (0..1), and the distance to a line segment */',
-    'float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
-    '    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }',
+    '/* the distance to a line segment */',
     'float sdLine(vec2 p, vec2 a, vec2 b) { vec2 ab = b - a; float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0); return length(p - a - ab * t); }',
     '/* the arrow pointer (Desktop \'98): 12 x 17 cells, outline (black) and fill (white) bits per row */',
     'float curB(float r) { if (r < 0.5) return 1.0; if (r < 1.5) return 3.0; if (r < 2.5) return 5.0; if (r < 3.5) return 9.0; if (r < 4.5) return 17.0; if (r < 5.5) return 33.0; if (r < 6.5) return 65.0; if (r < 7.5) return 129.0; if (r < 8.5) return 257.0; if (r < 9.5) return 513.0; if (r < 10.5) return 1985.0; if (r < 11.5) return 73.0; if (r < 12.5) return 149.0; if (r < 13.5) return 147.0; if (r < 14.5) return 289.0; if (r < 15.5) return 288.0; if (r < 16.5) return 192.0; return 0.0; }',
@@ -194,76 +174,6 @@ const BODY = {
             '    c = paint(c, tube, ' + v3(S.core) + ');',
         ], L);
     },
-    space(S) {
-        const cx = LOGO_W / 2, cy = LOGO_H / 2 + 6, rx = 206, ry = 40, tilt = -0.17, ca = Math.cos(tilt), sa = Math.sin(tilt);
-        // the orbit: an ellipse round the badge (distance by its gradient), its back half (y < 0 in its frame) behind the G
-        const ring = [
-            '    vec2 rl = p - vec2(' + f1(cx) + ', ' + f1(cy) + ');',
-            '    rl = vec2(rl.x * ' + f1(ca) + ' + rl.y * ' + f1(sa) + ', -rl.x * ' + f1(sa) + ' + rl.y * ' + f1(ca) + ');',
-            '    float re = length(rl / vec2(' + f1(rx) + ', ' + f1(ry) + '));',
-            '    float rd = (re - 1.0) / max(length(rl / vec2(' + f1(rx * rx) + ', ' + f1(ry * ry) + ')) / max(re, 1e-3), 1e-4);',
-            '    float rline = cov(abs(rd) - 0.9), rbloom = soft(abs(rd) - 0.9, 3.5);',
-            // the small planet on the orbit (front right)
-            '    vec2 pp = vec2(' + f1(cx + 0.72 * rx * ca - 0.69 * ry * sa) + ', ' + f1(cy + 0.72 * rx * sa + 0.69 * ry * ca) + ');',
-            '    float pl = length(p - pp) - 9.0;',
-        ];
-        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.5 * soft(s, 7.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + ' * (0.75 + 0.25 * clamp(1.0 - q.y / BH, 0.0, 1.0))); }');
-        return ring.concat(gD(), [
-            // the sky: a violet glow behind the badge, stars (not where the G is)
-            '    float r0 = length((p - vec2(' + f1(cx) + ', ' + f1(LOGO_H / 2) + ')) / vec2(240.0, 150.0));',
-            '    c = mix(' + v3(S.sky1) + ', ' + v3(S.sky0) + ', clamp(r0, 0.0, 1.0));',
-            '    c += vec3(0.85, 0.9, 1.0) * stars(p, 9.0, 0.22) * (1.0 - cov(g + 3.0));',
-            '    c += vec3(1.0) * stars(p + 3.7, 23.0, 0.35) * 1.4 * (1.0 - cov(g + 3.0));',
-            // the orbit's back half
-            '    float back = step(rl.y, 0.0);',
-            '    c = min(c + ' + v3(S.ring) + ' * (0.55 * rline + 0.25 * rbloom) * back * 0.7, vec3(1.0));',
-            // the G: a nebula inside, its own faint stars, a rim of light and a bloom round it
-            '    float gy = clamp(q.y / BH, 0.0, 1.0), gx = clamp((q.x - ' + f1(G0) + ') / ' + f1(GW) + ', 0.0, 1.0);',
-            '    vec3 neb = mix(' + v3(S.neb0) + ', ' + v3(S.neb1) + ', smoothstep(0.0, 0.8, gy)) + ' + v3(S.neb2) + ' * 0.35 * smoothstep(0.45, 1.0, gx * gy);',
-            '    neb += ' + v3(S.glow) + ' * 0.28 * (1.0 - smoothstep(0.0, 0.55, length(vec2(gx, gy * 1.3))));',
-            '    neb += vec3(1.0) * stars(q, 7.0, 0.30) * 0.9;',
-            '    c = min(c + ' + v3(S.glow) + ' * 0.55 * soft(g, 9.0), vec3(1.0));',
-            '    c = paint(c, cov(g), neb);',
-            '    float rim = clamp(cov(g) - cov(g + 2.2), 0.0, 1.0);',
-            '    c = paint(c, rim, ' + v3(S.rim) + ');',
-        ], SC, [
-            // the orbit's front half over the G, and its planet
-            '    c = min(c + ' + v3(S.ring) + ' * (0.75 * rline + 0.3 * rbloom) * (1.0 - back), vec3(1.0));',
-            '    c = min(c + ' + v3(S.planet) + ' * 0.35 * soft(pl, 6.0), vec3(1.0));',
-            '    c = paint(c, cov(pl), ' + v3(S.planet) + ' * (0.55 + 0.45 * clamp((pp.y - p.y + 6.0) / 14.0, 0.0, 1.0)));',
-        ]);
-    },
-    aura(S) {
-        const cx = LOGO_W / 2, cy = LOGO_H / 2;
-        const BOLTS = [[18, 30, 34.4, 36.2], [34.4, 36.2, 50.8, 42.4], [50.8, 42.4, 59.0, 61.1], [59.0, 61.1, 80.3, 59.9], [80.3, 59.9, 89.0, 77.8], [89.0, 77.8, 105.3, 84.1], [105.3, 84.1, 118, 96], [430, 214, 411.1, 214.8], [411.1, 214.8, 401.5, 198.4], [401.5, 198.4, 382.3, 199.8], [382.3, 199.8, 372.2, 184.4], [372.2, 184.4, 354.1, 183.8], [354.1, 183.8, 340.0, 175.6], [340.0, 175.6, 330, 160], [400, 18, 394.1, 26.6], [394.1, 26.6, 380.5, 27.9], [380.5, 27.9, 384.5, 46.0], [384.5, 46.0, 375.8, 51.9], [375.8, 51.9, 362.3, 53.2], [362.3, 53.2, 350.0, 55.7], [350.0, 55.7, 350, 70]];
-        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.45 * soft(s, 7.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + '); }');
-        const L = ['    float bl = 100000.0;'].concat(BOLTS.map((b) => '    bl = min(bl, sdLine(p, vec2(' + f1(b[0]) + ', ' + f1(b[1]) + '), vec2(' + f1(b[2]) + ', ' + f1(b[3]) + ')));'));
-        return gD().concat([
-            // the sky at dusk and the burst's rays from behind the badge
-            '    vec2 d = p - vec2(' + f1(cx) + ', ' + f1(cy) + ');',
-            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', clamp(p.y / SZ.y * 1.2, 0.0, 1.0));',
-            '    c = mix(c, ' + v3(S.dusk) + ', 0.55 * smoothstep(0.65, 1.0, p.y / SZ.y));',
-            '    float ray = step(0.5, fract(atan(d.y, d.x) * 4.4563)) * clamp(1.0 - length(d) / 260.0, 0.0, 1.0);',
-            '    c += ' + v3(S.flame) + ' * 0.07 * ray;',
-            // the aura: flame tongues (noise rising with time frozen) round the G, reaching higher above it
-            '    float n = vnoise(vec2(p.x * 0.07, p.y * 0.045 + 3.0)), n2 = vnoise(vec2(p.x * 0.16 + 9.0, p.y * 0.09));',
-            '    float reach = 7.0 + 30.0 * n * n + 10.0 * n2 + 22.0 * clamp((' + f1(OY + H * 0.4) + ' - p.y) / 120.0, 0.0, 1.0) * n;',
-            '    float fl = soft(g - reach, 5.0), core = soft(g, 6.0);',
-            '    c = mix(c, ' + v3(S.flame2) + ', fl * 0.75);',
-            '    c = min(c + ' + v3(S.flame) + ' * (0.55 * soft(g - reach * 0.55, 4.0) + 0.35 * core), vec3(1.0));',
-        ], SC, [
-            // the G: gold, top to bottom, white-hot towards its middle, an orange rim
-            '    float gy = clamp(q.y / BH, 0.0, 1.0);',
-            '    vec3 gold = mix(' + v3(S.gold0) + ', ' + v3(S.gold1) + ', gy);',
-            '    gold = mix(gold, vec3(1.0, 0.98, 0.85), 0.3 * clamp(-g / 14.0, 0.0, 1.0));',
-            '    c = paint(c, cov(g), gold);',
-            '    c = paint(c, clamp(cov(g) - cov(g + 3.5), 0.0, 1.0), ' + v3(S.rim) + ');',
-        ], L, [
-            // lightning: a white core in a blue glow
-            '    c = min(c + ' + v3(S.bolt) + ' * 0.6 * soft(bl - 1.0, 4.0), vec3(1.0));',
-            '    c = paint(c, cov(bl - 1.0), vec3(0.96, 0.99, 1.0));',
-        ]);
-    },
     desktop(S) {
         // the window (screen px) and the badge scaled into it: sampled k times finer, its centre moved down
         const wx0 = 30, wy0 = 12, wx1 = LOGO_W - 30, wy1 = LOGO_H - 12, k = 1.42, bcx = LOGO_W / 2, bcy = BY - H / 2, ty = 58 + (wy1 - 58) / 2;
@@ -326,32 +236,6 @@ const BODY = {
         ].concat(gD().map((l) => '    ' + l), STRIPES.map((b, i) => '            if (dot && sdBox(q, ' + v4(b) + ') < 0.0) c = ' + v3(S.stripes[i]) + ';'), [
             '        if (dot && g < 0.0) c = ' + v3(S.g) + ';',
             '    }',
-        ]);
-    },
-    nextgen(S) {
-        const SC = STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = min(c + ' + v3(S.stripes[i]) + ' * 0.3 * soft(s, 8.0), vec3(1.0)); c = paint(c, cov(s), ' + v3(S.stripes[i]) + '); }');
-        return gD().concat([
-            // the sky: deep blue, lighter low down, a glow behind the badge
-            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', clamp(p.y / SZ.y * 1.3, 0.0, 1.0));',
-            '    c = mix(c, ' + v3(S.sky2) + ', smoothstep(0.55, 1.0, p.y / SZ.y) * 0.8);',
-            // three flowing bands of light (still): thin bright cores in soft halos
-            '    for (int k = 0; k < 3; k++) {',
-            '        float fk = float(k);',
-            '        float yb = SZ.y * (0.42 + 0.17 * fk) + sin(p.x * (0.012 + 0.004 * fk) + fk * 1.9) * (22.0 + 8.0 * fk) + sin(p.x * 0.031 - fk) * 7.0;',
-            '        float d = abs(p.y - yb);',
-            '        vec3 bc = mod(fk, 2.0) < 0.5 ? ' + v3(S.band) + ' : ' + v3(S.band2) + ';',
-            '        c = min(c + bc * (0.22 * soft(d - 1.0, 9.0) + 0.35 * soft(d - 0.5, 1.5)), vec3(1.0));',
-            '    }',
-            // the G: glossy white, a faint blue towards its foot, a soft glow round it
-            '    c = min(c + ' + v3(S.glow) + ' * 0.45 * soft(g, 10.0), vec3(1.0));',
-        ], SC, [
-            '    float gy = clamp(q.y / BH, 0.0, 1.0);',
-            '    vec3 gw = mix(vec3(1.0), vec3(0.82, 0.9, 1.0), smoothstep(0.45, 1.0, gy));',
-            '    gw += vec3(0.06) * (1.0 - smoothstep(0.0, 0.18, gy));',
-            '    c = paint(c, cov(g), min(gw, vec3(1.0)));',
-            // the light bar under the badge
-            '    { float lb = sdBox(p, vec4(' + f1(BX + 30) + ', ' + f1(BY + 18) + ', ' + f1(BW - 60) + ', 3.0));',
-            '      c = min(c + ' + v3(S.bar) + ' * (0.5 * soft(lb, 6.0)), vec3(1.0)); c = paint(c, cov(lb), ' + v3(S.bar) + '); }',
         ]);
     },
     pod(S) {
