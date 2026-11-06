@@ -21,6 +21,9 @@
  *              screen, the badge on it in 6 px dots (original art)
  *   nextgen    a games-console home screen: a glossy white G with a soft blue glow over deep blue with
  *              flowing bands of light, white / ice / blue stripes, a light bar under it (original art)
+ *   arcade     an 80s coin-op cabinet: the badge in big pixels (6 px cells), a yellow G and red / yellow / cyan
+ *              stripes with a red drop shadow, on a starry night inside a cyan neon frame, CRT scanlines
+ *              (original art)
  *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
  *              a skyline with lit windows, a palm - pink / orange / yellow stripes, three "wanted" stars
  *              (original art)
@@ -69,13 +72,14 @@ const LOOKS = {
     nextgen: { stripes: ['#ffffff', '#9fdcff', '#2f7bff'], sky0: '#00031f', sky1: '#001052', sky2: '#0a3a9e', band: '#3d8bff', band2: '#8fd0ff', glow: '#9fdcff', bar: '#9fdcff' },
     heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
         city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
+    arcade: { stripes: ['#ff3030', '#ffd800', '#22e4ff'], g: '#ffd800', shadow: '#7a0a3a', sky0: '#05001a', sky1: '#1a0640', frame: '#22e4ff' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket', 'nextgen', 'heist', 'arcade'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -345,6 +349,31 @@ const BODY = {
             // the light bar under the badge
             '    { float lb = sdBox(p, vec4(' + f1(BX + 30) + ', ' + f1(BY + 18) + ', ' + f1(BW - 60) + ', 3.0));',
             '      c = min(c + ' + v3(S.bar) + ' * (0.5 * soft(lb, 6.0)), vec3(1.0)); c = paint(c, cov(lb), ' + v3(S.bar) + '); }',
+        ]);
+    },
+    arcade(S) {
+        const CELL = 6;
+        return [
+            // night sky, a few square stars
+            '    c = mix(' + v3(S.sky0) + ', ' + v3(S.sky1) + ', p.y / SZ.y);',
+            '    { vec2 sc = floor(p / 6.0); if (hash(sc) > 0.985) c = vec3(0.6 + 0.4 * hash(sc + 3.0)); }',
+            // the badge sampled at each cell's middle: the shadow one cell down-right, then the badge itself
+            '    vec2 cell = floor(p / ' + f1(CELL) + ') * ' + f1(CELL) + ' + ' + f1(CELL / 2) + ';',
+            '    for (int k = 0; k < 2; k++) {',
+            '        vec2 cp = k == 0 ? cell - vec2(' + f1(CELL) + ') : cell;',
+            '        q = badge(cp);',
+        ].concat(gD().map((l) => '    ' + l), [
+            '        vec3 col = vec3(-1.0);',
+        ], STRIPES.map((b, i) => '        if (sdBox(q, ' + v4(b) + ') < 0.0) col = ' + v3(S.stripes[i]) + ';'), [
+            '        if (g < 0.0) col = ' + v3(S.g) + ';',
+            '        if (col.x >= 0.0) c = k == 0 ? ' + v3(S.shadow) + ' : col;',
+            '    }',
+            // the cells' dark grid and the CRT's scanlines
+            '    vec2 f = mod(p, ' + f1(CELL) + ');',
+            '    if (f.x < 1.0 || f.y < 1.0) c *= 0.55;',
+            '    if (mod(p.y, 3.0) < 1.0) c *= 0.72;',
+            // the neon frame
+            '    { vec2 e = min(p, SZ - p); float d = min(e.x, e.y); c = min(c + ' + v3(S.frame) + ' * 0.5 * soft(d - 6.0, 4.0), vec3(1.0)); if (d > 3.0 && d < 6.0) c = ' + v3(S.frame) + '; }',
         ]);
     },
     heist(S) {

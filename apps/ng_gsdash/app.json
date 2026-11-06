@@ -1,8 +1,8 @@
 {
   "id": "ng_gsdash",
   "title": "G's Dash",
-  "description": "Driver display in thirteen looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space, Aura, Desktop '98, Pocket, Next Gen, Heist). Swipe between Drive, Warm-up, G-force and Tires, with an optional Spotify panel. Logo is the G mark by default, or a GIF from your phone, on the home widget, in the cluster and, if picked, on Drive's right panel. Per driving mode (off by default) gives each reported mode its own GIF. With the Cluster renderer tool, one tap picks the cluster's centre and dials & HUD. CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium and mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
-  "version": "0.24.0",
+  "description": "Driver display in fourteen looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Space, Aura, Desktop '98, Pocket, Next Gen, Heist, Arcade). Swipe between Drive, Warm-up, G-force and Tires, with an optional Spotify panel. Logo is the G mark by default, or a GIF from your phone, on the home widget, in the cluster and, if picked, on Drive's right panel. Per driving mode (off by default) gives each reported mode its own GIF. With the Cluster renderer tool, one tap picks the cluster's centre and dials & HUD. CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium and mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
+  "version": "0.25.0",
   "vendor": "ng",
   "loggingId": "OAN1",
   "iconGlyph": "gauge",
