@@ -1,5 +1,18 @@
 # Changelog
 
+## G's Dash 0.22.0
+
+- New look: Next Gen, the dash in the style of a current games console's home screen, in original art
+  (no maker's name, logo, button symbols or artwork). Soft bands of light flow slowly across a deep blue
+  background as glowing particles drift up; frosted-glass cards with round corners; the tach as a thin
+  glowing ring with the speed large in its middle; the gear and oil / coolant in their own cards.
+- A light bar along the bottom brightens with the revs and turns amber, then red, at the shift point.
+- An achievement card slides in when a session peak (launch, hard stop, cornering) is beaten.
+- Its cluster logo is a glossy white G over flowing blue light with a light bar (a shader, with
+  logo_nextgen.png as the fallback). The HUD uses thin ice-blue segments on Vector's glyphs; the cluster
+  dials use Lumen's.
+- Theme shows twelve looks, six a row.
+
 ## G's Dash 0.21.0
 
 - New look: Pocket, the dash as a late-80s pocket game console in original art (no maker's name, logo

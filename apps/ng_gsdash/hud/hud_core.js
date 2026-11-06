@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop', 'pocket'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop', 'pocket', 'nextgen'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -75,9 +75,12 @@ const LOOKS = {
     // Pocket: dot-matrix greens, hard blocks, the shift lights brightening to near white; the Pixel look's glyphs
     pocket: { n: 20, slant: 0, gap: 4, inset: 2, pq: 2, solid: true, base: '#8bac0f', zones: ['#9bbc0f', '#c8e858', '#f0ffc0'], flash: '#ffffff',
         dim: '#1c2e10', redDim: '#304818', tick: '#8bac0f', tickRed: '#c8e858', gear: '#9bbc0f', pre: '#8bac0f', glow: [2, 0.3] },
+    // Next Gen: many thin ice-blue segments with a soft glow, amber then red at the shift point; Vector's glyphs (the same Saira)
+    nextgen: { n: 44, slant: 0, gap: 2, inset: 4, base: '#9fdcff', zones: ['#ffffff', '#ffb03a', '#ff4646'], flash: '#ff4646', flash2: '#ffffff',
+        dim: '#14244e', redDim: '#3a1218', tick: '#5b78b8', tickRed: '#ff4646', gear: '#ffffff', gear2: '#2f7bff', pre: '#9fdcff', pre2: '#2f7bff', glow: [3, 0.5] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
-const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel', pocket: 'pixel' };
+const ATLAS_LOOK = { space: 'vector', aura: 'm', desktop: 'pixel', pocket: 'pixel', nextgen: 'vector' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {

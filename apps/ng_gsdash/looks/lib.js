@@ -32,6 +32,7 @@ const LOOK_FONTS = {
     aura: ['gs_m_num', 'gs_m_gear', 'gs_gt_txt'],
     desktop: ['gs_p_px'],
     pocket: ['gs_p_px'],
+    nextgen: ['gs_v_num', 'gs_v_gear', 'gs_h_txt'],
 };
 const fontsLoaded = [];
 let fontSrc = null;
