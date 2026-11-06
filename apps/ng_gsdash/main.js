@@ -126,7 +126,7 @@ const { Net } = require('./tv_net');
 const qrcodegen = require('./qrcodegen');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
-    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura'), require('./look_desktop'), require('./look_pocket'), require('./look_nextgen')];
+    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura'), require('./look_desktop'), require('./look_pocket'), require('./look_nextgen'), require('./look_heist')];
 // M Style is the default look, and where any other id lands (0.9.0: Simple, Heritage and Flight went)
 const DEFAULT_LOOK = 'm';
 const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id === DEFAULT_LOOK);
@@ -947,9 +947,10 @@ mgu.run({
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, cur = lk.id;
             header(cv, S, lk, lbl, card, 'Theme', 1);
             // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0); nine or ten: 5 x 2 in the same width (0.19.0);
-            // eleven or twelve: 6 x 2, the same narrow cards (the right panel's column gets narrower) (0.21.0)
-            const x0 = S.x, top = S.y + 34, cols = LOOKS.length > 10 ? 6 : LOOKS.length > 8 ? 5 : LOOKS.length > 6 ? 4 : 3, g = 14;
-            const TILE_W = cols > 4 ? Math.floor((4 * 170 + 3 * g - 4 * g) / 5) : cols > 3 ? 170 : 208;
+            // eleven or twelve: 6 x 2, the same narrow cards (the right panel's column gets narrower) (0.21.0);
+            // thirteen or fourteen: 7 x 2, narrower cards and a narrower favourites column (0.23.0)
+            const x0 = S.x, top = S.y + 34, n = LOOKS.length, cols = n > 12 ? 7 : n > 10 ? 6 : n > 8 ? 5 : n > 6 ? 4 : 3, g = 14;
+            const TILE_W = cols > 6 ? 116 : cols > 4 ? Math.floor((4 * 170 + 3 * g - 4 * g) / 5) : cols > 3 ? 170 : 208;
             const fl = favs(), ids = LOOKS.map((l) => l.id);
             lbl('Look', x0, S.y + 20, 18, t.dim);
             LOOKS.forEach((l, i) => {
@@ -979,7 +980,7 @@ mgu.run({
                 cv.target(cx, cy, TILE_W, TILE_H, () => { settings.set('look', l.id); }, 'look:' + l.id, 10);
             });
             // the right panel: two choices, the current one lit
-            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = cols > 3 ? 330 : 400, pw = S.x + S.w - px - fcw - 32, ph = 72;
+            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = cols > 6 ? 290 : cols > 3 ? 330 : 400, pw = S.x + S.w - px - fcw - 32, ph = 72;
             lbl('Right panel on Drive', px, S.y + 20, 18, t.dim);
             [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Spotify', 'What plays, with touch controls'], ['logo', 'Logo', 'The same Logo as the widget and cluster']].forEach((o, i) => {
                 const oy = top + i * (ph + g), on = PREFS.panelOf(settings.get('panel')) === o[0];
