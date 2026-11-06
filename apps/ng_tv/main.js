@@ -90,6 +90,7 @@ const { Handoff } = require('./tv_handoff');
 const qrcodegen = require('./qrcodegen');
 const AP = require('./kit/audio_probe');
 const SP = require('./tv_sound_probe');
+const { SoundTest } = require('./tv_sound_test');
 
 const NAME = "G's TV";
 let VERSION = '';
@@ -831,6 +832,20 @@ mgu.run({
             }, (e) => { log.warn('sound check: ' + e); snd.outputs = ['Sound outputs check failed: ' + (e && e.message || e)]; snd.running--; label('SOUND_INFO', 'Sound outputs check failed: ' + (e && e.message || e)); });
         };
         ui.onVisible((name, on) => { if (name === 'MORE' && on) audioCheck(); });
+        /*
+         * Settings > Sound > Test sound (output/tv_sound_test.js): unlike the check, this plays. Each tap asks BMW's
+         * generic app player to play the next way (a short tone as a path, a file:// URI, from /tmp, then the
+         * Spelunkr programme on now), so the viewer can say which one they heard. Parked only, as the picture.
+         */
+        const sTest = new SoundTest(ctx.dataDir, log);
+        let sTestLine = '';
+        const soundTest = () => {
+            if (!gateOpen) { say('Test sound works only when parked'); return; }
+            if (sTest.busy) return;
+            const n = nowOn(chId), programme = luState === 'ok' && n ? n.item.href : '';
+            sTestLine = 'Asking the car\'s media player to play test ' + (sTest.n % sTest.ways(programme).length + 1) + '...';
+            sTest.next({ programme }).then((r) => { sTestLine = SoundTest.line(r); }, (e) => { sTestLine = 'Test sound failed: ' + (e && e.message || e); });
+        };
 
         /* ----- the screen ----- */
         FS.setup(ctx);
@@ -1539,7 +1554,7 @@ mgu.run({
                 ['Output', pathName()],
                 ['Cluster', settings.get('cluster') ? (guided ? 'Directions (route guidance) - back after the route' : cluster.status(gateOpen, gateOpen && player.state === 'playing').text + ' - after TV: ' + afterTv()) : 'Off (Cluster button)'],
                 ['HUD', settings.get('hud') ? hud.status(gateOpen, gateOpen && player.state === 'playing').text : 'Off (HUD button)'],
-                ['Sound', 'None yet. Tap for the sound check'],
+                ['Sound', 'None yet. Tap for the sound check and test'],
                 ['Sources', 'Spelunkr: the Internet Archive, no DRM. Mine: ' + store.list().length + ' of ' + Src.MAX_SOURCES],
             ];
             let y = top + 60;
@@ -1581,7 +1596,9 @@ mgu.run({
             const cb = { w: 260, h: HEAD_H };
             if (!snd.running) action(cv, t, 'snd:again', A.right - cb.w, hy, cb.w, cb.h, 'Check again', () => press('snd:again', () => audioCheck(true)));
             else cv.text('Checking...', A.right - 16, cyH + 8, 22, on, { align: 'right', literal: true });
-            const top = hy + HEAD_H + 24, colW = (A.right - A.x - 32) / 2, rx = A.x + colW + 32, LH = 27, bottom = A.bottom - 30;
+            action(cv, t, 'snd:test', A.right - 2 * cb.w - 16, hy, cb.w, cb.h, sTest.busy ? 'Playing...' : 'Test sound', () => press('snd:test', soundTest), null, { on: !!sTestLine });
+            const foot = sTestLine ? wrap(cv, sTestLine, 20, A.right - A.x, 2) : [];
+            const top = hy + HEAD_H + 24, colW = (A.right - A.x - 32) / 2, rx = A.x + colW + 32, LH = 27, bottom = A.bottom - 30 - foot.length * 26;
             const lbl = (s2, x, yy) => cv.text(s2.toUpperCase(), x, yy, 18, t.dim, { font: 'bold', spacing: 1.5, literal: true });
             const col = (x, title, lines) => {
                 lbl(title, x, top + 20);
@@ -1595,7 +1612,8 @@ mgu.run({
             };
             col(A.x, 'What the car gives G\'s TV', snd.audio);
             col(rx, 'Where the sound could go', snd.outputs);
-            cv.text(fit(cv, 'Read-only: nothing that plays is touched. Full reports: audio.txt and sound.txt in G\'s TV\'s data folder.', 16, A.right - A.x), A.x, A.bottom - 4, 16, t.dim, { literal: true });
+            foot.forEach((l, i) => cv.text(l, A.x, A.bottom - 30 - (foot.length - 1 - i) * 26, 20, on, { literal: true }));
+            cv.text(fit(cv, 'Check again only reads. Test sound plays a short tone through the car\'s media player (it may switch the audio source). Reports: audio.txt, sound.txt, soundtest.txt in G\'s TV\'s data folder.', 16, A.right - A.x), A.x, A.bottom - 4, 16, t.dim, { literal: true });
         }
 
         // start: the home screen (or, with a test streamUrl in tv.json, that stream); the picture once the gate opens

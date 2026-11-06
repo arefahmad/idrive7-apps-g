@@ -15,8 +15,14 @@
  * and down go by dial number and wrap around. A channel's manifest is fetched the first time it is
  * tuned or the guide shows it, and kept for 6 hours.
  *
+ * Where the lineup comes from: data.spelunkr.tv first (the site's live copy), then the snapshot the site
+ * itself falls back to, https://spelunkr.tv/broadcast/lineup.json (written by the site, same format). In
+ * November 2026 data.spelunkr.tv began answering apps with a Cloudflare check page (HTTP 403), so the
+ * snapshot is what the car gets. A channel's manifest comes from the folder of the lineup that loaded,
+ * then the other.
+ *
  * config (app.json "config", or <data>/tv.json overriding it):
- *   lineupUrl   the lineup (default https://data.spelunkr.tv/lineup.json)
+ *   lineupUrl   the lineup (default https://data.spelunkr.tv/lineup.json; the snapshot is tried after it)
  *   channel     the channel tuned first (default "toonertia")
  *   streamUrl   (development) one MP4 played at start instead of the home screen, looped
  */
@@ -25,6 +31,8 @@ const path = require('path');
 const url = require('url');
 
 const DEFAULTS = { lineupUrl: 'https://data.spelunkr.tv/lineup.json', channel: 'toonertia', streamUrl: '' };
+/** Spelunkr's own snapshot of the lineup and manifests, which the site falls back to when its live copy fails. */
+const SNAPSHOT = 'https://spelunkr.tv/broadcast/lineup.json';
 const KEEP_MS = 6 * 3600e3;
 const FAMILY = { rewind: 'Rewind', archive: 'Archive', 'tv-series': 'TV series', film: 'Film', educational: 'Educational' };
 
@@ -144,9 +152,24 @@ class Lineup {
     constructor(net, cfg, log) {
         this.net = net; this.cfg = cfg; this.log = log;
         this.channels = []; this.loadedAt = 0; this.scheds = new Map(); this.loading = new Map();
+        this.urls = [cfg.lineupUrl].concat(cfg.lineupUrl === SNAPSHOT ? [] : [SNAPSHOT]).filter(Boolean);
+        this.from = this.urls[0];       // the lineup URL that last loaded; manifests resolve against it first
+    }
+    /** Each lineup URL in turn, the one that worked last first: the first answer, or the first error. */
+    async _first(fn) {
+        const order = [this.from].concat(this.urls.filter((u) => u !== this.from));
+        let first = null;
+        for (const u of order) {
+            try { const r = await fn(u); this.from = u; return r; } catch (e) {
+                if (!first) first = e;
+                if (order.length > 1) this.log.warn('lineup: ' + e.message + (u === order[order.length - 1] ? '' : '; trying the next copy'));
+            }
+        }
+        throw first;
     }
     async load() {
-        const j = await this.net.json(this.cfg.lineupUrl);
+        const j = await this._first((u) => this.net.json(u));
+        if (this.from !== this.urls[0]) this.log.info('lineup: from ' + this.from);
         const now = Date.now();
         const list = (j && Array.isArray(j.channels) ? j.channels : []).filter((c) => c && typeof c.id === 'string' &&
             !c.debugOnly && !c.comingSoon && c.dial != null && isFinite(Number(c.dial)) && pickVersion(c, now));
@@ -179,7 +202,7 @@ class Lineup {
         if (this.loading.has(id)) return this.loading.get(id);
         const ch = this.byId(id);
         if (!ch) return Promise.reject(new Error('channel "' + id + '" not in the lineup'));
-        const p = this.net.json(url.resolve(this.cfg.lineupUrl, ch.ver.manifest)).then((man) => {
+        const p = this._first((u) => this.net.json(url.resolve(u, ch.ver.manifest))).then((man) => {
             const items = itemsOf(man);
             if (!items.length) throw new Error('channel has no playable items');
             const s = new Schedule(items, ch.ver.epochMs, ch.ver.startIndex);
@@ -204,4 +227,4 @@ function step(channels, id, dir) {
     return channels[((i + (dir > 0 ? 1 : -1)) % n + n) % n].id;
 }
 
-module.exports = { Lineup, Schedule, config, clean, palette, logoRuns, step, itemsOf, pickVersion, DEFAULTS, FAMILY };
+module.exports = { Lineup, Schedule, config, clean, palette, logoRuns, step, itemsOf, pickVersion, DEFAULTS, FAMILY, SNAPSHOT };

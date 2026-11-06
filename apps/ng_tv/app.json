@@ -2,7 +2,7 @@
   "id": "ng_tv",
   "title": "G's TV",
   "description": "EXPERIMENTAL. Video pictures on the centre screen while parked: Spelunkr channels (programmes on the Internet Archive) with a guide and channel up / down, or your own direct MP4 (H.264) links sent from your phone. Picture only in P at a standstill; video only, no sound yet. Optional playback in the cluster (G's Dash's pick on Auto) or the HUD while parked (needs the Cluster renderer tool). Needs internet through mgu-uplink.",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "share": ["ng_gsdash/cluster/cluster_source.js", "ng_spotify/vendor/qrcodegen.js"],
   "vendor": "ng",
   "loggingId": "OAN3",
