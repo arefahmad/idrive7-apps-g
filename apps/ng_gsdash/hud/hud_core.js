@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -66,9 +66,12 @@ const LOOKS = {
     // Space: round beads with a soft glow, cyan to the shift lights, violet flashes; Vector's glyphs (the same Saira)
     space: { n: 30, shape: 'bead', beadR: 4.5, base: '#4fe3ff', zones: ['#9b6bff', '#ffb547', '#ff4d6a'], flash: '#ff4d6a', flash2: '#d65cff',
         dim: '#151a3a', redDim: '#2e0f19', tick: '#5b6aa8', tickRed: '#ff4d6a', gear: '#eef3ff', gear2: '#9b6bff', pre: '#4fe3ff', pre2: '#5b8cff', glow: [4, 0.75] },
+    // Aura: slanted blazing bars, calm blue to gold, electric blue flashes; M Style's italic glyphs (the same Saira Italic)
+    aura: { n: 26, slant: 3, gap: 2, inset: 0, base: '#ffd23f', zones: ['#ff9a1f', '#ff5a1f', '#ff2a2a'], flash: '#9fe8ff', flash2: '#ffffff',
+        dim: '#2a1a16', redDim: '#3e0b0b', tick: '#c9a988', tickRed: '#ff3b2f', gear: '#fff2c2', gear2: '#ff9a1f', pre: '#ffd23f', pre2: '#ff7a1a', gearFlash: true, glow: [4, 0.8] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Space uses Vector's */
-const ATLAS_LOOK = { space: 'vector' };
+const ATLAS_LOOK = { space: 'vector', aura: 'm' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {
