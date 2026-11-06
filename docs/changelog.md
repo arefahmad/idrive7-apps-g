@@ -1,5 +1,13 @@
 # Changelog
 
+## G's Dash 0.24.0
+
+- Theme's gallery scrolls: four looks a row at full size (170 px cards again, not seven narrow ones),
+  as many rows as fit, the rest a drag (or a turn of the controller) away, a row at a time so no card is
+  ever cut. A bar beside it shows where you are; it opens on the current look's row.
+- A look's colours are picked only on Options' Theme card (the one with Change look), no longer on the
+  chosen card in the gallery.
+
 ## G's Dash 0.23.0
 
 - New look: Heist, the dash as an open-world crime game's HUD, in original art (no game's name, logo,

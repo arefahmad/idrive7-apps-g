@@ -512,6 +512,23 @@ mgu.run({
             return was.on || was.held;
         });
         /*
+         * 0.24.0: Theme's gallery scrolls a row at a time (no card is ever cut in half, so nothing needs a
+         * clip): a finger dragged on the page or the controller turned on it (the kit's page scroll, ctx.onScroll,
+         * while the page is drawn with cv.scroll set) moves a row per THEME_STEP px. themeRow -1: show the
+         * current look's row when the page opens; themeMax: the last first row, set as the page draws.
+         */
+        const THEME_STEP = 70;
+        let themeRow = -1, themeMax = 0, themeAcc = 0, lastPage = 0;
+        if (ctx.onScroll) ctx.onScroll((dy) => {
+            if (page !== 5 || themeMax <= 0 || !dy) return false;
+            const dir = dy > 0 ? 1 : -1;
+            if ((dir > 0 && themeRow >= themeMax) || (dir < 0 && themeRow <= 0)) { themeAcc = 0; return false; }
+            if (themeAcc * dir < 0) themeAcc = 0;
+            themeAcc += dy;
+            if (Math.abs(themeAcc) >= THEME_STEP) { themeRow = Math.max(0, Math.min(themeMax, themeRow + dir)); themeAcc = 0; }
+            return true;
+        });
+        /*
          * Favourite looks on Drive (0.10.0; 0.11.0: the gear only): a still tap on the gear (S.zones.gear) goes to the
          * next favourite, with a toast for LOOK_TOAST_MS; fewer than two favourites: a hint how to add them.
          * Ignored on a swipe or a moving finger (PREFS.stillTap) and while the shift lights build or flash.
@@ -918,22 +935,19 @@ mgu.run({
         /**
          * Colour: the look's variants (tints.js) as round swatches, the chosen one ringed in the look's
          * selection colour and ticked; each a 56 x 56 target (first target wins: drawn before the card's own).
-         * compact: on the chosen gallery card (a dark pill, no label).
+         * Only on Options' Theme card (0.24.0: no longer on the chosen gallery card).
          */
-        function tintRow(cv, S, lk, x, y, tag, compact) {
-            // compact (a gallery card): a vertical pill down the card's left edge, clear of the star and the name
-            const t = S.t, cur = tintOf(lk), list = lk.tints, step = compact ? 32 : 64, r = compact ? 11 : 17;
-            if (compact) cv.roundRect(x, y, 34, list.length * step + 4, 17, L.withAlpha('#000000', 0.62));
-            else cv.text(cur.name, x + list.length * step + 8, y + 25, 20, t.dim, { literal: true });
+        function tintRow(cv, S, lk, x, y, tag) {
+            const t = S.t, cur = tintOf(lk), list = lk.tints, step = 64, r = 17;
+            cv.text(cur.name, x + list.length * step + 8, y + 25, 20, t.dim, { literal: true });
             list.forEach((v, i) => {
-                const cx = compact ? x + 17 : x + r + 2 + i * step, cy = compact ? y + 2 + step / 2 + i * step : y + 18, on = v.id === cur.id;
-                if (on) cv.arc(cx, cy, r + (compact ? 2 : 4), r + (compact ? 4 : 7), 0, 360, '#ffffff');
+                const cx = x + r + 2 + i * step, cy = y + 18, on = v.id === cur.id;
+                if (on) cv.arc(cx, cy, r + 4, r + 7, 0, 360, '#ffffff');
                 if (v.swatch2) v.swatch2.forEach((c, k, a) => cv.arc(cx, cy, 0, r, -90 + 360 * k / a.length, -90 + 360 * (k + 1) / a.length, c));
                 else cv.circle(cx, cy, r, v.swatch);
                 cv.arc(cx, cy, r - 1, r, 0, 360, L.withAlpha('#000000', 0.5));
-                if (on) { const k = compact ? 0.7 : 1; cv.line(cx - 6 * k, cy, cx - 2 * k, cy + 5 * k, 2.5 * k, '#000000'); cv.line(cx - 2 * k, cy + 5 * k, cx + 7 * k, cy - 6 * k, 2.5 * k, '#000000'); }
-                const tw = compact ? step : 56;
-                cv.target(cx - tw / 2, cy - tw / 2, tw, tw, () => { settings.set(TINTS.KEY, TINTS.set(settings.get(TINTS.KEY), lk.id, v.id)); }, tag + ':tint:' + v.id, tw / 2);
+                if (on) { cv.line(cx - 6, cy, cx - 2, cy + 5, 2.5, '#000000'); cv.line(cx - 2, cy + 5, cx + 7, cy - 6, 2.5, '#000000'); }
+                cv.target(cx - 28, cy - 28, 56, 56, () => { settings.set(TINTS.KEY, TINTS.set(settings.get(TINTS.KEY), lk.id, v.id)); }, tag + ':tint:' + v.id, 28);
             });
         }
 
@@ -941,20 +955,34 @@ mgu.run({
          * Theme: the looks as a gallery of cards, each drawn in its own look (a tap switches at once, the
          * page itself redraws in it), and the right panel on Drive: the g-meter and peaks, or Spotify.
          * 0.10.0: a star on each card (its own 64 x 64 target, top right) makes it a favourite; the
-         * favourites' column says how they switch on Drive; Cluster & HUD at its foot.
+         * favourites' column says how they switch on Drive; Cluster & HUD at its foot. 0.24.0: the gallery
+         * scrolls (themeRow) so it holds any number of looks at a comfortable size.
          */
         function themePage(cv, S, lk) {
             const t = S.t, u = lk.ui, lbl = lblOf(cv, u), card = cardOf(lk), acc = t.sel || t.accent, cur = lk.id;
             header(cv, S, lk, lbl, card, 'Theme', 1);
-            // six looks: 3 x 2 (0.9.0); seven or eight: 4 x 2 (0.14.0); nine or ten: 5 x 2 in the same width (0.19.0);
-            // eleven or twelve: 6 x 2, the same narrow cards (the right panel's column gets narrower) (0.21.0);
-            // thirteen or fourteen: 7 x 2, narrower cards and a narrower favourites column (0.23.0)
-            const x0 = S.x, top = S.y + 34, n = LOOKS.length, cols = n > 12 ? 7 : n > 10 ? 6 : n > 8 ? 5 : n > 6 ? 4 : 3, g = 14;
-            const TILE_W = cols > 6 ? 116 : cols > 4 ? Math.floor((4 * 170 + 3 * g - 4 * g) / 5) : cols > 3 ? 170 : 208;
-            const fl = favs(), ids = LOOKS.map((l) => l.id);
+            // 0.24.0: four a row at 170 px whatever the number of looks, as many rows as fit; the rest scroll
+            // (themeRow, a row at a time). A look's colours are picked on Options' Theme card, not here.
+            const x0 = S.x, top = S.y + 34, n = LOOKS.length, cols = 4, g = 14, TILE_W = 170;
+            const rows = Math.ceil(n / cols), vis = Math.max(2, Math.floor((S.y + S.h - top + g) / (TILE_H + g)));   // two rows at least, as always
+            themeMax = Math.max(0, rows - vis);
+            if (themeRow < 0) themeRow = Math.floor(Math.max(0, LOOKS.indexOf(lk)) / cols) - vis + 1;
+            themeRow = Math.max(0, Math.min(themeMax, themeRow));
+            if (themeMax > 0) cv.scroll = true;
+            const fl = favs(), ids = LOOKS.map((l) => l.id), gw = cols * TILE_W + (cols - 1) * g;
             lbl('Look', x0, S.y + 20, 18, t.dim);
+            if (themeMax > 0) {
+                // where the gallery is: rows shown of all, a bar beside it, and which way there is more
+                const more = themeRow < themeMax ? 'Drag for more' : 'Drag back up';
+                cv.text(more, x0 + gw, S.y + 20, 16, t.dim, { align: 'right', literal: true });
+                const bx = x0 + gw + 14, bh = vis * (TILE_H + g) - g, th = Math.max(30, bh * vis / rows), ty = top + (bh - th) * themeRow / themeMax;
+                cv.roundRect(bx, top, 6, bh, 3, L.withAlpha('#ffffff', 0.10));
+                cv.roundRect(bx, ty, 6, th, 3, L.withAlpha(acc, 0.85));
+            }
             LOOKS.forEach((l, i) => {
-                const cx = x0 + (i % cols) * (TILE_W + g), cy = top + Math.floor(i / cols) * (TILE_H + g), on = l.id === cur;
+                const row = Math.floor(i / cols) - themeRow;
+                if (row < 0 || row >= vis) return;
+                const cx = x0 + (i % cols) * (TILE_W + g), cy = top + row * (TILE_H + g), on = l.id === cur;
                 // each card in its own look (background, motif, name in its own type): a picture drawn once
                 // in software (cardImage), so the other looks' big fonts never reach the renderer's glyph texture
                 const im = cardImage(l, i, TILE_W, TILE_H, cv.textScale || 1);
@@ -968,7 +996,6 @@ mgu.run({
                     cv.line(kx - 2, ky + 6, kx + 7, ky - 6, 3, t.selText || '#ffffff');
                 } else cv.strokeRoundRect(cx, cy, TILE_W, TILE_H, 10, 1, L.withAlpha('#ffffff', 0.12));
                 // the favourite star: its target first (the first target that matches wins)
-                if (on && l.tints) tintRow(cv, S, l, cx + 8, cy + 10, 'th', true);
                 const fav = fl.indexOf(l.id) >= 0, sx = cx + TILE_W - 30, sy = cy + 30;
                 cv.circle(sx, sy, 22, L.withAlpha('#000000', 0.55));
                 if (!fav) cv.arc(sx, sy, 21, 22.5, 0, 360, L.withAlpha('#ffffff', 0.25));
@@ -980,7 +1007,7 @@ mgu.run({
                 cv.target(cx, cy, TILE_W, TILE_H, () => { settings.set('look', l.id); }, 'look:' + l.id, 10);
             });
             // the right panel: two choices, the current one lit
-            const px = x0 + cols * TILE_W + (cols - 1) * g + 40, fcw = cols > 6 ? 290 : cols > 3 ? 330 : 400, pw = S.x + S.w - px - fcw - 32, ph = 72;
+            const px = x0 + gw + 40, fcw = 330, pw = S.x + S.w - px - fcw - 32, ph = 72;
             lbl('Right panel on Drive', px, S.y + 20, 18, t.dim);
             [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Spotify', 'What plays, with touch controls'], ['logo', 'Logo', 'The same Logo as the widget and cluster']].forEach((o, i) => {
                 const oy = top + i * (ph + g), on = PREFS.panelOf(settings.get('panel')) === o[0];
@@ -2074,6 +2101,8 @@ mgu.run({
             const P = Object.assign({}, S, { y: SET_Y, h: reach - SET_Y - 6 });
             // the patch service's socket: open only while Cluster & HUD or Diagnostics is on screen
             if ((page === 4 || page === 3) && visible()) cmap.open(); else { cmap.close(); ask = null; }
+            if (page === 5 && lastPage !== 5) { themeRow = -1; themeAcc = 0; }
+            lastPage = page;
             if (page === 1) optionsPage(cv, P, lk);
             else if (page === 2) spotifyPage(cv, P, lk);
             else if (page === 4) clusterPage(cv, P, lk);
