@@ -1,5 +1,17 @@
 # Changelog
 
+## G's Dash 0.20.0
+
+- New look: Desktop '98, the dash as a late-90s desktop in original art (no maker's name, logo or
+  artwork). Grey bevelled windows with navy gradient title bars on a teal desktop: the speed in a
+  sunken field in big pixel numerals, the rpm as a block progress bar ("Revving..."), and past the
+  shift point a "Shift now!" warning dialog; the gear in its own window with the drive mode as radio
+  buttons; oil and coolant as progress bars; a black performance-monitor g-meter with a green grid and
+  a list of peaks; a taskbar with a G button, the windows and the time in its tray.
+- Its cluster logo is the badge in a bevelled window with an arrow pointer (a shader, with
+  logo_desktop.png as the fallback). The HUD uses progress-bar blocks on the Pixel look's glyphs; the
+  cluster dials use Stock's.
+
 ## G's Dash 0.19.0
 
 - New look: Aura, anime battle energy in original art. The tach ring sits in an aura of flames that

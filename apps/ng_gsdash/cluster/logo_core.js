@@ -15,6 +15,8 @@
  *              orbit ring passing behind and in front of the badge with a small planet, a starfield
  *   aura       a gold G, white-hot at its core, in rising flames over burst rays at dusk, lightning
  *              crackling past it, blue / gold / orange stripes (anime battle energy; original art)
+ *   desktop    a late-90s desktop: a bevelled grey window with a navy gradient title bar on teal, the badge
+ *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
  * Pixel keeps its pixel-art emblem (px.js, an image), any other look the regular logo (an image).
  * The same looks baked into pictures, logo_<look>.png (tools/bake_gsdash_logos.js, the CPU mirror
  * tools/gsdash_logo_emu.js), are the fallback for a renderer without effect layers or refusing the shader.
@@ -54,13 +56,15 @@ const LOOKS = {
         rim: '#a8f2ff', glow: '#4fe3ff', ring: '#7fe9ff', planet: '#e8b86a' },
     aura: { stripes: ['#bfe8ff', '#ffd23f', '#ff9a1f'], sky0: '#07050f', sky1: '#3a1422', dusk: '#a8461f', gold0: '#ffe066', gold1: '#ff9f1a',
         rim: '#b8360a', flame: '#ffd23f', flame2: '#ff8a1f', bolt: '#bff0ff' },
+    desktop: { stripes: ['#0000a8', '#00a8a8', '#a80000'], g: '#000000', desk: '#008080', face: '#c0c0c0', hi: '#ffffff', light: '#dfdfdf',
+        shadow: '#808080', title0: '#000080', title1: '#1084d0' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -100,6 +104,10 @@ const COMMON = [
     'float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
     '    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }',
     'float sdLine(vec2 p, vec2 a, vec2 b) { vec2 ab = b - a; float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0); return length(p - a - ab * t); }',
+    '/* the arrow pointer (Desktop \'98): 12 x 17 cells, outline (black) and fill (white) bits per row */',
+    'float curB(float r) { if (r < 0.5) return 1.0; if (r < 1.5) return 3.0; if (r < 2.5) return 5.0; if (r < 3.5) return 9.0; if (r < 4.5) return 17.0; if (r < 5.5) return 33.0; if (r < 6.5) return 65.0; if (r < 7.5) return 129.0; if (r < 8.5) return 257.0; if (r < 9.5) return 513.0; if (r < 10.5) return 1985.0; if (r < 11.5) return 73.0; if (r < 12.5) return 149.0; if (r < 13.5) return 147.0; if (r < 14.5) return 289.0; if (r < 15.5) return 288.0; if (r < 16.5) return 192.0; return 0.0; }',
+    'float curW(float r) { if (r < 0.5) return 0.0; if (r < 1.5) return 0.0; if (r < 2.5) return 2.0; if (r < 3.5) return 6.0; if (r < 4.5) return 14.0; if (r < 5.5) return 30.0; if (r < 6.5) return 62.0; if (r < 7.5) return 126.0; if (r < 8.5) return 254.0; if (r < 9.5) return 510.0; if (r < 10.5) return 62.0; if (r < 11.5) return 54.0; if (r < 12.5) return 98.0; if (r < 13.5) return 96.0; if (r < 14.5) return 192.0; if (r < 15.5) return 192.0; if (r < 16.5) return 0.0; return 0.0; }',
+    'float bit(float v, float i) { return mod(floor(v / exp2(i)), 2.0); }',
 ];
 const gD = () => ['    float g = 100000.0;'].concat(GPARTS.map((b) => '    g = min(g, sdBox(q, ' + v4(b) + '));'));
 const stripes = (S) => STRIPES.map((b, i) => '    c = paint(c, cov(sdBox(q, ' + v4(b) + ')), ' + v3(S.stripes[i]) + ');');
@@ -231,6 +239,44 @@ const BODY = {
             // lightning: a white core in a blue glow
             '    c = min(c + ' + v3(S.bolt) + ' * 0.6 * soft(bl - 1.0, 4.0), vec3(1.0));',
             '    c = paint(c, cov(bl - 1.0), vec3(0.96, 0.99, 1.0));',
+        ]);
+    },
+    desktop(S) {
+        // the window (screen px) and the badge scaled into it: sampled k times finer, its centre moved down
+        const wx0 = 30, wy0 = 12, wx1 = LOGO_W - 30, wy1 = LOGO_H - 12, k = 1.42, bcx = LOGO_W / 2, bcy = BY - H / 2, ty = 58 + (wy1 - 58) / 2;
+        const inR = (x0, y0, x1, y1) => '(p.x >= ' + f1(x0) + ' && p.x < ' + f1(x1) + ' && p.y >= ' + f1(y0) + ' && p.y < ' + f1(y1) + ')';
+        const bev = (x0, y0, x1, y1, a, b) => [
+            '    if (' + inR(x0, y0, x1, y0 + 1) + ' || ' + inR(x0, y0, x0 + 1, y1) + ') c = ' + v3(a) + ';',
+            '    if (' + inR(x0, y1 - 1, x1, y1) + ' || ' + inR(x1 - 1, y0, x1, y1) + ') c = ' + v3(b) + ';',
+        ];
+        const btn = (x, y) => ['    if (' + inR(x, y, x + 20, y + 18) + ') c = ' + v3(S.face) + ';'].concat(bev(x, y, x + 20, y + 18, S.hi, '#000000'));
+        const bx = wx1 - 4 - 3 * 22 - 2, by = wy0 + 6;
+        return [
+            '    c = ' + v3(S.desk) + ';',
+            '    if (' + inR(wx0 + 6, wy0 + 6, wx1 + 6, wy1 + 6) + ') c = ' + v3(S.desk) + ' * 0.55;',
+            '    if (' + inR(wx0, wy0, wx1, wy1) + ') c = ' + v3(S.face) + ';',
+        ].concat(bev(wx0, wy0, wx1, wy1, S.hi, '#000000'), bev(wx0 + 1, wy0 + 1, wx1 - 1, wy1 - 1, S.light, S.shadow), [
+            // the title bar: a navy gradient, a small window icon
+            '    if (' + inR(wx0 + 4, wy0 + 4, wx1 - 4, wy0 + 30) + ') c = mix(' + v3(S.title0) + ', ' + v3(S.title1) + ', (p.x - ' + f1(wx0 + 4) + ') / ' + f1(wx1 - wx0 - 8) + ');',
+            '    if (' + inR(wx0 + 9, wy0 + 9, wx0 + 25, wy0 + 25) + ') c = ' + v3(S.face) + ';',
+            '    if (' + inR(wx0 + 12, wy0 + 12, wx0 + 22, wy0 + 15) + ') c = ' + v3(S.title0) + ';',
+        ], btn(bx, by), btn(bx + 22, by), btn(bx + 46, by), [
+            '    if (' + inR(bx + 5, by + 12, bx + 13, by + 14) + ') c = vec3(0.0);',
+            '    if (' + inR(bx + 27, by + 4, bx + 37, by + 6) + ' || ' + inR(bx + 27, by + 4, bx + 28, by + 13) + ' || ' + inR(bx + 36, by + 4, bx + 37, by + 13) + ' || ' + inR(bx + 27, by + 12, bx + 37, by + 13) + ') c = vec3(0.0);',
+            '    { vec2 x = p - vec2(' + f1(bx + 56) + ', ' + f1(by + 9) + '); if (abs(abs(x.x) - abs(x.y)) < 1.2 && abs(x.x) < 4.5) c = vec3(0.0); }',
+            // the client area: a sunken white field holding the badge
+            '    if (' + inR(wx0 + 12, 50, wx1 - 12, wy1 - 12) + ') c = vec3(1.0);',
+        ], bev(wx0 + 12, 50, wx1 - 12, wy1 - 12, S.shadow, S.hi), [
+            '    vec2 pb = (p - vec2(' + f1(bcx) + ', ' + f1(ty) + ')) * ' + f1(k) + ' + vec2(' + f1(bcx) + ', ' + f1(bcy) + ');',
+            '    q = badge(pb);',
+        ], gD(), STRIPES.map((b, i) => '    c = paint(c, cov(sdBox(q, ' + v4(b) + ') / ' + f1(k) + '), ' + v3(S.stripes[i]) + ');'), [
+            '    c = paint(c, cov(g / ' + f1(k) + '), ' + v3(S.g) + ');',
+            // the arrow pointer, 3 px cells, its tip on the G's bar
+            '    vec2 cc = floor((p - vec2(' + f1(bcx + 52) + ', ' + f1(ty + 4) + ')) / 3.0);',
+            '    if (cc.x >= 0.0 && cc.x < 12.0 && cc.y >= 0.0 && cc.y < 17.0) {',
+            '        if (bit(curB(cc.y), cc.x) > 0.5) c = vec3(0.0);',
+            '        else if (bit(curW(cc.y), cc.x) > 0.5) c = vec3(1.0);',
+            '    }',
         ]);
     },
 };

@@ -43,7 +43,7 @@ const HOLD_MS = 1000, RECONNECT_MS = 8000, LOAD_RETRY_MS = 30000, ERR_RETRIES = 
 // 0.13.8: after a release of ours, the next connection no sooner than this (quick release / re-acquire runs only)
 const REACQ_MS = [0, 1000, 2000, 5000, 10000], REACQ_QUICK_MS = 30000;
 const HANDOVER_MS = 3500;   // as fcluster.js: the panel and the HUD share one scene id
-const LOOKS = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura'], DEFAULT_LOOK = 'm';
+const LOOKS = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'space', 'aura', 'desktop'], DEFAULT_LOOK = 'm';
 const isNum = (v) => typeof v === 'number' && isFinite(v);
 
 /** '' (may show) or why not, from main.js's state { on, enabled, look, data, gear, at, redline, shift } */
