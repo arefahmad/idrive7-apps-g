@@ -14,7 +14,7 @@ const RAD = Math.PI / 180;
 /* ---------------- fonts: apps/ng_gsdash/data/fonts (fonts.pack in a build), tools/bake_gsdash_fonts.py ---------------- */
 const FAMILIES = ['gs_m_num', 'gs_m_gear', 'gs_m_txt', 'gs_m_lt', 'gs_gt_num', 'gs_gt_gear', 'gs_gt_txt',
     'gs_h_txt', 'gs_d_seg', 'gs_d_txt', 'gs_s_gear', 'gs_s_num', 'gs_s_txt', 'gs_p_px',
-    'gs_v_num', 'gs_v_gear'];
+    'gs_v_num', 'gs_v_gear', 'gs_c_txt', 'gs_c_reg', 'gs_c_ser'];
 /*
  * 0.14.0: each look's fonts (look_<id>.js: its own and its ui's), registered only when the look is in use
  * (the chosen look, or its card on Theme) - not every look's at start. The kit keeps a font once it is
@@ -32,6 +32,7 @@ const LOOK_FONTS = {
     pocket: ['gs_p_px'],
     heist: ['gs_s_gear', 'gs_s_num', 'gs_s_txt'],
     arcade: ['gs_p_px'],
+    ccc: ['gs_c_txt', 'gs_c_reg', 'gs_c_ser'],
     pod: ['gs_h_txt', 'gs_s_gear', 'gs_s_num', 'gs_s_txt'],
 };
 const fontsLoaded = [];

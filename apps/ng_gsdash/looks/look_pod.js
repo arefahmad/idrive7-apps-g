@@ -149,7 +149,7 @@ module.exports = {
         const fc = S.strobe ? (blink ? C.red : '#ffffff') : rpm >= S.shift ? C.red : rpm >= lo ? C.amber : null;
         if (f > 0.02) {
             if (fc) cv.roundRect(nx, by, bw * f, 14, 7, fc);
-            else cv.rampRect(nx, by, bw * f, 14, 7, [[0, C.hi0], [1, C.hi1]], nx, bw);
+            else cv.rampRect(nx, by, bw * f, 14, 7, [C.hi0, C.hi1], nx, bw);
             cv.quad([[nx + bw * f, by - 5], [nx + bw * f + 9, by + 7], [nx + bw * f, by + 19], [nx + bw * f - 9, by + 7]], C.ink);
         }
         T(cv, L.rpmText(S.rpm), nx, by + 40, 22, C.ink, NUM);

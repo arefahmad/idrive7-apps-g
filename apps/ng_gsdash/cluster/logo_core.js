@@ -15,6 +15,8 @@
  *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
  *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
  *              screen, the badge on it in 6 px dots (original art)
+ *   ccc        the first iDrive's start screen: the badge in brushed silver with blue / green / red stripes
+ *              (its chevrons' colours) on a raised lavender-grey tile between ribbed ones, on black (redrawn)
  *   pod        a mid-2000s pocket music player: a charcoal G and blue stripes on its glossy white front,
  *              a touch wheel's rings behind them (original art)
  *   heist      an open-world crime game: a white G with a thick black outline over a sunset - a banded sun,
@@ -60,6 +62,7 @@ const LOOKS = {
     pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
     heist: { stripes: ['#ff5e7e', '#ff9a3d', '#ffd23a'], sky0: '#22104a', sky1: '#6e2a8c', sky2: '#ff6f61', sky3: '#ffb347', sun: '#ffe066',
         city: '#1b0d33', win: '#ffd36b', palm: '#0e0620' },
+    ccc: { stripes: ['#20a2fd', '#38b087', '#e62d4b'], face0: '#8a889e', face1: '#7b7888', rib0: '#837a82', rib1: '#645d64', hi: '#c5cffe', g0: '#eafefe', g1: '#a4b8d8' },
     pod: { stripes: ['#6fb1f0', '#3d8ae0', '#2f73cc'], g: '#2b2d31', g2: '#4a4e55', body0: '#fbfbf9', body1: '#d9dad7', ring: '#c9cbc8', wheel: '#ecedeb' },
     arcade: { stripes: ['#ff3030', '#ffd800', '#22e4ff'], g: '#ffd800', shadow: '#7a0a3a', sky0: '#05001a', sky1: '#1a0640', frame: '#22e4ff' },
 };
@@ -68,7 +71,7 @@ const LOOKS = {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'desktop', 'pocket', 'heist', 'arcade', 'pod'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'desktop', 'pocket', 'heist', 'arcade', 'pod', 'ccc'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -236,6 +239,28 @@ const BODY = {
         ].concat(gD().map((l) => '    ' + l), STRIPES.map((b, i) => '            if (dot && sdBox(q, ' + v4(b) + ') < 0.0) c = ' + v3(S.stripes[i]) + ';'), [
             '        if (dot && g < 0.0) c = ' + v3(S.g) + ';',
             '    }',
+        ]);
+    },
+    ccc(S) {
+        const tx0 = 30, tx1 = LOGO_W - 30;
+        return gD().concat([
+            // black, ribbed taupe tiles either side, a raised tile in the middle with a bevel
+            '    c = vec3(0.0);',
+            '    if (p.y > 6.0 && p.y < SZ.y - 6.0) {',
+            '        if (p.x < ' + f1(tx0 - 2) + ' || p.x > ' + f1(tx1 + 2) + ') c = mod(floor(p.y / 2.0), 2.0) < 0.5 ? ' + v3(S.rib0) + ' : ' + v3(S.rib1) + ';',
+            '        else if (p.x > ' + f1(tx0) + ' && p.x < ' + f1(tx1) + ') {',
+            '            c = mix(' + v3(S.face0) + ', ' + v3(S.face1) + ', (p.y - 6.0) / (SZ.y - 12.0));',
+            '            if (p.y < 8.0 || p.x < ' + f1(tx0 + 2) + ') c = ' + v3(S.hi) + ';',
+            '            if (p.y > SZ.y - 8.0 || p.x > ' + f1(tx1 - 2) + ') c = vec3(0.18, 0.16, 0.15);',
+            '        }',
+            '    }',
+            // a soft shadow under the badge
+            '    c = mix(c, vec3(0.0), 0.35 * soft(g - 3.0, 6.0));',
+        ], STRIPES.map((b, i) => '    { float s = sdBox(q, ' + v4(b) + '); c = mix(c, vec3(0.0), 0.35 * soft(s - 3.0, 6.0)); c = paint(c, cov(s), mix(' + v3(S.stripes[i]) + ' * 1.15, ' + v3(S.stripes[i]) + ' * 0.8, clamp(q.y / BH, 0.0, 1.0))); }'), [
+            // the G: brushed silver, light at the top, a dark keyline
+            '    c = paint(c, cov(g + 0.0), vec3(0.32));',
+            '    float br = 0.03 * sin(p.y * 1.7) + 0.02 * sin(p.y * 0.61 + 1.0);',
+            '    c = paint(c, cov(g + 2.0), clamp(mix(' + v3(S.g0) + ', ' + v3(S.g1) + ', smoothstep(0.0, 1.0, q.y / BH)) + br, 0.0, 1.0));',
         ]);
     },
     pod(S) {
