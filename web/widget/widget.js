@@ -69,9 +69,13 @@
     });
   }
   function seal(raw, obj) { return encrypt(raw, AAD, new TextEncoder().encode(JSON.stringify(obj))).then(b64u); }
+  /** rejects (never throws) on a message that is not ours, e.g. ntfy's plain-text note for an attachment */
   function unseal(raw, text) {
-    var b = fromB64u(String(text).trim());
-    return importKey(raw).then(function (k) {
+    var b;
+    return Promise.resolve().then(function () {
+      b = fromB64u(String(text).trim());
+      return importKey(raw);
+    }).then(function (k) {
       return crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: AAD, tagLength: 128 }, k, b.slice(12));
     }).then(function (pt) { return JSON.parse(new TextDecoder().decode(pt)); });
   }
@@ -111,7 +115,7 @@
       .then(function (r) { if (!r.ok) throw mailboxError(r); return r.text(); })
       .then(function (t) {
         return t.split('\n').map(function (l) { try { return JSON.parse(l); } catch (e) { return null; } })
-          .filter(function (m) { return m && m.event === 'message' && typeof m.message === 'string'; });
+          .filter(function (m) { return m && m.event === 'message' && typeof m.message === 'string' && !m.attachment; });
       });
   }
 
