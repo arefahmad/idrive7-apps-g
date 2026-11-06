@@ -21,19 +21,19 @@ const CLOCK = new (require('./clock').Clock)();
 
 const { withAlpha, clamp, isNum } = L;
 const TXT = 'gs_c_txt', REG = 'gs_c_reg', SER = 'gs_c_ser';
-/* the screen's colours, measured off a photo of one (away from its glare): cool mauve-grey tiles, the
-   middle column a shade lighter, mauve-grey ribs, a blue-tinted silver button, near-white type */
+/* the screen's colours, measured off a photo of one (away from its glare): cool lavender-grey tiles, the
+   middle column a shade lighter, lavender-grey ribs, a blue-tinted silver button, near-white type */
 const C = {
-    bg: '#000000', face: '#776e74', mid: '#7f777d', top0: '#8a8188', top1: '#776f75', bot0: '#8a8188', bot1: '#776f75',
-    rib: ['#857b80', '#80767b', '#786f74', '#6c6469', '#625b60', '#685f65', '#71686d', '#7c7277'],
+    bg: '#000000', face: '#756f79', mid: '#828194', top0: '#8a889e', top1: '#7b7888', bot0: '#8a889e', bot1: '#7b7888',
+    rib: ['#837a82', '#7f767e', '#786f77', '#6d656c', '#645d64', '#6a636a', '#736b73', '#7c747c'],
     line: '#2f2e3d', hi: '#c5cffe', text: '#f8fcfd', shadow: '#2a2a38', bar: '#030403', sep: '#505468',
-    groove: '#8a93a3', rim: '#4c5262', blue: '#20a2fd', green: '#38b087', red: '#e62d4b', orange: '#f5ab7a',
+    groove: '#8a9bb2', rim: '#4c546c', blue: '#20a2fd', green: '#38b087', red: '#e62d4b', orange: '#f5ab7a',
     amber: '#f5ab7a', crit: '#e62d4b',
 };
 const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), {
     name: 'iDrive CCC',
     bg: C.bg, panelTop: C.top0, panelBottom: C.face, panelEdge: C.hi,
-    track: '#4e474c', tick: '#8a8188', text: C.text, dim: '#ddd8dc',
+    track: '#4c4a5a', tick: '#828194', text: C.text, dim: '#d4d8ea',
     accent: C.blue, accent2: C.orange, ok: C.green, warn: C.orange, crit: C.red, cold: C.blue,
     stripes: [C.blue, C.green, C.red], sel: '#dfe6ff', selText: '#2a2a38', marker: C.orange,
 });
@@ -82,8 +82,8 @@ function disc(c, x, y, R, cols) {
     const steps = [[0, 1], [0.05, 0.95], [0.13, 0.86], [0.24, 0.73], [0.36, 0.58]];
     cols.forEach((col, i) => { const st = steps[i]; c.circle(x, y - st[0] * R, st[1] * R, col); });
 }
-const SILVER = ['#9ea9bb', '#b5bfcd', '#c8d0da', '#d9e1e8', '#e9eff2'];
-const SILVER_IN = ['#e2e9ef', '#cbd3dd', '#b6c0cd', '#a6b0c0', '#9ea8b9'];
+const SILVER = ['#a4b8d8', '#b8c8de', '#c9d5e2', '#dbe9f2', '#eafefe'];
+const SILVER_IN = ['#e2f2fb', '#cbd8e8', '#b6c6dc', '#a6b7d4', '#a0b1d2'];
 /** the silver centre button (its own layer, centre at (o, o)) */
 function button(c, R) {
     const o = R + 6;
@@ -94,11 +94,11 @@ function button(c, R) {
     // the groove, the raised inner disc (lit from below: it is dished), the ring round the "i"
     c.arc(o, o, r1, r1 + 3, 0, 360, C.groove);
     c.arc(o, o, r1 + 3, r1 + 4.5, 0, 360, withAlpha('#ffffff', 0.5));
-    c.circle(o, o, r1, '#c3cad3');
-    [[0, 1, '#a2abba'], [-0.05, 0.95, '#b3bcc9'], [-0.12, 0.86, '#c3cbd5'], [-0.2, 0.76, '#d0d7de']].forEach((st) => c.circle(o, o + st[0] * r1 * -1, st[1] * r1, st[2]));
-    c.arc(o, o, r2, r2 + 3, 0, 360, '#7f8899');
-    c.arc(o, o, r2 + 3, r2 + 4.5, 0, 360, withAlpha('#e6eef4', 0.75));
-    disc(c, o, o, r2, ['#848c9c', '#9099a9', '#9ba4b4', '#a5aebd', '#adb6c4']);
+    c.circle(o, o, r1, '#c1ced8');
+    [[0, 1, '#9fb0cc'], [-0.05, 0.95, '#b2c2da'], [-0.12, 0.86, '#c4d2e2'], [-0.2, 0.76, '#d2e0ec']].forEach((st) => c.circle(o, o + st[0] * r1 * -1, st[1] * r1, st[2]));
+    c.arc(o, o, r2, r2 + 3, 0, 360, '#8492ab');
+    c.arc(o, o, r2 + 3, r2 + 4.5, 0, 360, withAlpha('#daf2fd', 0.75));
+    disc(c, o, o, r2, ['#8492ab', '#93a3c0', '#a0b1d2', '#acbdda', '#b6c6e0']);
 }
 /** a glossy chevron pointing dir ('u', 'd', 'l', 'r') at (x, y), size s */
 function chevron(cv, x, y, s, dir, col, lit) {
@@ -167,10 +167,10 @@ module.exports = {
         const ch = 190, rh = (ch - 54) / 3, cx = x + w / 2, cy = y - 6 + rh * 1.5, R = rh * 0.72;
         cv.circle(cx, cy + 2, R + 1, withAlpha('#000000', 0.45));
         disc(cv, cx, cy, R, SILVER);
-        disc(cv, cx, cy, R * 0.56, ['#848c9c', '#9099a9', '#9ba4b4', '#a5aebd', '#adb6c4']);
-        cv.arc(cx, cy, R * 0.56, R * 0.56 + 2, 0, 360, '#7f8899');
+        disc(cv, cx, cy, R * 0.56, ['#8492ab', '#93a3c0', '#a0b1d2', '#acbdda', '#b6c6e0']);
+        cv.arc(cx, cy, R * 0.56, R * 0.56 + 2, 0, 360, '#8492ab');
         const fi = { font: SER, align: 'center', literal: true }, iy = cy + R * 0.34, isz = Math.round(R * 1.0);
-        [[-1, 0], [1, 0], [0, -1], [0, 1.5]].forEach((d) => cv.text('i', cx + d[0], iy + d[1], isz, withAlpha('#4c5262', 0.85), fi));
+        [[-1, 0], [1, 0], [0, -1], [0, 1.5]].forEach((d) => cv.text('i', cx + d[0], iy + d[1], isz, withAlpha('#4c546c', 0.85), fi));
         cv.text('i', cx, iy, isz, '#f3fdfe', fi);
         const s = Math.max(7, R * 0.3);
         chevron(cv, cx, cy - R - s * 0.9, s, 'u', C.blue); chevron(cv, cx, cy + R + s * 0.9, s, 'd', C.orange);

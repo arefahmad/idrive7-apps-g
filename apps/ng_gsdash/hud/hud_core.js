@@ -79,8 +79,8 @@ const LOOKS = {
     pod: { n: 30, slant: 0, gap: 3, inset: 3, base: '#c9d3da', zones: ['#6fb1f0', '#ff9f2e', '#ff3b30'], flash: '#ff3b30', flash2: '#ffffff',
         dim: '#1e252c', redDim: '#3a1210', tick: '#8a96a0', tickRed: '#ff3b30', gear: '#f3f6f8', gear2: '#3d8ae0', pre: '#6fb1f0', pre2: '#2f73cc', glow: [3, 0.45] },
     // iDrive CCC: silver bars, the chevrons' blue then orange then red, white flashes; Sim Racing's glyphs
-    ccc: { n: 26, slant: 0, gap: 3, inset: 2, base: '#d9e1e8', zones: ['#20a2fd', '#f5ab7a', '#e62d4b'], flash: '#ffffff', flash2: '#e62d4b',
-        dim: '#2a2629', redDim: '#3a1218', tick: '#8a8188', tickRed: '#e62d4b', gear: '#f3fdfe', pre: '#d9e1e8', glow: [2, 0.3] },
+    ccc: { n: 26, slant: 0, gap: 3, inset: 2, base: '#dbe9f2', zones: ['#20a2fd', '#f5ab7a', '#e62d4b'], flash: '#ffffff', flash2: '#e62d4b',
+        dim: '#26262f', redDim: '#3a1218', tick: '#828194', tickRed: '#e62d4b', gear: '#f3fdfe', pre: '#dbe9f2', glow: [2, 0.3] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Heist uses Sim Racing's */
 const ATLAS_LOOK = { desktop: 'pixel', pocket: 'pixel', heist: 'simracing', arcade: 'pixel', pod: 'simracing', ccc: 'simracing' };
