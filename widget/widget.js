@@ -1,5 +1,6 @@
 /*
- * Home widget: send an animated GIF from the phone to the car's home-screen widget. Static, no secrets. The
+ * Logo: send an animated GIF from the phone to G's Dash (the home-screen widget, the cluster, and a
+ * driving-mode slot when the car's Logo page was on one). Static, no secrets. The
  * car's side is kit/runtime/gif_drop.js (it says the whole exchange); this page:
  *
  *   <this page>#v=1&s=<topic>.<key>&a=<app name>&w=<px>&h=<px>   from the car's QR code
@@ -68,9 +69,13 @@
     });
   }
   function seal(raw, obj) { return encrypt(raw, AAD, new TextEncoder().encode(JSON.stringify(obj))).then(b64u); }
+  /** rejects (never throws) on a message that is not ours, e.g. ntfy's plain-text note for an attachment */
   function unseal(raw, text) {
-    var b = fromB64u(String(text).trim());
-    return importKey(raw).then(function (k) {
+    var b;
+    return Promise.resolve().then(function () {
+      b = fromB64u(String(text).trim());
+      return importKey(raw);
+    }).then(function (k) {
       return crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: AAD, tagLength: 128 }, k, b.slice(12));
     }).then(function (pt) { return JSON.parse(new TextDecoder().decode(pt)); });
   }
@@ -110,7 +115,7 @@
       .then(function (r) { if (!r.ok) throw mailboxError(r); return r.text(); })
       .then(function (t) {
         return t.split('\n').map(function (l) { try { return JSON.parse(l); } catch (e) { return null; } })
-          .filter(function (m) { return m && m.event === 'message' && typeof m.message === 'string'; });
+          .filter(function (m) { return m && m.event === 'message' && typeof m.message === 'string' && !m.attachment; });
       });
   }
 
@@ -188,7 +193,7 @@
             if (!p || p.from !== 'car' || p.s !== st.topic) continue;
             if (p.t === 'got' && !got) {
               got = true;
-              busy('Check the car’s screen', 'The car has the GIF and is getting it ready. Tap Use on the car to put it on the widget.');
+              busy('Check the car’s screen', 'The car has the GIF and is getting it ready. Tap Use on the car to keep it for the Logo.');
             }
             if (p.t === 'done') {
               if (p.ok) show('done');
@@ -224,7 +229,7 @@
   if (h.get('v') === '1') {
     var st = parseState(h.get('s'));
     if (!st) { failWith('This code is not complete. Scan the code on the car’s screen again.'); return; }
-    if (h.get('a')) { try { var app = cleanName(new TextDecoder().decode(fromB64u(h.get('a')))).slice(0, 40); if (app) { $('app').textContent = app + ' · home widget'; document.title = app + ': send a GIF'; } } catch (e) { /* plain title */ } }
+    if (h.get('a')) { try { var app = cleanName(new TextDecoder().decode(fromB64u(h.get('a')))).slice(0, 40); if (app) { $('app').textContent = app + ' · logo'; document.title = app + ': send a GIF'; } } catch (e) { /* plain title */ } }
     var w = Number(h.get('w')), hh = Number(h.get('h'));
     formPage(st, w > 0 && hh > 0 && w <= 4096 && hh <= 4096 ? { w: w, h: hh } : null);
   } else {
