@@ -126,7 +126,7 @@ const { Net } = require('./tv_net');
 const qrcodegen = require('./qrcodegen');
 
 const LOOKS = [require('./look_m'), require('./look_gt'), require('./look_digital'), require('./look_simracing'),
-    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura'), require('./look_desktop'), require('./look_pocket'), require('./look_nextgen'), require('./look_heist'), require('./look_arcade'), require('./look_player')];
+    require('./look_lumen'), require('./look_pixel'), require('./look_vector'), require('./look_space'), require('./look_aura'), require('./look_desktop'), require('./look_pocket'), require('./look_nextgen'), require('./look_heist'), require('./look_arcade'), require('./look_pod')];
 // M Style is the default look, and where any other id lands (0.9.0: Simple, Heritage and Flight went)
 const DEFAULT_LOOK = 'm';
 const lookOf = (id) => LOOKS.find((l) => l.id === id) || LOOKS.find((l) => l.id === DEFAULT_LOOK);

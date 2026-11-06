@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Player '04 - the dash as a mid-2000s pocket music player (original art in that spirit: no maker's name,
+ * Pod '04 - the dash as a mid-2000s pocket music player (original art in that spirit: no maker's name,
  * logo, font or icons). A glossy white front; on the left a monochrome screen, pale blue-grey and backlit,
  * in a dark bezel; on the right a touch wheel with a centre button. The screen shows the drive as Now
  * Playing: the speed as the track (big), the drive mode as the artist, the session as the album, and the
@@ -22,7 +22,7 @@ const C = {
     blue: '#3d8ae0', amber: '#ff9f2e', red: '#ff3b30', green: '#3fae5a',
 };
 const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), {
-    name: "Player '04",
+    name: "Pod '04",
     bg: C.body1, panelTop: C.body0, panelBottom: C.body1, panelEdge: '#b8bab6',
     track: '#c9cbc8', tick: '#9a9ea3', text: '#1d1f22', dim: '#6a6f75',
     accent: C.blue, accent2: C.hi1, ok: C.green, warn: '#b06a00', crit: '#d0281e', cold: C.blue,
@@ -35,7 +35,7 @@ function body(c, w, h) {
     c.gradientRect(0, 0, w, h, [[0, C.body0], [0.55, '#eeeeec'], [1, C.body1]]);
     c.gradientRect(0, 0, w, h * 0.18, [[0, withAlpha('#ffffff', 0.9)], [1, withAlpha('#ffffff', 0)]]);
 }
-function background(cv, t, reach) { cv.blit(G.layer('gs-pl-body|' + reach, 1600, reach, (c) => body(c, 1600, reach)), 0, 0); }
+function background(cv, t, reach) { cv.blit(G.layer('gs-pod-body|' + reach, 1600, reach, (c) => body(c, 1600, reach)), 0, 0); }
 function geo(S) {
     const bx = S.x + 14, by = S.y + 8, bw = 1046, bh = S.h - 16;
     const R = Math.min(196, (S.h - 40) / 2), wx = S.x + S.w - 30 - R, wy = S.y + Math.min(S.h, 456) / 2 - 8;
@@ -88,8 +88,8 @@ function menu(cv, S, x, y, w, h) {
 }
 
 module.exports = {
-    id: 'player',
-    name: "Player '04",
+    id: 'pod',
+    name: "Pod '04",
     blurb: 'A mid-2000s pocket music player: a backlit screen playing your drive, a touch wheel',
     palette,
     ui: { txt: TXT, num: NUM, size: 20, spacing: 0, upper: false, radius: 12, nameFont: TXT, nameSize: 28 },
@@ -124,7 +124,7 @@ module.exports = {
 
     draw(cv, S) {
         const now = Date.now(), g = geo(S), mph = isNum(S.mph) ? S.mph : isNum(S.speed) ? (S.imperial ? S.speed : S.speed / 1.609344) : 0;
-        cv.blit(G.layer(['gs-pl-bezel', g.bw, g.bh].join('|'), g.bw, g.bh, (c) => bezel(c, g), cv.textScale), g.bx, g.by);
+        cv.blit(G.layer(['gs-pod-bezel', g.bw, g.bh].join('|'), g.bw, g.bh, (c) => bezel(c, g), cv.textScale), g.bx, g.by);
         const x = g.lx, y = g.ly, w = g.lw, h = g.lh, blink = Math.floor(now / 250) % 2 === 0;
         // the title bar: play / pause, the title, a full battery
         cv.gradientRect(x, y, w, 44, [[0, '#f3f6f8'], [1, '#c9d3da']]);
@@ -143,7 +143,7 @@ module.exports = {
         T(cv, S.mode ? S.mode.charAt(0) + S.mode.slice(1).toLowerCase() : 'Drive', nx, y + 230, 26, C.ink);
         T(cv, 'Session ' + L.clock(S.session), nx, y + 260, 22, C.ink2);
         // the progress bar: the revs; elapsed rpm left, rpm to the shift point right
-        const by = y + 284, bw = nw - 20, lo = S.shift - S.range, rpm = isNum(S.rpm) ? G.smooth('gs-pl-rpm', S.rpm, 14) : 0, f = clamp(rpm / S.maxRpm, 0, 1);
+        const by = y + 284, bw = nw - 20, lo = S.shift - S.range, rpm = isNum(S.rpm) ? G.smooth('gs-pod-rpm', S.rpm, 14) : 0, f = clamp(rpm / S.maxRpm, 0, 1);
         cv.roundRect(nx, by, bw, 14, 7, withAlpha(C.ink2, 0.25));
         cv.strokeRoundRect(nx, by, bw, 14, 7, 1.5, withAlpha(C.ink, 0.6));
         const fc = S.strobe ? (blink ? C.red : '#ffffff') : rpm >= S.shift ? C.red : rpm >= lo ? C.amber : null;
@@ -167,7 +167,7 @@ module.exports = {
         cv.fillRect(pr.x - 1, pr.y, 1, pr.h, withAlpha(C.ink2, 0.35));
         if (!S.panel || S.panel === 'g') menu(cv, S, pr.x, pr.y + 4, pr.w, pr.h - 8);
         // the wheel: the revs round its ring, the gear on the centre button, a fingertip dot for the g
-        cv.blit(G.layer(['gs-pl-wheel', g.R].join('|'), 2 * g.R + 20, 2 * g.R + 20, (c) => wheel(c, g.R), cv.textScale), g.wx - g.R - 8, g.wy - g.R - 8);
+        cv.blit(G.layer(['gs-pod-wheel', g.R].join('|'), 2 * g.R + 20, 2 * g.R + 20, (c) => wheel(c, g.R), cv.textScale), g.wx - g.R - 8, g.wy - g.R - 8);
         const A0 = -140, A1 = 140, A = (v) => A0 + (A1 - A0) * clamp(v / S.maxRpm, 0, 1), r0 = g.R * 0.82, r1 = g.R * 0.92;
         cv.arc(g.wx, g.wy, r0, r1, A0, A1, withAlpha(C.ink2, 0.10), { round: true });
         if (f > 0.01) {
@@ -178,7 +178,7 @@ module.exports = {
         const gs = L.gearFit(cv, S.gearText, 92, g.R * 0.6, { font: BIG, spacing: 0 });
         T(cv, S.gearText, g.wx, g.wy + gs * 0.36, gs, S.strobe && blink ? C.red : '#3a3f45', BIG, { align: 'center' });
         if (isNum(S.gLat) && isNum(S.gLong)) {
-            const gx = G.smooth('gs-pl-gx', S.gLat, 6), gy = G.smooth('gs-pl-gy', -S.gLong, 6), m = Math.min(1, Math.sqrt(gx * gx + gy * gy) / (S.gMax || 1.5));
+            const gx = G.smooth('gs-pod-gx', S.gLat, 6), gy = G.smooth('gs-pod-gy', -S.gLong, 6), m = Math.min(1, Math.sqrt(gx * gx + gy * gy) / (S.gMax || 1.5));
             if (m > 0.04) {
                 const a = Math.atan2(gy, gx), rr = g.R * (0.42 + 0.33 * m);
                 const dx = g.wx + Math.cos(a) * rr, dy = g.wy + Math.sin(a) * rr;

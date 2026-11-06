@@ -2,7 +2,7 @@
 
 ## G's Dash 0.26.0
 
-- New look: Player '04, the dash as a mid-2000s pocket music player, in original art (no maker's name,
+- New look: Pod '04, the dash as a mid-2000s pocket music player, in original art (no maker's name,
   logo, font or icons). A glossy white front with a backlit blue-grey screen and a touch wheel.
 - The screen plays your drive as Now Playing: the gear as the track number, the speed as the title, the
   drive mode as the artist, the session as the album, and the revs as the progress bar - rpm elapsed on
@@ -12,7 +12,7 @@
 - On the wheel the revs fill round its ring, the gear sits on the centre button, and a fingertip dot
   moves with the g-force.
 - Its cluster logo is a charcoal G with blue stripes on the white front over a touch wheel (a shader,
-  with logo_player.png as the fallback). The HUD uses blue bars on Sim Racing's glyphs; the cluster
+  with logo_pod.png as the fallback). The HUD uses blue bars on Sim Racing's glyphs; the cluster
   dials use Lumen's.
 
 ## G's Dash 0.25.0

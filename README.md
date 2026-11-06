@@ -15,7 +15,7 @@ A driver display and car hub for the centre screen.
   console's green dot-matrix screen), Next Gen (a games-console home screen with flowing light and
   achievements), Heist (an open-world crime game's HUD: a sunset city, a radar and wanted stars
   that climb with your speed), Arcade (an 80s racing cabinet: a night road, 1UP and HI-SCORE,
-  INSERT COIN) and Player '04 (a mid-2000s pocket music player: your drive as Now Playing, revs round
+  INSERT COIN) and Pod '04 (a mid-2000s pocket music player: your drive as Now Playing, revs round
   a touch wheel), some with a choice of colours. Theme scrolls to show them all; pick a look's colours
   on Options' Theme card. Star your favourites and tap the gear on Drive to switch between them.
 - **Pages:** swipe between Drive (shift lights, gear, rpm, speed, g-meter, drive mode, oil and coolant
