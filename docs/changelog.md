@@ -1,5 +1,22 @@
 # Changelog
 
+## G's Dash 0.28.0
+
+- New look: iDrive CCC, the first iDrive's start screen redrawn (no picture or font of the car
+  maker's is used). The cross of taupe tiles on black with ribbed tiles in the corners, the silver
+  centre button with its blue, green, red and orange arrows, white Helvetica-like type, and the
+  status bar under it.
+- Above the button, the speed; below it, the rpm, its tile filling with the revs (amber over the shift
+  lights, red past the shift point, the arrows flashing); left, oil and coolant (blue while cold, red
+  when hot); right, the g-force now, with the session peaks on the ribbed tiles beside it. The gear sits
+  on the button in the serif type of its "i" (the "i" itself with no gear). The status bar shows the
+  drive mode, the speaker mark, the time and the date.
+- New fonts for it: Liberation Sans Bold / Regular and Liberation Serif Bold (SIL OFL 1.1, Arial /
+  Times metrics), baked as gs_c_txt, gs_c_reg and gs_c_ser; licence in fonts/LICENSE-Liberation.txt.
+- Its cluster logo is the badge in brushed silver with blue / green / red stripes on a taupe tile
+  between ribbed ones (a shader, with logo_ccc.png as the fallback). The HUD uses silver-taupe bars
+  turning blue, orange and red; the cluster keeps the car's own dials.
+
 ## G's Dash 0.27.0
 
 - Removed three looks: Aura, Next Gen and Space, with their cluster logos (shaders and logo_aura.png /

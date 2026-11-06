@@ -40,7 +40,7 @@ const PRE = ['D', 'M', 'S'];
 const RANGE = 2000;              // the shift-light zones cover the last RANGE rpm before the shift point
 const BLINK_MS = 120;            // the flash: on / off every 120 ms (about 4 Hz)
 const RPM_Q = 50;                // the rpm is sent in steps of 50: no pushes for wobble below that
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'desktop', 'pocket', 'heist', 'arcade', 'pod'];
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'pixel', 'vector', 'desktop', 'pocket', 'heist', 'arcade', 'pod', 'ccc'];
 /*
  * The looks: n segments, slant (degrees at the inner edge), gap (px between segments), inset (px off the
  * arc's inner / outer edge), shape bar | bead (beadR), pq (pixel blocks of pq px, hard edges), glow
@@ -78,9 +78,12 @@ const LOOKS = {
     // Pod '04: round-ended bars in the selection blue, amber then red at the shift point, a soft glow; Sim Racing's glyphs (the same Titillium)
     pod: { n: 30, slant: 0, gap: 3, inset: 3, base: '#c9d3da', zones: ['#6fb1f0', '#ff9f2e', '#ff3b30'], flash: '#ff3b30', flash2: '#ffffff',
         dim: '#1e252c', redDim: '#3a1210', tick: '#8a96a0', tickRed: '#ff3b30', gear: '#f3f6f8', gear2: '#3d8ae0', pre: '#6fb1f0', pre2: '#2f73cc', glow: [3, 0.45] },
+    // iDrive CCC: silver-taupe bars, the chevrons' blue then orange then red, white flashes; Sim Racing's glyphs
+    ccc: { n: 26, slant: 0, gap: 3, inset: 2, base: '#d9d0ca', zones: ['#3d9be0', '#e8a050', '#d0303a'], flash: '#ffffff', flash2: '#d0303a',
+        dim: '#2a2624', redDim: '#3a1210', tick: '#8e857f', tickRed: '#d0303a', gear: '#f2f2f2', pre: '#d9d0ca', glow: [2, 0.3] },
 };
 /* a look drawn with another's glyph atlas (an alpha mask, so any colours): Heist uses Sim Racing's */
-const ATLAS_LOOK = { desktop: 'pixel', pocket: 'pixel', heist: 'simracing', arcade: 'pixel', pod: 'simracing' };
+const ATLAS_LOOK = { desktop: 'pixel', pocket: 'pixel', heist: 'simracing', arcade: 'pixel', pod: 'simracing', ccc: 'simracing' };
 /* colour variants (tints.js): 'look.tint' - the same shape, the variant's colours; the gear atlas is
    an alpha mask, so the base look's picture serves every variant (no new asset) */
 (function () {
