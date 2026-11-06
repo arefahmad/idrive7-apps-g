@@ -17,6 +17,8 @@
  *              crackling past it, blue / gold / orange stripes (anime battle energy; original art)
  *   desktop    a late-90s desktop: a bevelled grey window with a navy gradient title bar on teal, the badge
  *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
+ *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
+ *              screen, the badge on it in 6 px dots (original art)
  * Pixel keeps its pixel-art emblem (px.js, an image), any other look the regular logo (an image).
  * The same looks baked into pictures, logo_<look>.png (tools/bake_gsdash_logos.js, the CPU mirror
  * tools/gsdash_logo_emu.js), are the fallback for a renderer without effect layers or refusing the shader.
@@ -58,13 +60,14 @@ const LOOKS = {
         rim: '#b8360a', flame: '#ffd23f', flame2: '#ff8a1f', bolt: '#bff0ff' },
     desktop: { stripes: ['#0000a8', '#00a8a8', '#a80000'], g: '#000000', desk: '#008080', face: '#c0c0c0', hi: '#ffffff', light: '#dfdfdf',
         shadow: '#808080', title0: '#000080', title1: '#1084d0' },
+    pocket: { stripes: ['#306230', '#0f380f', '#306230'], g: '#0f380f', s2: '#8bac0f', s3: '#9bbc0f', bezel: '#5b5f6e', body: '#c4c4c8', led: '#ff2d2d' },
 };
 /* 0.14.0: a look's colour variants (tints.js) with their own constants, keyed look-variant (digital-purple) */
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
 }());
-const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
+const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'space', 'aura', 'desktop', 'pocket'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */
 const baseOf = (look) => String(look).split('-')[0];
 const has = (look) => Object.prototype.hasOwnProperty.call(LOOKS, look);
@@ -276,6 +279,32 @@ const BODY = {
             '    if (cc.x >= 0.0 && cc.x < 12.0 && cc.y >= 0.0 && cc.y < 17.0) {',
             '        if (bit(curB(cc.y), cc.x) > 0.5) c = vec3(0.0);',
             '        else if (bit(curW(cc.y), cc.x) > 0.5) c = vec3(1.0);',
+            '    }',
+        ]);
+    },
+    pocket(S) {
+        const bx0 = 18, by0 = 10, bx1 = LOGO_W - 18, by1 = LOGO_H - 10, lx0 = 70, ly0 = 26, lx1 = LOGO_W - 34, ly1 = LOGO_H - 30;
+        const k = 1.22, bcx = LOGO_W / 2, bcy = BY - H / 2, scx = (lx0 + lx1) / 2, scy = (ly0 + ly1) / 2;
+        return [
+            '    c = ' + v3(S.body) + ';',
+            // the bezel: rounded, the lower right corner rounder
+            '    vec2 bq = clamp(p, vec2(' + f1(bx0 + 14) + ', ' + f1(by0 + 14) + '), vec2(' + f1(bx1 - 14) + ', ' + f1(by1 - 14) + '));',
+            '    float bz = length(p - bq) - 14.0;',
+            '    vec2 rq = clamp(p, vec2(' + f1(bx0 + 40) + ', ' + f1(by0 + 40) + '), vec2(' + f1(bx1 - 40) + ', ' + f1(by1 - 40) + '));',
+            '    if (p.x > ' + f1(bx1 - 40) + ' && p.y > ' + f1(by1 - 40) + ') bz = length(p - rq) - 40.0;',
+            '    c = paint(c, cov(bz), ' + v3(S.bezel) + ');',
+            // the power light
+            '    { float l = length(p - vec2(' + f1(bx0 + 26) + ', ' + f1(scy - 20) + ')); c = min(c + ' + v3(S.led) + ' * 0.5 * soft(l - 5.0, 4.0), vec3(1.0)); c = paint(c, cov(l - 4.5), ' + v3(S.led) + '); }',
+            // the screen: lightest green, a dot grid
+            '    if (p.x >= ' + f1(lx0) + ' && p.x < ' + f1(lx1) + ' && p.y >= ' + f1(ly0) + ' && p.y < ' + f1(ly1) + ') {',
+            '        c = ' + v3(S.s3) + ';',
+            '        if (mod(p.x - ' + f1(lx0) + ', 6.0) < 1.0 || mod(p.y - ' + f1(ly0) + ', 6.0) < 1.0) c = mix(c, ' + v3(S.s2) + ', 0.45);',
+            // the badge, sampled at the middle of each 6 px dot, scaled into the screen
+            '        vec2 cell = floor((p - vec2(' + f1(lx0) + ', ' + f1(ly0) + ')) / 6.0) * 6.0 + vec2(' + f1(lx0 + 3) + ', ' + f1(ly0 + 3) + ');',
+            '        q = badge((cell - vec2(' + f1(scx) + ', ' + f1(scy) + ')) * ' + f1(k) + ' + vec2(' + f1(bcx) + ', ' + f1(bcy) + '));',
+            '        bool dot = mod(p.x - ' + f1(lx0) + ', 6.0) >= 1.0 && mod(p.y - ' + f1(ly0) + ', 6.0) >= 1.0;',
+        ].concat(gD().map((l) => '    ' + l), STRIPES.map((b, i) => '            if (dot && sdBox(q, ' + v4(b) + ') < 0.0) c = ' + v3(S.stripes[i]) + ';'), [
+            '        if (dot && g < 0.0) c = ' + v3(S.g) + ';',
             '    }',
         ]);
     },
