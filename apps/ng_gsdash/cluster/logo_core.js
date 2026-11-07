@@ -11,6 +11,7 @@
  *   simracing  shift-light stripes, a white G with a purple "session best" bar, timing underline
  *   lumen      an ice-blue neon-tube G with a bloom over a deep-blue body, glowing stripes
  *   digital-purple, digital-red (0.14.0)  Digital's in the variant's colours (tints.js)
+ *   pocket-purple, -clear, -red, -yellow, -teal (0.29.0)  Pocket's console in the variant's shell colour
  *   desktop    a late-90s desktop: a bevelled grey window with a navy gradient title bar on teal, the badge
  *              in it in VGA colours (scaled to fit), a pixel arrow pointer aimed at the G (original art)
  *   pocket     a pocket console's slate bezel with a red power light round a four-shade green dot-matrix
@@ -70,6 +71,8 @@ const LOOKS = {
 (function () {
     const TINTS = require('./tints');
     TINTS.VARIANTS.digital.slice(1).forEach((v) => { LOOKS['digital-' + v.id] = { lit: v.c.lit, acc: v.c.amb }; });
+    // 0.29.0: Pocket's shells - the same console, its body in the variant's colour
+    TINTS.VARIANTS.pocket.slice(1).forEach((v) => { LOOKS['pocket-' + v.id] = Object.assign({}, LOOKS.pocket, { body: v.c.logo }); });
 }());
 const ORDER = ['m', 'gt', 'digital', 'simracing', 'lumen', 'desktop', 'pocket', 'heist', 'arcade', 'pod', 'ccc'].concat(Object.keys(LOOKS).filter((k) => k.indexOf('-') > 0));
 /** the shader body a look (or variant) is drawn with */

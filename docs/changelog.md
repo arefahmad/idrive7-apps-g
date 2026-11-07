@@ -1,5 +1,14 @@
 # Changelog
 
+## G's Dash 0.29.0
+
+- Pocket comes in six shell colours, picked on Options' Theme card: Classic (the grey, as before), Clear
+  Purple and Clear - see-through shells with the circuit board showing inside (copper traces, chips, a
+  ribbon connector, screw posts) - and solid Red, Yellow and Teal. Each has its own buttons, cross pad,
+  printed labels and speaker slots; the screen keeps its four greens in every one.
+- The cluster logo's console takes the shell's colour too (logo_pocket-<colour>.png as the fallbacks); the
+  HUD stays the screen's greens.
+
 ## G's Dash 0.28.1
 
 - Pocket: with Spotify or the Logo as the right panel, the screen's left part spread under the panel, so
