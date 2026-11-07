@@ -60,6 +60,7 @@ const VIZ = require('./viz');
 const zlib = require('zlib');
 const WLOGO = require('./widget_logo');
 const CT = require('./cluster_toggle');
+const CAR = require('./car_player');
 const Lyrics = LyricsLib.Lyrics;
 
 const NAME = "G's Music";
@@ -274,9 +275,11 @@ mgu.run({
         const sp = new Spotify(ctx.dataDir, log);
         const qs = new QrSignIn(sp, log, signinConfig);
 
-        // what the screen shows
-        let pb = null;               // playback (fromPlayer), null = nothing playing
+        // what the screen shows (0.10.0: Spotify's or the car's, pickSource())
+        let pb = null;               // playback (fromPlayer, or the car's: CAR.asPlayback), null = nothing playing
         let status = 'starting';     // noauth | offline | reauth | ok | idle | error
+        // 0.10.0: Spotify's own state (poll()) and the source shown: 'spotify' | 'car' (Apple Music over CarPlay...)
+        let spPb = null, spStatus = 'starting', src = 'spotify';
         let detail = '';             // error text for the screen
         let liked = null, likedUri = '';
         let artUrl = '', artReady = false, artBusy = false, artTint = '', artPal = [];
@@ -315,25 +318,48 @@ mgu.run({
         }
         async function poll() {
             if (polling) return;
-            if (!sp.loadAuth()) { status = 'noauth'; detail = sp.authError || ''; pb = null; labels(); return; }
+            if (!sp.loadAuth()) { spStatus = 'noauth'; detail = sp.authError || ''; spPb = null; pickSource(); labels(); return; }
+            // 0.10.0: Music from the car only: Spotify isn't asked (its sign-in is kept)
+            if (srcMode() === 'car') { if (spStatus === 'starting') spStatus = 'idle'; spPb = null; pickSource(); labels(); return; }
             polling = true;
             try {
                 const j = await sp.player();
-                if (!j) { status = 'idle'; pb = null; detail = ''; }
+                if (!j) { spStatus = 'idle'; spPb = null; detail = ''; }
                 else {
-                    pb = fromPlayer(j); status = 'ok'; detail = '';
-                    loadArt(pb.art);
-                    if (pb.uri && pb.uri !== likedUri && /^spotify:(track|episode):/.test(pb.uri)) {
-                        likedUri = pb.uri; liked = null;
-                        sp.isSaved(pb.uri).then((v) => { if (likedUri === pb.uri) liked = v; }, (e) => log.warn('liked: ' + e.message));
+                    const p = fromPlayer(j);
+                    spPb = p; spStatus = 'ok'; detail = '';
+                    if (p.uri && p.uri !== likedUri && /^spotify:(track|episode):/.test(p.uri)) {
+                        likedUri = p.uri; liked = null;
+                        sp.isSaved(p.uri).then((v) => { if (likedUri === p.uri) liked = v; }, (e) => log.warn('liked: ' + e.message));
                     }
                 }
             } catch (e) {
-                if (e.code !== 'RATE') { status = errStatus(e); detail = e.message; }
+                if (e.code !== 'RATE') { spStatus = errStatus(e); detail = e.message; }
                 log.warn('spotify: ' + (e.code || '') + ' ' + e.message);
             }
             polling = false;
+            pickSource();
             labels();
+        }
+        /*
+         * 0.10.0, what the car plays (car_player.js): Apple Music over CarPlay (or Bluetooth, USB) from the car's own
+         * media player, read-only; its artwork from Apple's iTunes search. Setting "source" (Music from): Auto
+         * (Spotify while it plays, else the car's), Spotify, or The car. pickSource() makes pb / status the one shown.
+         */
+        const car = new CAR.CarPlayer(ctx.signals, log);
+        car.start().catch((e) => log.warn('car player: ' + (e && e.message)));
+        const carArt = new CAR.ItunesArt((m, h, p, hd) => sp.request(m, h, p, hd), log, ART_PX);
+        const srcMode = () => (CAR.MODES.indexOf(settings.get('source')) >= 0 ? settings.get('source') : 'auto');
+        function pickSource() {
+            const ct = car.track(), was = src;
+            src = CAR.choose(srcMode(), { status: spStatus, pb: spPb }, ct);
+            if (src === 'car') {
+                pb = ct ? CAR.asPlayback(ct) : null;
+                if (pb) pb.art = carArt.url(ct);
+                status = ct ? 'ok' : 'idle';
+            } else { pb = spPb; status = spStatus; }
+            if (pb) loadArt(pb.art);
+            if (was !== src) { log.info('source: ' + (src === 'car' ? 'the car' + (ct ? ' (' + ct.source + ')' : '') : 'Spotify')); labels(); }
         }
         // the cluster's picture (music_cluster.js): lyrics or the visualizer while a track plays
         const mc = new MC.MusicCluster({ log, app: 'ng_spotify', Canvas });
@@ -361,6 +387,7 @@ mgu.run({
         };
         shareSetting();
         const clusterTick = () => {
+            pickSource();                           // 0.10.0: the car's song moves on between Spotify's polls
             const ok = status === 'ok' && !!pb;
             const t = ok && pb.title && !pb.ad ? { uri: pb.uri, title: pb.title, artist: pb.artist, kind: pb.kind, duration: pb.duration, ad: pb.ad } : null;
             const want = clusterOn() && t && clusterSetting() === 'lyrics' && pb.kind !== 'episode';
@@ -377,7 +404,7 @@ mgu.run({
         process.once('exit', () => { mc.close(); mh.close(); });
         settings.onChange((k) => {
             if (k === 'hud') shareSetting();
-            if (k === 'hud' || k === 'clusterSize') { nextPoll = 0; clusterTick(); return; }
+            if (k === 'hud' || k === 'clusterSize' || k === 'source') { nextPoll = 0; clusterTick(); return; }
             if (k !== 'cluster') return;
             if (CT.isOn(settings.get('cluster')) && settings.get(CT.LAST_KEY) !== settings.get('cluster')) settings.set(CT.LAST_KEY, settings.get('cluster'));
             shareSetting(); nextPoll = 0; clusterTick();
@@ -398,7 +425,8 @@ mgu.run({
         });
         /** How often Spotify is read for the cluster (or the HUD) alone (screen and widget not up): 0 = not. */
         const clusterEvery = () => {
-            if (!(clusterOn() || hudOn()) || (status !== 'ok' && status !== 'idle')) return 0;
+            if (!(clusterOn() || hudOn()) || (spStatus !== 'ok' && spStatus !== 'idle') || srcMode() === 'car') return 0;
+            if (src === 'car') return CLUSTER_IDLE_MS;   // 0.10.0: the car's song shown: Spotify asked now and then (Auto)
             if (pb && pb.playing) {
                 // a poll just after the track ends, so the next track's lyrics are on time
                 const left = pb.duration ? pb.duration - position() : 1e9;
@@ -443,7 +471,7 @@ mgu.run({
             }
             qs.tick().then((ok) => {
                 if (!ok) { labels(); return; }
-                qrMode = false; status = 'starting'; detail = '';
+                qrMode = false; spStatus = 'starting'; detail = ''; pickSource();
                 say('Signed in to Spotify', 4000);
                 nextPoll = 0; poll();
             }, (e) => log.warn('phone sign-in: ' + e.message));
@@ -470,7 +498,10 @@ mgu.run({
          * A player command: fn() the request, local() the screen's state at once (the next poll
          * confirms it). errs: { status: text } for this command's own refusals.
          */
+        /** 0.10.0: the car's song is read-only: the phone or the car's own buttons control it. */
+        const carSay = () => { say('Playing from ' + ((pb && pb.device) || 'the car') + ": control it on your phone or with the car's buttons", 4500); };
         async function run(what, fn, local, errs) {
+            if (src === 'car') { carSay(); return; }
             if (status !== 'ok' && status !== 'idle') { say(status === 'noauth' ? 'Not signed in to Spotify' : status === 'offline' ? 'No internet (phone / Wi-Fi uplink)' : 'Spotify: ' + (detail || status)); return; }
             try {
                 await fn();
@@ -489,6 +520,7 @@ mgu.run({
         }
         /** Pause, or play: spotify.js start() resumes, else the last track, else the Liked Songs shuffled, on a device it finds. */
         const togglePlay = () => {
+            if (src === 'car') return carSay();
             const was = pb, playing = !!(pb && pb.playing);
             if (playing) return run('pause', () => sp.pause(), () => { pb.progress = position(); pb.at = Date.now(); pb.playing = false; });
             return run('play', async () => started(await sp.start()), () => { if (pb === was) { pb.at = Date.now(); pb.playing = true; } });
@@ -504,6 +536,7 @@ mgu.run({
         }
         /** Seek to ms (the progress bar: a tap, or a drag let go). The bar goes there at once. */
         const seekTo = (ms) => {
+            if (src === 'car') return carSay();
             if (!pb || !pb.duration) return;
             ms = Math.max(0, Math.min(pb.duration - 1000, Math.round(ms)));
             // (a refused seek: the next poll, soon after, puts the bar back)
@@ -512,21 +545,25 @@ mgu.run({
         };
         /** Next, or Previous as other players: past 3 s into the track back to its start (the bar at 0 at once), else the track before (spotify.js back). */
         const skip = (dir) => {
+            if (src === 'car') return carSay();
             if (dir > 0) return run('next', () => sp.next(), () => { pb.progress = 0; pb.at = Date.now(); });
             const at = position();
             if (pb && Spotify.restarts(at) && (status === 'ok' || status === 'idle')) { pb.progress = 0; pb.at = Date.now(); }
             return run('previous', () => sp.back(at), () => { pb.progress = 0; pb.at = Date.now(); });
         };
         const toggleShuffle = () => {
+            if (src === 'car') return carSay();
             const on = !(pb && pb.shuffle);
             return run('shuffle', () => sp.shuffle(on), () => { pb.shuffle = on; });
         };
         // off -> all (context) -> one (track) -> off, as the Spotify app's repeat button
         const cycleRepeat = () => {
+            if (src === 'car') return carSay();
             const next = REPEAT_NEXT[(pb && pb.repeat) || 'off'];
             return run('repeat', () => sp.repeat(next), () => { pb.repeat = next; });
         };
         const toggleLike = () => {
+            if (src === 'car') return carSay();
             if (!pb || !pb.uri) { say('Nothing playing'); return; }
             const uri = pb.uri, on = !liked;
             return run(on ? 'save' : 'remove', () => (on ? sp.save(uri) : sp.unsave(uri)), () => { liked = on; say(on ? 'Saved to Liked Songs' : 'Removed from Liked Songs'); });
@@ -564,7 +601,7 @@ mgu.run({
         }
         /** One line on the sign-in and what plays (More menu, the settings page). */
         function info() {
-            const qrOn = qs.configured();
+            const qrOn = qs.configured(), status = spStatus, pb = spPb;   // 0.10.0: Spotify's own, whatever is shown
             return status === 'noauth' && qrOn ? 'Not signed in: scan the QR code on the ' + NAME + ' screen'
                 : status === 'reauth' && qrOn ? 'Sign-in needs renewing: scan the QR code on the ' + NAME + ' screen'
                 : qrMode && qs.active() ? 'Phone sign-in: scan the QR code on the ' + NAME + ' screen'
@@ -737,7 +774,7 @@ mgu.run({
             // the artwork's colour washes the page faintly
             // (marked: it carries on under the back arrow column)
             if (artReady && artTint) G.background(cv, (c) => c.gradientRect(0, 0, 1600, Q.A.bottom + 8, [[0, G.withAlpha(artTint, WASH)], [1, G.withAlpha(artTint, 0)]]));
-            artBox(cv, t, Q, artReady, pb.album || pb.title || 'Spotify');
+            artBox(cv, t, Q, artReady, pb.album || pb.title || (pb.car ? 'Apple Music' : 'Spotify'));
             cv.text(fit(cv, pb.ad ? 'Advertisement' : pb.title || 'Unknown track', 54, W - 240, { font: 'bold' }), X, y0 + 56, 54, t.text, { font: 'bold', literal: true });
             // artist, then the album dimmer, on one line
             const aw = cv.textWidth(LyricsLib.fold(pb.artist), 30, { literal: true });
@@ -750,8 +787,11 @@ mgu.run({
             if (isDown(lk)) cv.circle(hx, hy, 46, G.withAlpha(t.sel || t.accent, 0.25));
             // (the outline's inside: the background there, the wash included)
             const inside = artReady && artTint ? G.mix(t.bg, artTint, WASH * (1 - hy / (Q.A.bottom + 8))) : t.bg;
-            if (liked) heart(cv, hx, hy, 50, t.crit); else heartOutline(cv, hx, hy, 50, !pb.uri ? t.track : t.dim, inside);
-            FS.button(cv, lk, hx - 48, hy - 48, 96, 96, () => { downKey = lk; downAt = Date.now(); return toggleLike(); }, { r: 48 });
+            // 0.10.0: no heart for the car's song (Spotify's Liked Songs); the Cluster button keeps its place
+            if (!pb.car) {
+                if (liked) heart(cv, hx, hy, 50, t.crit); else heartOutline(cv, hx, hy, 50, !pb.uri ? t.track : t.dim, inside);
+                FS.button(cv, lk, hx - 48, hy - 48, 96, 96, () => { downKey = lk; downAt = Date.now(); return toggleLike(); }, { r: 48 });
+            }
             clusterButton(cv, t, hx - 112, hy);
 
             // progress (moved on locally between polls; a finger on the bar shows where it will seek)
@@ -768,8 +808,8 @@ mgu.run({
             const mid = scrub ? 'SEEK TO ' + fmt(pos) : (pb.playing ? 'PLAYING' : 'PAUSED') + (pb.device ? ' ON ' + pb.device.toUpperCase() : '');
             cv.text(fit(cv, mid, 18, W - 260, { font: 'bold', spacing: 2 }), X + W / 2, by + 48, 18, pb.playing || scrub ? on : t.text, { font: 'bold', spacing: 2, align: 'center', literal: true });
             cv.text(dur ? '-' + fmt(dur - pos) : '', X + W, by + 50, 26, t.dim, { font: 'num', align: 'right', literal: true });
-            // the touch band: the bar and well around it (~80 screen px tall, the column's width)
-            if (dur) seekBand = { x: X, w: W, y0: by - 34, y1: by + 36 };
+            // the touch band: the bar and well around it (~80 screen px tall, the column's width); none for the car's song
+            if (dur && !pb.car) seekBand = { x: X, w: W, y0: by - 34, y1: by + 36 };
         }
 
         /* ----- the stage: lyrics or the visualizer ----- */
@@ -844,6 +884,7 @@ mgu.run({
         const DOCK = ['shuffle', 'prev', 'play', 'next', 'repeat'];
         function drawDock(cv, t, Q) {
             const x0 = Q.X, w = Q.dockR - Q.X, y0 = Q.DY, h = DOCK_H, cw = w / DOCK.length, cy = y0 + 48, sz = 44;
+            if (src === 'car') { carDock(cv, t, x0, y0, w, h); return; }
             const have = !!pb, rep = (pb && pb.repeat) || 'off', on = t.accent2 || t.accent, off = t.dim, dim = have ? t.text : t.dim;
             cv.roundRect(x0, y0, w, h, 18, G.withAlpha('#ffffff', 0.045));
             cv.strokeRoundRect(x0, y0, w, h, 18, 1, G.withAlpha('#ffffff', 0.12));
@@ -881,6 +922,15 @@ mgu.run({
             });
         }
 
+        /** 0.10.0: the dock while the car's song shows: where it plays and that it is controlled there (read-only here). */
+        function carDock(cv, t, x0, y0, w, h) {
+            cv.roundRect(x0, y0, w, h, 18, G.withAlpha('#ffffff', 0.045));
+            cv.strokeRoundRect(x0, y0, w, h, 18, 1, G.withAlpha('#ffffff', 0.12));
+            const where = pb ? (pb.device === 'CarPlay' ? 'Apple Music on CarPlay' : 'Playing over ' + pb.device) : 'Music from the car';
+            cv.text(fit(cv, where, 28, w - 48, { font: 'bold' }), x0 + w / 2, y0 + 50, 28, t.text, { font: 'bold', align: 'center', literal: true });
+            cv.text(fit(cv, "Control it on your phone or with the car's buttons", 20, w - 48), x0 + w / 2, y0 + 86, 20, t.dim, { align: 'center', literal: true });
+        }
+
         /**
          * Nothing playing: what to do, in words only (0.7.9: the Shuffle Liked Songs button of 0.7.0 removed;
          * Play in the dock still picks up the last track).
@@ -889,8 +939,14 @@ mgu.run({
             artBox(cv, t, Q, false);
             const X = Q.X, y0 = Q.A.y;
             cv.text('Nothing playing', X, y0 + 104, 56, t.text, { font: 'bold' });
-            cv.text(fit(cv, 'Open Spotify on your phone to play music', 28, Q.W), X, y0 + 160, 28, t.dim, { literal: true });
-            cv.text(fit(cv, 'Or tap Play to pick up your last track.', 24, Q.W), X, y0 + 200, 24, t.dim, { literal: true });
+            // 0.10.0: Apple Music over CarPlay too (Settings: Music from)
+            if (src === 'car') {
+                cv.text(fit(cv, 'Play Apple Music on your iPhone with CarPlay', 28, Q.W), X, y0 + 160, 28, t.dim, { literal: true });
+                cv.text(fit(cv, 'The lyrics follow what the car plays.', 24, Q.W), X, y0 + 200, 24, t.dim, { literal: true });
+                return;
+            }
+            cv.text(fit(cv, 'Open Spotify on your phone, or play Apple Music with CarPlay', 28, Q.W), X, y0 + 160, 28, t.dim, { literal: true });
+            cv.text(fit(cv, 'Or tap Play to pick up your last Spotify track.', 24, Q.W), X, y0 + 200, 24, t.dim, { literal: true });
         }
 
         /**
@@ -941,6 +997,8 @@ mgu.run({
             else line('', 'Waiting for the phone' + (qs.message ? ' (' + qs.message + ')' : '') + '   new code in ' + mm + ':' + (ss < 10 ? '0' : '') + ss, t.dim, 22);
             if (status === 'reauth') line('', 'A sign-in lasts 6 months at most (Spotify).', t.dim, 20);
             line('', 'Phone and car both need internet.', t.dim, 20);
+            // 0.10.0: Apple Music needs none of this
+            if (srcMode() === 'auto' && !qrMode) line('', 'Apple Music over CarPlay needs no sign-in: it shows here as soon as it plays.', t.dim, 20);
             // buttons along the bottom, the G at the end
             const bw = (Q.dockR - X - 16) / 2;
             action(cv, t, 'qr:new', X, Q.DY, bw, DOCK_H, 'New code', () => { qrErrorAt = 0; qs.start(knownClientId()); say('New sign-in code'); });
@@ -1001,6 +1059,8 @@ mgu.run({
             }, () => mh.view()],
             ['clusterSize', 'Cluster & HUD size', (v) => ({ small: 'Small', medium: 'Medium', large: 'Large' })[v] || v],
         ];
+        // 0.10.0: where the music comes from (drawn in the left column)
+        const SOURCE_ROW = ['source', 'Music from', (v) => ({ auto: 'Spotify, else the car', spotify: 'Spotify', car: 'The car (Apple Music)' })[v] || v, () => car.view()];
         function drawSettings(cv, t, A) {
             const hy = A.y, cyH = hy + HEAD_H / 2;
             // header row: Back (left), the page's name, version and the G lit (right, also back)
@@ -1021,33 +1081,40 @@ mgu.run({
             lbl('Spotify', A.x, top + 20);
             const ih = 150, iy = top + 36;
             cv.roundRect(A.x, iy, colW, ih, 14, G.withAlpha('#ffffff', 0.03));
-            const st = status === 'ok' || status === 'idle' ? 'Signed in' : status === 'noauth' ? 'Not signed in'
-                : status === 'reauth' ? 'Sign-in needs renewing' : status === 'offline' ? 'No internet' : status === 'starting' ? 'Connecting' : 'Spotify error';
-            const good = status === 'ok' || status === 'idle';
+            const ss = spStatus;                    // 0.10.0: Spotify's own, whatever is shown
+            const st = ss === 'ok' || ss === 'idle' ? 'Signed in' : ss === 'noauth' ? 'Not signed in'
+                : ss === 'reauth' ? 'Sign-in needs renewing' : ss === 'offline' ? 'No internet' : ss === 'starting' ? 'Connecting' : 'Spotify error';
+            const good = ss === 'ok' || ss === 'idle';
             cv.circle(A.x + 26, iy + 34, 8, good ? '#2fd27a' : t.warn);
             cv.text(st, A.x + 46, iy + 42, 28, t.text, { font: 'bold', literal: true });
             wrap(cv, info(), 22, colW - 40, 3).forEach((s, i) => cv.text(s, A.x + 20, iy + 82 + i * 30, 22, t.dim, { literal: true }));
             const ah = 84, ay = iy + ih + 16;
             const qrOn = qrMode && qs.active();
             action(cv, t, 'set:signin', A.x, ay, colW, ah, qrOn ? 'Cancel phone sign-in' : 'Sign in with phone (QR)', () => startQr(), { lit: qrOn });
+            // 0.10.0: where the music comes from, under Spotify's sign-in (the right column is full)
+            const sy = ay + ah + 16, sh = Math.min(110, A.bottom - sy);
+            if (sh >= 64) settingRow(cv, t, SOURCE_ROW, A.x, sy, colW, sh);
             // right: the settings, one card each
             lbl('Settings', rx, top + 20);
             const nr = SET_ROWS.length, rgap = 12, rh = Math.min(120, (A.bottom - (top + 36) - (nr - 1) * rgap) / nr);
-            SET_ROWS.forEach((r, i) => {
-                const y = top + 36 + i * (rh + rgap), key = 'set:' + r[0];
-                plate(cv, t, rx, y, colW, rh, false, isDown(key));
-                cv.text(r[1].toUpperCase(), rx + 20, y + rh / 2 - 6, 15, t.dim, { font: 'bold', spacing: 1.5, literal: true });
-                cv.text(r[2](settings.get(r[0])), rx + 20, y + rh / 2 + 22, 24, t.text, { font: 'bold', literal: true });
-                if (r[3]) {
-                    // the row's live state (the cluster's), right-aligned before the arrow
-                    const sv = r[3](), sc = sv.kind === 'on' ? '#2fd27a' : sv.kind === 'error' || sv.kind === 'none' ? t.warn : t.dim;
-                    cv.text(sv.text, rx + colW - 52, y + rh / 2 + 20, 18, sc, { align: 'right', literal: true });
-                }
-                const ax = rx + colW - 28, ay2 = y + rh / 2;
-                cv.line(ax - 6, ay2 - 10, ax + 4, ay2, 2.5, t.dim);
-                cv.line(ax + 4, ay2, ax - 6, ay2 + 10, 2.5, t.dim);
-                FS.button(cv, key, rx, y, colW, rh, () => { downKey = key; downAt = Date.now(); settings.cycle(r[0]); }, { slop: 6, r: 14 });
-            });
+            SET_ROWS.forEach((r, i) => settingRow(cv, t, r, rx, top + 36 + i * (rh + rgap), colW, rh));
+        }
+        /** One setting's card (a tap steps it on): its name, its value, its live state right-aligned (r[3]). */
+        function settingRow(cv, t, r, x, y, w, h) {
+            const key = 'set:' + r[0];
+            plate(cv, t, x, y, w, h, false, isDown(key));
+            cv.text(r[1].toUpperCase(), x + 20, y + h / 2 - 6, 15, t.dim, { font: 'bold', spacing: 1.5, literal: true });
+            cv.text(r[2](settings.get(r[0])), x + 20, y + h / 2 + 22, 24, t.text, { font: 'bold', literal: true });
+            if (r[3]) {
+                // the row's live state (the cluster's, the car's), right-aligned before the arrow
+                const sv = r[3](), sc = sv.kind === 'on' ? '#2fd27a' : sv.kind === 'error' || sv.kind === 'none' ? t.warn : t.dim;
+                const vw = cv.textWidth(r[2](settings.get(r[0])), 24, { font: 'bold', literal: true });
+                cv.text(fit(cv, sv.text, 18, Math.max(40, w - 52 - 20 - vw - 24)), x + w - 52, y + h / 2 + 20, 18, sc, { align: 'right', literal: true });
+            }
+            const ax = x + w - 28, ay2 = y + h / 2;
+            cv.line(ax - 6, ay2 - 10, ax + 4, ay2, 2.5, t.dim);
+            cv.line(ax + 4, ay2, ax - 6, ay2 + 10, 2.5, t.dim);
+            FS.button(cv, key, x, y, w, h, () => { downKey = key; downAt = Date.now(); settings.cycle(r[0]); }, { slop: 6, r: 14 });
         }
         /* ----- home-screen widget (app.json startWidget) -----
          * As G's Dash's widget (same layout: BMW's Drive Recorder widget), but live while something plays:

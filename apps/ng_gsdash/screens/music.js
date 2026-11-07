@@ -15,6 +15,10 @@
  * Polls GET /v1/me/player only while the panel or the Spotify page is on screen, every
  * 3 s (as G's Music); after a 429 nothing is sent until Spotify's Retry-After has passed (spotify.js).
  * Not signed in, offline or nothing playing: says so, never a made-up track (no demo data).
+ * 0.30.0: what the car plays too (car_player.js, shared in from G's Music): Apple Music over CarPlay (or
+ * Bluetooth, USB) from the car's own media player. While Spotify isn't playing and the car is, the panel shows
+ * the car's song (its artwork from Apple's iTunes search), read-only: no controls, a line saying the phone or
+ * the car's buttons control it. The Spotify page stays about Spotify's sign-in.
  * Node 8: no ?., no ??, no object spread.
  */
 const G = require('./kit/gauges');
@@ -24,6 +28,7 @@ const QrSignIn = require('./signin').QrSignIn;
 const signinConfig = require('./signin_config');
 const qrcodegen = require('./qrcodegen');
 const decodeJpeg = require('./jpeg_decoder');
+const CAR = require('./car_player');
 
 const { withAlpha, clamp } = G;
 const ART_ID = 1;                   // pixel image id (record.setImage)
@@ -121,29 +126,36 @@ class Music {
         this.sp = new Spotify(ctx.dataDir, ctx.log);
         this.qs = new QrSignIn(this.sp, ctx.log, signinConfig);
         this.pb = null; this.status = 'starting'; this.detail = '';
+        // 0.30.0: Spotify's own state (poll()) and the source shown ('spotify' | 'car'); pb / status: the one shown (_pick())
+        this.spPb = null; this.spStatus = 'starting'; this.src = 'spotify';
+        this.car = new CAR.CarPlayer(ctx.signals, ctx.log);
+        this.car.start().catch((e) => this.log.warn('car player: ' + (e && e.message)));
+        this.carArt = new CAR.ItunesArt((m, h, p, hd) => this.sp.request(m, h, p, hd), ctx.log, ART_PX);
         this.artUrl = ''; this.artReady = false; this.artBusy = false;
         this.nextPoll = 0; this.polling = false; this.toast = null;
         this.qrMode = false; this.qrErrorAt = 0; this.qrPic = null;
         this.band = null; this.scrub = null; this.downKey = ''; this.downAt = 0;
         this.signOutAt = 0;
-        this.settings.onChange((k) => { if (k === 'panel' || k === undefined) { this.pb = null; this.artUrl = ''; this.artReady = false; this.nextPoll = 0; } });
+        this.settings.onChange((k) => { if (k === 'panel' || k === undefined) { this.pb = null; this.spPb = null; this.artUrl = ''; this.artReady = false; this.nextPoll = 0; } });
         setInterval(() => this._tick(), 500);
     }
 
     say(text, ms) { this.toast = { text: text, until: Date.now() + (ms || 3500) }; }
     every() { return POLL_MS; }
     connected() { return this.status === 'ok' || this.status === 'idle'; }
-    signedIn() { return this.status === 'ok' || this.status === 'idle' || this.status === 'offline' || this.status === 'error'; }
+    signedIn() { const s = this.spStatus; return s === 'ok' || s === 'idle' || s === 'offline' || s === 'error'; }   // 0.30.0: Spotify's own
     /** Sign out: forget G's Dash's own Spotify sign-in (its spotify-auth.json; G's Music keeps its own). */
     signOut() {
         try { require('fs').unlinkSync(this.sp.authFile); } catch (e) { if (e.code !== 'ENOENT') { this.say('Could not sign out: ' + e.message); return; } }
         this.sp.auth = null; this.sp.authMtime = 0; this.sp.dead = null;
-        this.pb = null; this.artUrl = ''; this.artReady = false; this.status = 'noauth'; this.detail = '';
+        this.spPb = null; this.artUrl = ''; this.artReady = false; this.spStatus = 'noauth'; this.detail = '';
+        this._pick();
         this.log.info('spotify: signed out');
         this.say('Signed out of Spotify');
     }
 
     _tick() {
+        this._pick();
         const shown = this.o.shown();
         if (shown && Date.now() >= this.nextPoll) { this.nextPoll = Date.now() + this.every(); this.poll(); }
         if (this.o.qrShown()) this._qrStep(); else if (this.qs.phase === 'waiting') { this.qs.cancel(); this.qrMode = false; }
@@ -172,25 +184,40 @@ class Music {
     }
     async poll() {
         if (this.polling) return;
-        if (!this.sp.loadAuth()) { this.status = 'noauth'; this.detail = this.sp.authError || ''; this.pb = null; return; }
+        if (!this.sp.loadAuth()) { this.spStatus = 'noauth'; this.detail = this.sp.authError || ''; this.spPb = null; this._pick(); return; }
         this.polling = true;
         try {
             const j = await this.sp.player();
-            if (!j) { this.status = 'idle'; this.pb = null; this.detail = ''; }
-            else { this.pb = fromPlayer(j); this.status = 'ok'; this.detail = ''; this.loadArt(this.pb.art); }
+            if (!j) { this.spStatus = 'idle'; this.spPb = null; this.detail = ''; }
+            else { this.spPb = fromPlayer(j); this.spStatus = 'ok'; this.detail = ''; }
         } catch (e) {
-            if (e.code !== 'RATE') { this.status = this.errStatus(e); this.detail = e.message; if (this.status !== 'ok' && this.status !== 'idle') this.pb = null; }
+            if (e.code !== 'RATE') { this.spStatus = this.errStatus(e); this.detail = e.message; if (this.spStatus !== 'ok' && this.spStatus !== 'idle') this.spPb = null; }
             this.log.warn('spotify: ' + (e.code || '') + ' ' + e.message);
         }
         this.polling = false;
+        this._pick();
     }
+    /** 0.30.0: what the panel shows: Spotify while it plays, else what the car plays, else Spotify's state (car_player.js choose()). */
+    _pick() {
+        const ct = this.car.track(), was = this.src;
+        this.src = CAR.choose('auto', { status: this.spStatus, pb: this.spPb }, ct);
+        if (this.src === 'car') {
+            this.pb = ct ? CAR.asPlayback(ct) : null;
+            if (this.pb) this.pb.art = this.carArt.url(ct);
+            this.status = ct ? 'ok' : 'idle';
+        } else { this.pb = this.spPb; this.status = this.spStatus; }
+        if (this.pb) this.loadArt(this.pb.art);
+        if (was !== this.src) { this.scrub = null; this.log.info('music panel: ' + (this.src === 'car' ? 'the car' + (ct ? ' (' + ct.source + ')' : '') : 'Spotify')); }
+    }
+    /** 0.30.0: the car's song is controlled on the phone or with the car's buttons. */
+    carSay() { this.say("Playing from " + ((this.pb && this.pb.device) || 'the car') + ": use your phone or the car's buttons"); }
 
     /* ----- sign-in with the phone (signin.js): only while the Spotify page shows the code ----- */
     knownClientId() {
         if (this.sp.auth && this.sp.auth.client_id) return this.sp.auth.client_id;
         try { const a = JSON.parse(require('fs').readFileSync(this.sp.authFile, 'utf8')); return a && typeof a.client_id === 'string' ? a.client_id : ''; } catch (e) { return ''; }
     }
-    wantQr() { return this.qs.configured() && (this.qrMode || this.status === 'noauth' || this.status === 'reauth'); }
+    wantQr() { return this.qs.configured() && (this.qrMode || this.spStatus === 'noauth' || this.spStatus === 'reauth'); }   // 0.30.0: Spotify's own
     _qrStep() {
         const qs = this.qs;
         if (!this.wantQr()) { if (qs.phase === 'waiting' && !this.qrMode) qs.cancel(); return; }
@@ -215,6 +242,7 @@ class Music {
         return pb.duration ? Math.min(pb.duration, p) : p;
     }
     async run(what, fn, local) {
+        if (this.src === 'car') { this.carSay(); return; }
         if (this.status !== 'ok' && this.status !== 'idle') { this.say(this.status === 'noauth' ? 'Not signed in to Spotify' : this.status === 'offline' ? 'No internet (phone / Wi-Fi uplink)' : 'Spotify: ' + (this.detail || this.status)); return; }
         try { await fn(); if (this.pb && local) local(); } catch (e) {
             this.log.warn(what + ': ' + (e.code || '') + ' ' + e.message);
@@ -228,6 +256,7 @@ class Music {
     }
     /** Pause, or play: spotify.js start() resumes, else the last track, else the Liked Songs shuffled, on a device it finds. */
     togglePlay() {
+        if (this.src === 'car') return this.carSay();
         const pb = this.pb, playing = !!(pb && pb.playing);
         if (playing) return this.run('pause', () => this.sp.pause(), () => { pb.progress = this.position(); pb.at = Date.now(); pb.playing = false; });
         return this.run('play', async () => { this.started(await this.sp.start()); }, () => { if (this.pb === pb) { pb.at = Date.now(); pb.playing = true; } });
@@ -243,12 +272,14 @@ class Music {
     }
     /** Next, or Previous as other players: past 3 s into the track back to its start (the bar at 0 at once), else the track before (spotify.js back). */
     skip(dir) {
+        if (this.src === 'car') return this.carSay();
         if (dir > 0) return this.run('next', () => this.sp.next(), () => { this.pb.progress = 0; this.pb.at = Date.now(); });
         const at = this.position();
         if (this.pb && Spotify.restarts(at) && (this.status === 'ok' || this.status === 'idle')) { this.pb.progress = 0; this.pb.at = Date.now(); }
         return this.run('previous', () => this.sp.back(at), () => { this.pb.progress = 0; this.pb.at = Date.now(); });
     }
     seekTo(ms) {
+        if (this.src === 'car') return this.carSay();
         const pb = this.pb;
         if (!pb || !pb.duration) return;
         ms = Math.max(0, Math.min(pb.duration - 1000, Math.round(ms)));
@@ -263,7 +294,7 @@ class Music {
         const b = this.band;
         if (phase === 1) {
             this.scrub = null;
-            if (!b || !this.pb || !this.pb.duration || x < b.x - 20 || x > b.x + b.w + 20 || y < b.y0 || y > b.y1) return false;
+            if (!b || this.src === 'car' || !this.pb || !this.pb.duration || x < b.x - 20 || x > b.x + b.w + 20 || y < b.y0 || y > b.y1) return false;
             this.scrub = { f: clamp((x - b.x) / b.w, 0, 1) };
             return true;
         }
@@ -275,9 +306,10 @@ class Music {
 
     /** One line for the settings row. */
     statusLine() {
-        return this.status === 'noauth' ? 'Sign in' : this.status === 'reauth' ? 'Sign in again'
-            : this.status === 'offline' ? 'No internet' : this.status === 'error' ? 'Not answering' : this.status === 'starting' ? (this.sp.auth || require('fs').existsSync(this.sp.authFile) ? 'Signed in' : 'Sign in')
-                : this.pb && this.pb.device ? 'On ' + this.pb.device : 'Signed in';
+        const st = this.spStatus, pb = this.spPb;      // 0.30.0: Spotify's own (the entry opens the Spotify page)
+        return st === 'noauth' ? 'Sign in' : st === 'reauth' ? 'Sign in again'
+            : st === 'offline' ? 'No internet' : st === 'error' ? 'Not answering' : st === 'starting' ? (this.sp.auth || require('fs').existsSync(this.sp.authFile) ? 'Signed in' : 'Sign in')
+                : pb && pb.device ? 'On ' + pb.device : 'Signed in';
     }
 
     _press(key, fn) { return () => { this.downKey = key; this.downAt = Date.now(); return fn(); }; }
@@ -399,8 +431,9 @@ class Music {
         const ax = x, ay = short ? y : top, cx0 = tall ? x : x + s + 16, tx = tall ? x + s + 18 : cx0;
         let cR = x + w;
         if (g && g.y < cY + cH && g.y + g.h > cY && g.x < cR + pad) cR = Math.min(cR, g.x - 14);
-        // header: SPOTIFY, the state / device on the right
-        lbl('Spotify', short ? tx : x, y + 15, 16, acc);
+        // header: SPOTIFY (0.30.0: APPLE MUSIC, or the car's source, for the car's song), the state / device on the right
+        const car = this.src === 'car';
+        lbl(car ? (pb && pb.device !== 'CarPlay' ? pb.device : 'Apple Music') : 'Spotify', short ? tx : x, y + 15, 16, acc);
         const right = pb ? (pb.playing ? 'Playing' : 'Paused') + (pb.device ? ' · ' + pb.device : '') : '';
         if (right) lbl(fit(cv, u.upper ? right.toUpperCase() : right, 16, w * 0.5, { font: u.lbl || u.txt }), x + w, y + 15, 16, t.dim, { align: 'right' });
         // art (or a note when there's none)
@@ -414,7 +447,7 @@ class Music {
         const head = hasTrack ? (pb.ad ? 'Advertisement' : pb.title || 'Unknown track')
             : st === 'idle' ? 'Nothing playing' : st === 'noauth' ? 'Not signed in' : st === 'reauth' ? 'Sign in again'
                 : st === 'offline' ? 'No internet' : st === 'error' ? 'Spotify not answering' : 'Connecting...';
-        const sub = hasTrack ? pb.artist : st === 'idle' ? 'Start Spotify on your phone, or tap Play'
+        const sub = hasTrack ? pb.artist : st === 'idle' ? 'Start Spotify, or Apple Music on CarPlay'
             : st === 'noauth' || st === 'reauth' ? (own ? 'Scan a QR code with your phone' : 'Full screen layout: G > Spotify')
                 : st === 'offline' ? 'Phone hotspot / Wi-Fi uplink' : st === 'error' ? this.detail || 'Trying again' : 'Checking your Spotify';
         if (short) {
@@ -443,17 +476,18 @@ class Music {
         }
         // progress: the knob follows a dragging finger (touch); times under the bar (inline when short)
         const dur = pb ? pb.duration || 0 : 0, pos = this.scrub && dur ? this.scrub.f * dur : this.position();
+        const knob = dur && !car;                      // 0.30.0: the car's song: the bar without its knob (not seekable here)
         const f = dur ? clamp(pos / dur, 0, 1) : 0, th = SEEK_H, pxl = lk.id === 'pixel';
         const tf = { font: u.num || 'num', literal: true };
         const bx = short ? cx0 + 66 : cx0 + 6, bw = short ? (x + w) - 74 - bx : (x + w) - 6 - bx, by = short ? bY + 6 : bY + 12;
         if (pxl) {
             cv.fillRect(bx, by, bw, th, t.track || withAlpha('#ffffff', 0.15));
             if (f > 0) cv.fillRect(bx, by, Math.round(bw * f), th, pb && pb.playing ? acc : t.dim);
-            if (dur) cv.fillRect(Math.round(bx + bw * f) - 6, by + th / 2 - 8, 12, 16, this.scrub ? acc : '#ffffff');
+            if (knob) cv.fillRect(Math.round(bx + bw * f) - 6, by + th / 2 - 8, 12, 16, this.scrub ? acc : '#ffffff');
         } else {
             cv.roundRect(bx, by, bw, th, th / 2, t.track || withAlpha('#ffffff', 0.15));
             if (f > 0) cv.roundRect(bx, by, Math.max(th, bw * f), th, th / 2, pb && pb.playing ? acc : t.dim);
-            if (dur) cv.circle(bx + bw * f, by + th / 2, this.scrub ? 15 : 9, this.scrub ? acc : '#ffffff');
+            if (knob) cv.circle(bx + bw * f, by + th / 2, this.scrub ? 15 : 9, this.scrub ? acc : '#ffffff');
         }
         this.seekRect = { x: bx, y: by, w: bw, h: th };
         if (dur) {
@@ -464,7 +498,13 @@ class Music {
                 cv.text(fmt(pos), bx, by + 40, 20, t.dim, tf);
                 cv.text('-' + fmt(dur - pos), bx + bw, by + 40, 20, t.dim, Object.assign({ align: 'right' }, tf));
             }
-            if (own) this.band = { x: bx, w: bw, y0: by - 26, y1: Math.min(cY - 2, by + 34) };
+            if (own && !car) this.band = { x: bx, w: bw, y0: by - 26, y1: Math.min(cY - 2, by + 34) };
+        }
+        // 0.30.0: the car's song: where the controls go, where it is controlled
+        if (car) {
+            const msg = "Control it on your phone or with the car's buttons", my = cY + cH / 2;
+            cv.text(fit(cv, msg, short ? 17 : 19, cR - cx0), cx0 + (cR - cx0) / 2, my + 7, short ? 17 : 19, t.dim, { align: 'center', literal: true });
+            return;
         }
         // previous, play / pause, next: where the three boxes were (0.10.0: thirds of the row, 12 apart), now
         // without boxes, the glyphs PANEL_SPREAD further apart than the boxes' middles were; the targets as
@@ -506,10 +546,10 @@ class Music {
             if (pl) cv.xf();
         } else {
             cv.roundRect(A.x, A.y, side, side, Math.max(6, u.radius), withAlpha('#ffffff', 0.05));
-            if (this.connected() && this.pb && this.artReady) cv.image(ART_ID, A.x + 20, A.y + 20, side - 40, side - 40);
+            if (this.connected() && this.pb && this.src === 'spotify' && this.artReady) cv.image(ART_ID, A.x + 20, A.y + 20, side - 40, side - 40);
             else noteGlyph(cv, A.x + side / 2, A.y + side / 2, side * 0.4, withAlpha(t.text, 0.2));
         }
-        const st = this.status;
+        const st = this.spStatus;                  // 0.30.0: Spotify's own, whatever the panel shows
         const head = showQr ? (st === 'reauth' ? 'Spotify sign-in needs renewing' : st === 'noauth' ? 'Sign in to Spotify' : 'Sign in again with your phone')
             : st === 'noauth' && !qs.configured() ? 'Phone sign-in is not set up'
                 : st === 'offline' ? 'No internet connection' : st === 'error' ? 'Spotify is not answering' : st === 'starting' ? 'Connecting...'
@@ -534,9 +574,10 @@ class Music {
             say('', 'G\'s Dash keeps its own sign-in (apps can\'t read each other\'s files).', t.dim, 18);
             say('', 'Your phone remembers the Client ID from G\'s Music\'s sign-in.', t.dim, 18);
         } else if (st === 'ok' || st === 'idle') {
-            say('', this.pb ? (this.pb.title || 'Unknown track') + (this.pb.artist ? ' - ' + this.pb.artist : '') : 'Nothing playing right now', t.text);
-            say('', this.pb && this.pb.device ? 'Playing on ' + this.pb.device : 'Start Spotify on your phone or any device.', t.dim, 20);
-            say('', 'Drive shows it with Options > Theme > Right panel: Spotify.', t.dim, 20);
+            const sp = this.spPb;                  // 0.30.0: Spotify's own, whatever the panel shows
+            say('', sp ? (sp.title || 'Unknown track') + (sp.artist ? ' - ' + sp.artist : '') : 'Nothing playing on Spotify right now', t.text);
+            say('', sp && sp.device ? 'Playing on ' + sp.device : 'Start Spotify on your phone or any device.', t.dim, 20);
+            say('', 'Drive shows it with Options > Theme > Right panel: Music (also Apple Music over CarPlay).', t.dim, 20);
         } else if (st === 'offline') {
             say('', 'G\'s Dash talks to Spotify over the internet (mgu-uplink).', t.dim, 20);
             say('1', 'Turn on the phone\'s hotspot or the Wi-Fi uplink in the Store.', t.text, 22);

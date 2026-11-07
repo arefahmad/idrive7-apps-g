@@ -27,7 +27,7 @@
 - **`apps/<id>/` top level:** only `app.json` and `icon.png` (the Store reads both there), `main.js` (the entry point) and `LICENSE` (the third-party code the app bundles).
 - **Everything else goes in a folder by what it does**, never at the app's top level:
   - G's Dash: `core/` (settings logic, units, clock), `looks/`, `screens/`, `cluster/`, `hud/`, `widget/`, `images/` (every picture it reads) and `data/fonts/`
-  - G's Music: `spotify/` (Web API client, phone sign-in), `stage/` (lyrics, visualizer), `cluster/`, `widget/` and `vendor/` (third-party code)
+  - G's Music: `spotify/` (Web API client, phone sign-in), `car/` (what the car itself plays: Apple Music over CarPlay), `stage/` (lyrics, visualizer), `cluster/`, `widget/` and `vendor/` (third-party code)
   - G's TV: `sources/`, `player/`, `output/` and `net/`
 - **`kit/tools/build.py` installs an app's `.js`, `.png` and `.wasm` files from every folder side by side**, so a module requires another as `./<name>` and reads a file at `path.join(__dirname, '<name>')` whichever folder either is kept in. Moving a file between folders changes nothing that is installed (no version bump), but **file names must be unique within an app**, files it shares in included; the build stops if two collide.
 - **`data/<name>/` is a data folder:** packed into `<name>.pack` and read with `kit/runtime/pack.js`.

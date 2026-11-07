@@ -101,7 +101,7 @@ const inRect = (r, x, y) => !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <
  */
 const LOGO_KEY = 'logo', LOGO_OLD = 'widget';
 /* Drive's right panel (setting "panel"): the g-meter, Spotify, or the Logo. Anything else is the g-meter, the default. */
-const PANEL_NAME = { g: 'G-meter', spotify: 'Spotify', logo: 'Logo' };
+const PANEL_NAME = { g: 'G-meter', spotify: 'Music', logo: 'Logo' };   // 0.30.0: Music (Spotify, or Apple Music on CarPlay)
 function panelOf(v) { return v === 'spotify' || v === 'logo' ? v : 'g'; }
 const panelName = (v) => PANEL_NAME[panelOf(v)];
 function migrateLogo(values) {
