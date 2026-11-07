@@ -1,5 +1,12 @@
 # Changelog
 
+## G's Dash 0.28.1
+
+- Pocket: with Spotify or the Logo as the right panel, the screen's left part spread under the panel, so
+  the gear box was hidden behind it and the speed sat right against its edge. The left part now always
+  ends where the right panel starts, as it does with the g-meter: the speed and the gear box stay clear
+  of the panel whichever it is.
+
 ## G's Dash 0.28.0
 
 - New look: iDrive CCC, the first iDrive's start screen redrawn (no picture or font of the car
