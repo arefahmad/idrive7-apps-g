@@ -1597,7 +1597,7 @@ mgu.run({
             if (!snd.running) action(cv, t, 'snd:again', A.right - cb.w, hy, cb.w, cb.h, 'Check again', () => press('snd:again', () => audioCheck(true)));
             else cv.text('Checking...', A.right - 16, cyH + 8, 22, on, { align: 'right', literal: true });
             action(cv, t, 'snd:test', A.right - 2 * cb.w - 16, hy, cb.w, cb.h, sTest.busy ? 'Playing...' : 'Test sound', () => press('snd:test', soundTest), null, { on: !!sTestLine });
-            const foot = sTestLine ? wrap(cv, sTestLine, 20, A.right - A.x, 2) : [];
+            const tl = !sTest.busy && sTest.last ? sTest.text() : sTestLine, foot = tl ? wrap(cv, tl, 20, A.right - A.x, 3) : [];
             const top = hy + HEAD_H + 24, colW = (A.right - A.x - 32) / 2, rx = A.x + colW + 32, LH = 27, bottom = A.bottom - 30 - foot.length * 26;
             const lbl = (s2, x, yy) => cv.text(s2.toUpperCase(), x, yy, 18, t.dim, { font: 'bold', spacing: 1.5, literal: true });
             const col = (x, title, lines) => {
