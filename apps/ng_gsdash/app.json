@@ -1,14 +1,15 @@
 {
   "id": "ng_gsdash",
   "title": "G's Dash",
-  "description": "Driver display in thirteen looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Desktop '98, Pocket, Heist, Arcade, Pod '04, iDrive CCC). Swipe between Drive, Warm-up, G-force and Tires, with an optional Spotify panel. Logo: the G mark or a GIF from your phone, on the home widget, the cluster and optionally Drive's right panel. Per driving mode (off by default) gives each reported mode its own GIF. With the Cluster renderer tool, one tap picks the cluster's centre and dials & HUD. CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium and mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
-  "version": "0.28.1",
+  "description": "Driver display in thirteen looks (M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Desktop '98, Pocket, Heist, Arcade, Pod '04, iDrive CCC). Swipe between Drive, Warm-up, G-force and Tires, with an optional music panel (Spotify, or Apple Music over CarPlay). Logo: the G mark or a GIF from your phone, on the home widget, the cluster and optionally Drive's right panel. Per driving mode (off by default) gives each reported mode its own GIF. With the Cluster renderer tool, one tap picks the cluster's centre and dials & HUD. CarPlay's map needs the Waze on cluster tool (off by default). Spotify needs Premium, and both need mgu-uplink. Optional encrypted crash logs need the unit's own private drop.",
+  "version": "0.30.1",
   "vendor": "ng",
   "loggingId": "OAN1",
   "iconGlyph": "gauge",
   "internet": true,
-  "share": ["ng_spotify/spotify/spotify.js", "ng_spotify/spotify/signin.js", "ng_spotify/spotify/signin_config.js", "ng_spotify/vendor/qrcodegen.js", "ng_spotify/vendor/jpeg_decoder.js", "ng_tv/net/tv_net.js"],
+  "share": ["ng_spotify/spotify/spotify.js", "ng_spotify/spotify/signin.js", "ng_spotify/spotify/signin_config.js", "ng_spotify/vendor/qrcodegen.js", "ng_spotify/vendor/jpeg_decoder.js", "ng_spotify/car/car_player.js", "ng_tv/net/tv_net.js"],
   "signals": {
+    "de.bmw.infotainment.entertainment.mediaplayer.MediaPlayer": "*",
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
       "statusEngineTemperature": "rs"
@@ -108,7 +109,7 @@
      "steps": [160, 165, 170, 175, 180, 185, 190, 194, 200]},
     {"key": "gScale", "label": "G-meter size", "type": "number", "unit": "g", "default": 1.5, "steps": [1.0, 1.5, 2.0]},
     {"key": "panel", "label": "Right panel", "type": "choice", "default": "g",
-     "options": [["g", "G-meter and peaks"], ["spotify", "Spotify (touch controls)"], ["logo", "Logo"]]},
+     "options": [["g", "G-meter and peaks"], ["spotify", "Music (Spotify or Apple Music)"], ["logo", "Logo"]]},
     {"key": "clusterControl", "label": "G's Dash on the cluster & HUD", "type": "choice", "default": "on",
      "options": [["on", "On"], ["off", "Off - the car stock"]]},
     {"key": "clusterSource", "label": "Cluster source (map area)", "type": "choice", "default": "auto",

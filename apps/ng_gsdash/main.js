@@ -1009,7 +1009,7 @@ mgu.run({
             // the right panel: two choices, the current one lit
             const px = x0 + gw + 40, fcw = 330, pw = S.x + S.w - px - fcw - 32, ph = 72;
             lbl('Right panel on Drive', px, S.y + 20, 18, t.dim);
-            [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Spotify', 'What plays, with touch controls'], ['logo', 'Logo', 'The same Logo as the widget and cluster']].forEach((o, i) => {
+            [['g', 'G-meter', 'Live g-meter and session peaks'], ['spotify', 'Music', 'Spotify with touch controls, or Apple Music on CarPlay'], ['logo', 'Logo', 'The same Logo as the widget and cluster']].forEach((o, i) => {
                 const oy = top + i * (ph + g), on = PREFS.panelOf(settings.get('panel')) === o[0];
                 if (on) { cv.roundRect(px, oy, pw, ph, u.radius, L.withAlpha(acc, 0.22)); cv.strokeRoundRect(px, oy, pw, ph, u.radius, 3, acc); } else card(cv, t, px, oy, pw, ph, false);
                 // a small glyph: rings for the g-meter, three bars for Spotify, three stripes for the Logo

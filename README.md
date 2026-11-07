@@ -11,22 +11,23 @@ A driver display and car hub for the centre screen.
 
 - **Thirteen looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Desktop '98 (a
   late-90s desktop of grey windows and progress bars), Pocket (a pocket game console's green
-  dot-matrix screen), Heist (an open-world crime game's HUD: a sunset city, a radar and wanted stars
-  that climb with your speed), Arcade (an 80s racing cabinet: a night road, 1UP and HI-SCORE, INSERT
-  COIN), Pod '04 (a mid-2000s pocket music player: your drive as Now Playing, revs round a touch
-  wheel) and iDrive CCC (the first iDrive's start screen: taupe tiles, the silver centre button and
-  its four coloured arrows), some with a choice of colours. Theme scrolls to show them all; pick a
-  look's colours on Options' Theme card. Star your favourites and tap the gear on Drive to switch
-  between them.
+  dot-matrix screen, in six shell colours, two of them see-through), Heist (an open-world crime game's
+  HUD: a sunset city, a radar and wanted stars that climb with your speed), Arcade (an 80s racing
+  cabinet: a night road, 1UP and HI-SCORE, INSERT COIN), Pod '04 (a mid-2000s pocket music player:
+  your drive as Now Playing, revs round a touch wheel) and iDrive CCC (the first iDrive's start
+  screen: grey tiles, the silver centre button and its four coloured arrows), some with a choice of
+  colours. Theme scrolls to show them all; pick a look's colours on Options' Theme card. Star your
+  favourites and tap the gear on Drive to switch between them.
 - **Pages:** swipe between Drive (shift lights, gear, rpm, speed, g-meter, drive mode, oil and coolant
   temperatures), Warm-up, G-force and Tires (tire pressures and temperatures).
 - **Units:** mph or km/h, °F or °C, psi, bar or kPa.
-- **Spotify panel:** optional, with its own sign-in by QR code.
+- **Music panel:** optional. Spotify with touch controls and its own sign-in by QR code, or Apple Music
+  playing over CarPlay (shown while Spotify isn't playing; you control it on the phone or the car).
 - **Logo:** the G mark by default, on the home-screen widget and in the instrument cluster. Send your own
   GIF from your phone; it plays on the widget and in the cluster, including while the car is moving.
   Per driving mode (Logo, off by default) gives Comfort, Sport, Sport+ and any other mode the car reports
   its own GIF; an empty slot keeps the main Logo. Drive's right panel can show that same Logo instead of
-  the G-meter or Spotify. A built-in Stage 1 / 2 / 3 example is original art; use your own GIFs for anything else.
+  the G-meter or the music panel. A built-in Stage 1 / 2 / 3 example is original art; use your own GIFs for anything else.
 - **On the car's other displays** (optional), two picks on Options > Cluster & HUD, one tap each, shared
   with G's Music and G's TV:
   - **The cluster's centre:** Auto, the G's Dash logo, G's Music, Waze's map or the car's own. Every
@@ -46,21 +47,25 @@ A driver display and car hub for the centre screen.
 
 ### G's Music (`ng_spotify`)
 
-A full-screen Spotify player with synced lyrics or a visualizer.
+A full-screen player for Spotify or Apple Music, with synced lyrics or a visualizer.
 
 ![G's Music playing a track with synced lyrics](docs/gsmusic-lyrics.png)
 
-- Album art, large touch controls (previous, play/pause, next, shuffle, repeat, like) and a seek bar
-  you tap or drag.
+- **Spotify:** album art, large touch controls (previous, play/pause, next, shuffle, repeat, like) and a
+  seek bar you tap or drag. Sign in by scanning a QR code with your phone.
+- **Apple Music:** whatever the car plays over CarPlay (or Bluetooth / USB), read from the car itself:
+  title, artist, album and the time in the song, with the artwork from Apple's iTunes search. No sign-in
+  and nothing to install on the phone. Control it on the phone or with the car's buttons.
+  Settings > Music from: Spotify, else the car (the default), Spotify only, or the car only.
 - Synced lyrics from [LRCLIB](https://lrclib.net), or a visualizer.
-- Sign in by scanning a QR code with your phone.
 - A home-screen widget showing what's playing.
 - While music plays, lyrics (scrolling as in the app) or the visualizer in the instrument cluster, and
   the lyrics in the HUD when G's Dash's Dials & HUD pick is G's Music's lyrics (without G's Dash, its
   own HUD setting, off by default), in a small, medium or large size. Both need the Cluster renderer
   tool.
 
-Needs Spotify Premium. Setup guide: [docs/spotify.md](docs/spotify.md).
+Spotify needs Premium. Setup guide: [docs/spotify.md](docs/spotify.md). Reading Apple Music from the car
+follows arefahmad's [Car Lyrics](https://github.com/arefahmad/idrive7-apps/blob/main/apps/aref_carlyrics/README.md).
 
 ### G's TV (`ng_tv`) - experimental
 
@@ -74,12 +79,13 @@ Video on the centre screen while parked.
 - Optional playback in the HUD or the cluster, also only while parked: in the cluster while G's Dash's
   pick is Auto, in the HUD while its Dials & HUD pick is the car's own.
 
-The picture shows only in P, at a standstill. Video only, no sound yet.
+The picture shows only in P, at a standstill. Sound plays through the car's own media player and speakers
+(experimental, Settings > Sound, on by default; it may not work on every car, and Test sound on that page checks).
 
 ## Requirements
 
 - A BMW with an iDrive 7 head unit and robertn_store installed.
-- **Internet** for G's Music, G's TV and G's Dash's Spotify panel: turn on the Store's uplink (phone
+- **Internet** for G's Music, G's TV and G's Dash's music panel: turn on the Store's uplink (phone
   hotspot or Wi-Fi).
 - **Cluster and HUD features:** the Cluster renderer tool from the Store. The CarPlay map in the
   cluster also needs the Waze on cluster tool.

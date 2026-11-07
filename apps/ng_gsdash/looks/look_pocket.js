@@ -7,7 +7,9 @@
  * in a box, oil and coolant bars, a g-meter target with its peaks, the session as TIME, and a little car
  * driving along a road under scrolling hills (faster with the car's speed, "SHIFT!" blinking past the shift
  * point). The G's Dash pixel font (px.js, as the Pixel look). Static parts (body, bezel, pad, buttons,
- * the screen's dot grid) are cached layers. Node 8: no ?., no ??, no object spread.
+ * the screen's dot grid) are cached layers. Colour variants (0.29.0, tints.js VARIANTS.pocket): the shell -
+ * Classic grey, Clear Purple and Clear (see-through, the circuit board showing inside), Red, Yellow, Teal;
+ * the screen keeps its greens. Node 8: no ?., no ??, no object spread.
  */
 const G = require('./kit/gauges');
 const L = require('./lib');
@@ -17,24 +19,73 @@ const { withAlpha, clamp, isNum } = L;
 const FONT = 'gs_p_px';
 /* the screen's four shades, darkest to lightest */
 const S0 = '#0f380f', S1 = '#306230', S2 = '#8bac0f', S3 = '#9bbc0f';
-const C = { body0: '#cfcfd2', body1: '#b9b9bd', bezel: '#5b5f6e', bezelHi: '#6b7080', led: '#ff2d2d', pad: '#2a2a2e', btn: '#9c2a5c', btnHi: '#c4467c', label: '#2b2f6b', pill: '#8c8c94' };
-const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), {
-    name: 'Pocket',
-    bg: C.body1, panelTop: C.body0, panelBottom: C.body1, panelEdge: '#8a8a90',
-    track: '#a8a8ae', tick: '#7a7a80', text: '#1c1d2b', dim: '#4c5064',
-    accent: S1, accent2: C.label, ok: S1, warn: '#7a5a00', crit: '#b0203a', cold: C.label,
-    stripes: [S0, S1, S2], sel: S1, selText: S3, marker: C.btn,
-});
+const TINTS = require('./tints');
+/* the shell's colours are the chosen variant's (tints.js), set by applyTint; the bezel and power light stay */
+const C = { bezel: '#5b5f6e', bezelHi: '#6b7080', led: '#ff2d2d' };
+let TINT = '';
+const palette = Object.assign({}, require('./kit/themes').theme('m_tricolour'), { name: 'Pocket' });
+/** recolour the shell in place for a variant (tints.js); the palette object stays the same one */
+function applyTint(v) {
+    if (!v || v.id === TINT) return;
+    TINT = v.id; Object.assign(C, v.c);
+    Object.assign(palette, {
+        bg: C.body1, panelTop: C.body0, panelBottom: C.body1, panelEdge: C.edge,
+        track: C.track, tick: C.tick, text: C.text, dim: C.dim,
+        accent: S1, accent2: C.label, ok: S1, warn: '#7a5a00', crit: '#b0203a', cold: C.label,
+        stripes: [S0, S1, S2], sel: S1, selText: S3, marker: C.btn,
+    });
+}
+applyTint(TINTS.VARIANTS.pocket[0]);
 const T = (cv, s, x, y, size, col, o) => cv.text(s, x, y, size, col || S0, Object.assign({ font: FONT, literal: true }, o || {}));
 const numCell = (size) => Math.max(2, Math.round(size / 9));
 const rnd = (i, k) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
 
 /* ---------------- the console ---------------- */
+/**
+ * The circuit board a clear shell shows: green fibreglass, copper traces running in straight runs with 45°
+ * bends, vias, a few chips with their pins, a ribbon connector, brass screw posts. Drawn for G's Dash.
+ */
+function board(c, w, h) {
+    c.fillRect(0, 0, w, h, '#123d2a');
+    for (let y = 0; y < h; y += 6) c.fillRect(0, y, w, 1, withAlpha('#0a2a1c', 0.5));
+    const tr = withAlpha('#6cc48a', 0.9), tr2 = withAlpha('#3f9460', 0.9);
+    for (let i = 0; i < 110; i++) {
+        let x = Math.floor(rnd(i, 1) * w / 8) * 8, y = Math.floor(rnd(i, 2) * h / 8) * 8;
+        const col = i % 3 ? tr2 : tr, wd = i % 5 ? 2 : 4;
+        for (let s = 0; s < 4; s++) {
+            const len = 24 + Math.floor(rnd(i, 10 + s) * 10) * 12, d = Math.floor(rnd(i, 20 + s) * 4);
+            const dx = [1, 0, -1, 0][d] * len, dy = [0, 1, 0, -1][d] * len;
+            c.line(x, y, x + dx, y + dy, wd, col);
+            const bx = x + dx, by = y + dy, b = rnd(i, 30 + s) < 0.5 ? 1 : -1;
+            c.line(bx, by, bx + (dy ? b * 10 : 10 * Math.sign(dx)), by + (dx ? b * 10 : 10 * Math.sign(dy)), wd, col);
+            x = bx + (dy ? b * 10 : 10 * Math.sign(dx)); y = by + (dx ? b * 10 : 10 * Math.sign(dy));
+        }
+        c.circle(x, y, 4, '#c8b070'); c.circle(x, y, 1.6, '#123d2a');
+    }
+    // chips: black packages with silver pins
+    [[0.08, 0.62, 120, 70], [0.86, 0.12, 90, 90], [0.9, 0.7, 70, 40], [0.12, 0.1, 80, 46]].forEach((k) => {
+        const x = Math.round(k[0] * w), y = Math.round(k[1] * h), cw = k[2], ch = k[3];
+        for (let p = 8; p < cw - 4; p += 10) { c.fillRect(x + p, y - 6, 4, 6, '#b8bcc4'); c.fillRect(x + p, y + ch, 4, 6, '#b8bcc4'); }
+        c.roundRect(x, y, cw, ch, 3, '#141618'); c.fillRect(x + 6, y + 6, cw - 12, 1, withAlpha('#ffffff', 0.12));
+        c.circle(x + 9, y + 9, 3, '#2a2c30');
+    });
+    // a ribbon connector and screw posts
+    c.fillRect(Math.round(w * 0.42), Math.round(h * 0.88), 220, 14, '#d8c89a');
+    for (let p = 0; p < 220; p += 8) c.fillRect(Math.round(w * 0.42) + p, Math.round(h * 0.88), 4, 14, '#b89a5a');
+    [[0.03, 0.06], [0.97, 0.06], [0.03, 0.94], [0.97, 0.94]].forEach((k) => {
+        const x = k[0] * w, y = k[1] * h;
+        c.circle(x, y, 13, '#8a7a4a'); c.circle(x, y, 10, '#c8b070'); c.line(x - 6, y, x + 6, y, 2.5, '#6a5a2a'); c.line(x, y - 6, x, y + 6, 2.5, '#6a5a2a');
+    });
+}
 function body(c, w, h) {
-    c.gradientRect(0, 0, w, h, [[0, C.body0], [1, C.body1]]);
+    // a clear shell: the board under it, the shell's colour laid over it so the board shows through
+    if (C.clear) board(c, w, h);
+    const a = C.clear || 1;
+    c.gradientRect(0, 0, w, h, [[0, withAlpha(C.body0, a)], [1, withAlpha(C.body1, a)]]);
+    if (C.clear) c.gradientRect(0, 0, w, h * 0.3, [[0, withAlpha('#ffffff', 0.18)], [1, withAlpha('#ffffff', 0)]]);
     for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1, withAlpha('#ffffff', 0.05));
 }
-function background(cv, t, reach) { cv.blit(G.layer('gs-pk-body|' + reach, 1600, reach, (c) => body(c, 1600, reach)), 0, 0); }
+function background(cv, t, reach) { cv.blit(G.layer('gs-pk-body|' + reach + '|' + TINT, 1600, reach, (c) => body(c, 1600, reach)), 0, 0); }
 function geo(S) {
     const sx = S.x + 270, sy = S.y + 10, sw = 1036, sh = S.h - 52;         // the bezel
     return { sx, sy, sw, sh, lx: sx + 84, ly: sy + 28, lw: sw - 116, lh: sh - 62 };   // and the screen inside it
@@ -76,7 +127,7 @@ function controls(c, w, h, g, S) {
         c.text(b[2], b[0] + 30, b[1] + 50, 24, C.label, { font: FONT, literal: true });
     });
     // the speaker: slanted slots, lower right
-    for (let i = 0; i < 6; i++) { const sx = g.sx - S.x + g.sw + 70 + i * 18; c.line(sx, h - 26, sx + 34, h - 90, 6, withAlpha('#7a7a82', 0.8)); }
+    for (let i = 0; i < 6; i++) { const sx = g.sx - S.x + g.sw + 70 + i * 18; c.line(sx, h - 26, sx + 34, h - 90, 6, withAlpha(C.slot, 0.85)); }
     // select, start
     [['SELECT', -80], ['START', 80]].forEach((p2) => {
         const cx = g.sx - S.x + g.sw / 2 + p2[1], cy = g.sh + 26;
@@ -123,7 +174,9 @@ function road(cv, g, x, y, w, h, now, mph) {
 }
 function screen(cv, S, g, now) {
     const x = g.lx + 16, y = g.ly + 14, w = g.lw - 32, h = g.lh - 28, gm = !S.panel || S.panel === 'g';
-    const lw = gm ? w * 0.66 : w;                            // the left part; the g-meter on the right
+    // the left part; the right third is the right panel's (panelRect) whichever it is - the g-meter here, or
+    // Spotify / the Logo drawn over it by the app - so the speed and gear always stay clear of it (0.28.1)
+    const lw = w * 0.66;
     const lo = S.shift - S.range, hot = isNum(S.rpm) && S.rpm >= lo;
     // the rpm bar
     T(cv, 'RPM', x, y + 24, 24);
@@ -134,10 +187,10 @@ function screen(cv, S, g, now) {
     else if (hot) T(cv, 'READY', x + 72, y + 52, 24, S1);
     // the speed, big, and the gear in its box
     const sp = isNum(S.speed) ? String(Math.round(S.speed)) : '--', u = sp.length > 2 ? 10 : 12, gw = 170;
-    P.text(cv, sp, x + lw - gw - 40, y + 66, u, S0, { align: 'right' });
+    P.text(cv, sp, x + lw - gw - 80, y + 66, u, S0, { align: 'right' });          // 0.29.0: 80 px clear of the gear box (was 40)
     T(cv, (S.unit || 'MPH').toUpperCase(), x + 4, y + 120, 24, S1);
     const gx = x + lw - gw, gy = y + 64;
-    box(cv, gx, gy, gw, 122);
+    box(cv, gx, gy, gw, 134);                                   // 0.29.0: 12 px more under the gear (was 122)
     T(cv, 'GEAR', gx + 12, gy + 26, 16, S1);
     let gu = 10; while (gu > 4 && P.width(S.gearText, gu) > gw - 30) gu--;
     P.text(cv, S.gearText, gx + gw / 2, gy + 32 + (88 - 7 * gu) / 2, gu, S0, { align: 'center' });
@@ -175,6 +228,8 @@ module.exports = {
     name: 'Pocket',
     blurb: 'A pocket game console: a green dot-matrix screen, a cross pad, a little car on the road',
     palette,
+    tints: TINTS.VARIANTS.pocket,
+    applyTint,
     ui: {
         txt: FONT, num: FONT, size: 18, spacing: 1, upper: true, radius: 6, nameFont: FONT, nameSize: 24,
         numText: (cv, s, x, y, size, c, o) => {
@@ -192,7 +247,11 @@ module.exports = {
         cv.roundRect(x, y, w, h, 8, withAlpha(on ? C.bezelHi : C.bezel, 0.9));
         cv.roundRect(x + 6, y + 6, w - 12, h - 12, 4, withAlpha(S3, on ? 0.35 : 0.22));
     },
-    cardBg(cv, t, x, y, w, h) { cv.gradientRect(x, y, w, h, [[0, C.body0], [1, C.body1]]); },
+    cardBg(cv, t, x, y, w, h) {
+        if (C.clear) { cv.fillRect(x, y, w, h, '#123d2a'); for (let i = 0; i < 9; i++) cv.fillRect(x + 8 + rnd(i, 1) * (w - 40), y + 6 + rnd(i, 2) * (h - 20), 14 + rnd(i, 3) * 30, 2, withAlpha('#4fa06a', 0.85)); }
+        const a = C.clear || 1;
+        cv.gradientRect(x, y, w, h, [[0, withAlpha(C.body0, a)], [1, withAlpha(C.body1, a)]]);
+    },
     panelPlate(cv, t, x, y, w, h) { cv.roundRect(x, y, w, h, 10, C.bezel); cv.roundRect(x + 8, y + 8, w - 16, h - 16, 4, S3); },
     gButton(cv, t, r, lit, down) {
         const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rr = Math.min(r.w, r.h) / 2 - 8;
@@ -216,7 +275,7 @@ module.exports = {
 
     draw(cv, S) {
         const now = Date.now(), g = geo(S);
-        cv.blit(G.layer(['gs-pk-ctl', S.w, S.h].join('|'), S.w + 24, S.h + 12, (c) => controls(c, S.w + 24, S.h + 12, g, S), cv.textScale), S.x, S.y);
+        cv.blit(G.layer(['gs-pk-ctl', S.w, S.h, TINT].join('|'), S.w + 24, S.h + 12, (c) => controls(c, S.w + 24, S.h + 12, g, S), cv.textScale), S.x, S.y);
         cv.blit(G.layer(['gs-pk-bezel', g.sw, g.sh].join('|'), g.sw, g.sh + 4, (c) => bezel(c, g), cv.textScale), g.sx, g.sy);
         screen(cv, S, g, now);
         const lw = (g.lw - 32) * 0.66;
