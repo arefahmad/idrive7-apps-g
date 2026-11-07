@@ -190,7 +190,7 @@ function screen(cv, S, g, now) {
     P.text(cv, sp, x + lw - gw - 80, y + 66, u, S0, { align: 'right' });          // 0.29.0: 80 px clear of the gear box (was 40)
     T(cv, (S.unit || 'MPH').toUpperCase(), x + 4, y + 120, 24, S1);
     const gx = x + lw - gw, gy = y + 64;
-    box(cv, gx, gy, gw, 122);
+    box(cv, gx, gy, gw, 134);                                   // 0.29.0: 12 px more under the gear (was 122)
     T(cv, 'GEAR', gx + 12, gy + 26, 16, S1);
     let gu = 10; while (gu > 4 && P.width(S.gearText, gu) > gw - 30) gu--;
     P.text(cv, S.gearText, gx + gw / 2, gy + 32 + (88 - 7 * gu) / 2, gu, S0, { align: 'center' });

@@ -8,7 +8,8 @@
   printed labels and speaker slots; the screen keeps its four greens in every one.
 - The cluster logo's console takes the shell's colour too (logo_pocket-<colour>.png as the fallbacks); the
   HUD stays the screen's greens.
-- Pocket's speed sits further left, 80 px clear of the gear box (was 40).
+- Pocket's speed sits further left, 80 px clear of the gear box (was 40), and the gear box has more room
+  under the gear (134 px tall, was 122).
 
 ## G's Dash 0.28.1
 
