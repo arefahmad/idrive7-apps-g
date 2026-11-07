@@ -11,13 +11,13 @@ A driver display and car hub for the centre screen.
 
 - **Thirteen looks:** M Style, GT, Digital '84, Sim Racing, Lumen, Pixel, Vector, Desktop '98 (a
   late-90s desktop of grey windows and progress bars), Pocket (a pocket game console's green
-  dot-matrix screen), Heist (an open-world crime game's HUD: a sunset city, a radar and wanted stars
-  that climb with your speed), Arcade (an 80s racing cabinet: a night road, 1UP and HI-SCORE, INSERT
-  COIN), Pod '04 (a mid-2000s pocket music player: your drive as Now Playing, revs round a touch
-  wheel) and iDrive CCC (the first iDrive's start screen: taupe tiles, the silver centre button and
-  its four coloured arrows), some with a choice of colours. Theme scrolls to show them all; pick a
-  look's colours on Options' Theme card. Star your favourites and tap the gear on Drive to switch
-  between them.
+  dot-matrix screen, in six shell colours, two of them see-through), Heist (an open-world crime game's
+  HUD: a sunset city, a radar and wanted stars that climb with your speed), Arcade (an 80s racing
+  cabinet: a night road, 1UP and HI-SCORE, INSERT COIN), Pod '04 (a mid-2000s pocket music player:
+  your drive as Now Playing, revs round a touch wheel) and iDrive CCC (the first iDrive's start
+  screen: grey tiles, the silver centre button and its four coloured arrows), some with a choice of
+  colours. Theme scrolls to show them all; pick a look's colours on Options' Theme card. Star your
+  favourites and tap the gear on Drive to switch between them.
 - **Pages:** swipe between Drive (shift lights, gear, rpm, speed, g-meter, drive mode, oil and coolant
   temperatures), Warm-up, G-force and Tires (tire pressures and temperatures).
 - **Units:** mph or km/h, °F or °C, psi, bar or kPa.

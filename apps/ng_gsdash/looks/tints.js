@@ -113,6 +113,31 @@ const VARIANTS = {
             wave: ['#1e3a16', '#3a6424', '#b8e04a'],
             hud: { base: '#cde88a', zones: ['#7ccf3a', '#e2f25a', '#ff3a4a'], flash: '#eaf8c8', dim: '#142410', redDim: '#3a0f18', tick: '#86a648', tickRed: '#ff3a4a', gear: '#e2f25a', gear2: '#306230', pre: '#b8e04a', pre2: '#306230' } } },
     ],
+    // Pocket (0.29.0): the console's shell, as such consoles came - the screen stays its four greens in every one.
+    // c: body0 / body1 (the shell, top and bottom), clear (0: solid; else how much of the shell's colour lies over
+    // the circuit board you see through it), label (printed text), btn / btnHi (B and A), pad (the cross pad),
+    // pill (select / start), slot (the speaker), text / dim / edge / track / tick (the settings pages on the
+    // shell), logo (the cluster logo's shell colour), hud ({}: the same screen greens as the default)
+    pocket: [
+        { id: 'classic', name: 'Classic', swatch: '#c4c4c8', c: {
+            body0: '#cfcfd2', body1: '#b9b9bd', clear: 0, label: '#2b2f6b', btn: '#9c2a5c', btnHi: '#c4467c', pad: '#2a2a2e', pill: '#8c8c94', slot: '#7a7a82',
+            text: '#1c1d2b', dim: '#4c5064', edge: '#8a8a90', track: '#a8a8ae', tick: '#7a7a80', logo: '#c4c4c8', hud: {} } },
+        { id: 'purple', name: 'Clear Purple', swatch: '#7a5ad0', swatch2: ['#7a5ad0', '#b9a4f0'], c: {
+            body0: '#8a6ad8', body1: '#5a3aa8', clear: 0.56, label: '#efe6ff', btn: '#4a3488', btnHi: '#7a62c0', pad: '#2c2048', pill: '#6a58a8', slot: '#3a2a6a',
+            text: '#f6f0ff', dim: '#cfc0f4', edge: '#b9a4f0', track: '#4a3492', tick: '#9a86d8', logo: '#6c4cc0', hud: {} } },
+        { id: 'clear', name: 'Clear', swatch: '#c9d6df', swatch2: ['#c9d6df', '#5d7f6c'], c: {
+            body0: '#dfe8ee', body1: '#aebdc8', clear: 0.5, label: '#1f2c38', btn: '#5b6672', btnHi: '#8a96a2', pad: '#2a2e34', pill: '#7c8892', slot: '#4a5560',
+            text: '#141c24', dim: '#3a4854', edge: '#8a9aa6', track: '#9aaab6', tick: '#6a7a86', logo: '#b8c6d0', hud: {} } },
+        { id: 'red', name: 'Red', swatch: '#d8303e', c: {
+            body0: '#e63a48', body1: '#b5202e', clear: 0, label: '#fff0f2', btn: '#2c2c32', btnHi: '#55555e', pad: '#232328', pill: '#7a1a24', slot: '#7a1520',
+            text: '#fff6f6', dim: '#ffd0d4', edge: '#ff9aa4', track: '#8a1822', tick: '#ff8a94', logo: '#cc2a38', hud: {} } },
+        { id: 'yellow', name: 'Yellow', swatch: '#ffd23a', c: {
+            body0: '#ffdc48', body1: '#e8b400', clear: 0, label: '#3a2c00', btn: '#2f5bbf', btnHi: '#5a86e6', pad: '#2a2a2e', pill: '#b88c00', slot: '#a07800',
+            text: '#2a2000', dim: '#5c4a10', edge: '#a88200', track: '#d8a800', tick: '#8a6a00', logo: '#f2c820', hud: {} } },
+        { id: 'teal', name: 'Teal', swatch: '#26a8a2', c: {
+            body0: '#36bcb5', body1: '#1c8a85', clear: 0, label: '#effffd', btn: '#2c2c32', btnHi: '#55555e', pad: '#232328', pill: '#13615d', slot: '#11625e',
+            text: '#f2fffe', dim: '#c6f0ec', edge: '#8ae0da', track: '#156e6a', tick: '#7ad6d0', logo: '#28a8a2', hud: {} } },
+    ],
 };
 const KEY = 'tints';
 const has = (look) => Object.prototype.hasOwnProperty.call(VARIANTS, look);
