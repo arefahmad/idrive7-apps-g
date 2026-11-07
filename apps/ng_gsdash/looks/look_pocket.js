@@ -123,7 +123,9 @@ function road(cv, g, x, y, w, h, now, mph) {
 }
 function screen(cv, S, g, now) {
     const x = g.lx + 16, y = g.ly + 14, w = g.lw - 32, h = g.lh - 28, gm = !S.panel || S.panel === 'g';
-    const lw = gm ? w * 0.66 : w;                            // the left part; the g-meter on the right
+    // the left part; the right third is the right panel's (panelRect) whichever it is - the g-meter here, or
+    // Spotify / the Logo drawn over it by the app - so the speed and gear always stay clear of it (0.28.1)
+    const lw = w * 0.66;
     const lo = S.shift - S.range, hot = isNum(S.rpm) && S.rpm >= lo;
     // the rpm bar
     T(cv, 'RPM', x, y + 24, 24);
