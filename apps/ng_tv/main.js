@@ -833,18 +833,18 @@ mgu.run({
         };
         ui.onVisible((name, on) => { if (name === 'MORE' && on) audioCheck(); });
         /*
-         * Settings > Sound > Test sound (output/tv_sound_test.js): unlike the check, this plays. Each tap asks BMW's
-         * generic app player to play the next way (a short tone as a path, a file:// URI, from /tmp, then the
-         * Spelunkr programme on now), so the viewer can say which one they heard. Parked only, as the picture.
+         * Settings > Sound > Test sound (output/tv_sound_test.js): unlike the check, this plays. Each tap joins BMW's
+         * generic app player to the speakers (the car's audio manager) and asks it to play the next way (a short
+         * tone as AAC in /tmp, AAC in the data folder, MP3, WAV), so the viewer can say which one they heard.
+         * Parked only, as the picture.
          */
         const sTest = new SoundTest(ctx.dataDir, log);
         let sTestLine = '';
         const soundTest = () => {
             if (!gateOpen) { say('Test sound works only when parked'); return; }
             if (sTest.busy) return;
-            const n = nowOn(chId), programme = luState === 'ok' && n ? n.item.href : '';
-            sTestLine = 'Asking the car\'s media player to play test ' + (sTest.n % sTest.ways(programme).length + 1) + '...';
-            sTest.next({ programme }).then((r) => { sTestLine = SoundTest.line(r); }, (e) => { sTestLine = 'Test sound failed: ' + (e && e.message || e); });
+            sTestLine = 'Connecting the speakers and playing test ' + (sTest.n % sTest.ways().length + 1) + '...';
+            sTest.next().then((r) => { sTestLine = SoundTest.line(r); }, (e) => { sTestLine = 'Test sound failed: ' + (e && e.message || e); });
         };
 
         /* ----- the screen ----- */
