@@ -57,6 +57,8 @@ function tone() {
 /** A type node of a schema: a field may carry its type inline ({ n, t: 'Struct', e }) or nested ({ n, t: {...} }). */
 const typeOf = (f) => (f && typeof f.t === 'object' && f.t ? f.t : f);
 const kind = (f) => { const x = typeOf(f); return typeof x === 'string' ? x : (x && typeof x.t === 'string' ? x.t : ''); };
+/** Text types: 'String', and the car's own 'Utf8D' / 'Utf16D' (dynamic length) and 'Utf8F' / 'Utf16F' (fixed); playFile's path is Utf16D. */
+const TEXT = /^(String|Utf\d*[A-Z]?)$/i;
 
 /**
  * The argument struct for a method schema, with `value` in its location-like string (else its first string).
@@ -66,7 +68,7 @@ function argsFor(schema, value) {
     const strings = [];
     const blank = (f, name) => {
         const k = kind(f), x = typeOf(f);
-        if (k === 'String') { strings.push(name); return ''; }
+        if (TEXT.test(k)) { strings.push(name); return ''; }
         if (k === 'Boolean') return false;
         if (k === 'Struct') { const o = {}; ((x && x.e) || []).forEach((g) => { o[g.n] = blank(g, name ? name + '.' + g.n : g.n); }); return o; }
         if (/Array|Vector|List/i.test(k)) return [];
@@ -171,4 +173,4 @@ class SoundTest {
     close() { const p = this.proxy; this.proxy = null; try { if (p && p.shutdown) p.shutdown(); } catch (e) { /* gone */ } }
 }
 
-module.exports = { SoundTest, tone, argsFor, TONE };
+module.exports = { SoundTest, tone, argsFor, TONE, TEXT };
