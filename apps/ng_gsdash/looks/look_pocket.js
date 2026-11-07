@@ -187,7 +187,7 @@ function screen(cv, S, g, now) {
     else if (hot) T(cv, 'READY', x + 72, y + 52, 24, S1);
     // the speed, big, and the gear in its box
     const sp = isNum(S.speed) ? String(Math.round(S.speed)) : '--', u = sp.length > 2 ? 10 : 12, gw = 170;
-    P.text(cv, sp, x + lw - gw - 40, y + 66, u, S0, { align: 'right' });
+    P.text(cv, sp, x + lw - gw - 80, y + 66, u, S0, { align: 'right' });          // 0.29.0: 80 px clear of the gear box (was 40)
     T(cv, (S.unit || 'MPH').toUpperCase(), x + 4, y + 120, 24, S1);
     const gx = x + lw - gw, gy = y + 64;
     box(cv, gx, gy, gw, 122);
